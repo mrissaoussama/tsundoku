@@ -489,15 +489,12 @@ class JsSource(
                 }
             }
 
-            // LNReader plugins return newest-first. Reverse the entire combined list
-            // so oldest chapters come first (index 0 = Ch1), then assign chapter_number
-            // globally based on final position so numbering is consistent across pages.
-            chapters.reverse()
+       val total = chapters.size
             chapters.forEachIndexed { index, chapter ->
                 // Only override chapter_number if the plugin didn't provide one
                 // (default SChapter chapter_number is -1)
-                if (chapter.chapter_number < 0 || chapters.size > 1) {
-                    chapter.chapter_number = (index + 1).toFloat()
+                if (chapter.chapter_number < 0 || total > 1) {
+                    chapter.chapter_number = (total - index).toFloat()
                 }
             }
 

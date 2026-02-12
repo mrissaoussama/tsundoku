@@ -212,21 +212,7 @@ class ReaderViewModel @JvmOverloads constructor(
             else -> chapters
         }
 
-        // Sort chapters based on manga type and user preference
-        // For novels: use the user's preference (source order or chapter number)
-        // For manga: sort by chapter number for proper reading flow
-        val isNovel = sourceManager.getOrStub(manga.source).isNovelSource()
-        val sortedChapters = if (isNovel) {
-            val sortOrder = readerPreferences.novelChapterSortOrder().get()
-            when (sortOrder) {
-                "chapter_number" -> chaptersForReader.sortedBy { it.chapterNumber }
-                else -> chaptersForReader.sortedBy { it.sourceOrder } // "source" - use source order
-            }
-        } else {
-            // Always sort by chapter number in ascending order for manga reader
-            // This ensures proper reading flow: Ch1 → Ch2 → Ch3
-            chaptersForReader.sortedBy { it.chapterNumber }
-        }
+        val sortedChapters = chaptersForReader.sortedBy { it.chapterNumber }
 
         sortedChapters
             .run {
