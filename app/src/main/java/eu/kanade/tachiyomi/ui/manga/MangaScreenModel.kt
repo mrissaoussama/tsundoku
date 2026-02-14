@@ -80,8 +80,8 @@ import tachiyomi.domain.chapter.model.NoChaptersException
 import tachiyomi.domain.chapter.service.calculateChapterGap
 import tachiyomi.domain.chapter.service.getChapterSort
 import tachiyomi.domain.library.service.LibraryPreferences
-import tachiyomi.domain.manga.interactor.FindDuplicateNovels
 import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
+import tachiyomi.domain.manga.interactor.FindDuplicateNovels
 import tachiyomi.domain.manga.interactor.GetLibraryManga
 import tachiyomi.domain.manga.interactor.GetMangaWithChapters
 import tachiyomi.domain.manga.interactor.SetMangaChapterFlags
@@ -167,11 +167,14 @@ class MangaScreenModel(
     private val selectedChapterIds: HashSet<Long> = HashSet()
 
     override fun onDispose() {
+        super.onDispose()
         val currentManga = manga
         if (currentManga != null && currentManga.favorite) {
-            getLibraryManga.applyMangaDetailUpdateSync(currentManga.id) { currentManga }
+            screenModelScope.launchIO {
+                getLibraryManga.applyMangaDetailUpdate(currentManga.id) { currentManga }
+            }
         }
-        super.onDispose()
+        getLibraryManga.notifyChanged()
     }
 
     /**
@@ -1252,10 +1255,7 @@ class MangaScreenModel(
         data class DeleteChapters(val chapters: List<Chapter>) : Dialog
         data class RemoveChaptersFromDb(val chapters: List<Chapter>) : Dialog
         data class DuplicateManga(val manga: Manga, val duplicates: List<MangaWithChapterCount>) : Dialog
-        data class SimilarNovels(
-            val similarNovels: List<MangaWithChapterCount>,
-            val categories: List<Category>,
-        ) : Dialog
+        data class SimilarNovels(val similarNovels: List<MangaWithChapterCount>, val categories: List<Category>) : Dialog
         data class Migrate(val target: Manga, val current: Manga) : Dialog
         data class SetFetchInterval(val manga: Manga) : Dialog
         data class EditAlternativeTitles(val manga: Manga) : Dialog
@@ -1338,7 +1338,7 @@ class MangaScreenModel(
                 updateSuccessState {
                     it.copy(
                         similarNovels = similarNovels,
-                        dialog = Dialog.SimilarNovels(similarNovels, categories),
+                        dialog = Dialog.SimilarNovels(similarNovels, categories)
                     )
                 }
             }

@@ -1,11 +1,12 @@
 ﻿package tachiyomi.data.updates
 
 import kotlinx.coroutines.flow.Flow
+import logcat.LogPriority
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.data.DatabaseHandler
 import tachiyomi.domain.manga.model.MangaCover
 import tachiyomi.domain.updates.model.UpdatesWithRelations
 import tachiyomi.domain.updates.repository.UpdatesRepository
-import kotlin.time.Duration.Companion.seconds
 
 class UpdatesRepositoryImpl(
     private val databaseHandler: DatabaseHandler,
@@ -17,7 +18,7 @@ class UpdatesRepositoryImpl(
         limit: Long,
     ): List<UpdatesWithRelations> {
         return databaseHandler.awaitList {
-            updatesQueries.getUpdatesByReadStatus(
+            updates_cacheQueries.getUpdatesByReadStatus(
                 read = read,
                 after = after,
                 limit = limit,
@@ -27,8 +28,8 @@ class UpdatesRepositoryImpl(
     }
 
     override fun subscribeAll(after: Long, limit: Long): Flow<List<UpdatesWithRelations>> {
-        return databaseHandler.subscribeToDebouncedList(1.seconds) {
-            updatesQueries.getRecentUpdates(after, limit, ::mapUpdatesWithRelations)
+        return databaseHandler.subscribeToList {
+            updates_cacheQueries.getRecentUpdates(after, limit, ::mapUpdatesWithRelations)
         }
     }
 
@@ -37,14 +38,25 @@ class UpdatesRepositoryImpl(
         after: Long,
         limit: Long,
     ): Flow<List<UpdatesWithRelations>> {
-        return databaseHandler.subscribeToDebouncedList(1.seconds) {
-            updatesQueries.getUpdatesByReadStatus(
+        return databaseHandler.subscribeToList {
+            updates_cacheQueries.getUpdatesByReadStatus(
                 read = read,
                 after = after,
                 limit = limit,
                 mapper = ::mapUpdatesWithRelations,
             )
         }
+    }
+
+    override suspend fun clearAllUpdates() {
+        databaseHandler.await { updates_cacheQueries.clearAll() }
+    }
+
+    override suspend fun clearUpdatesOlderThan(timestamp: Long) {
+        databaseHandler.await { updates_cacheQueries.clearOlderThan(timestamp) }
+    }
+
+    override suspend fun clearUpdatesKeepLatest(keep: Long) {
     }
 
     private fun mapUpdatesWithRelations(
@@ -83,4 +95,22 @@ class UpdatesRepositoryImpl(
             lastModified = coverLastModified,
         ),
     )
+
+    override suspend fun refreshUpdatesCache() {
+        logcat(LogPriority.INFO) { "UpdatesRepositoryImpl.refreshUpdatesCache: Rebuilding updates cache (limited to 1000)" }
+        try {
+            databaseHandler.await(inTransaction = true) {
+                updates_cacheQueries.clearAll()
+                updates_cacheQueries.rebuildUpdatesCacheLimited()
+            }
+            logcat(LogPriority.INFO) { "UpdatesRepositoryImpl.refreshUpdatesCache: Cache rebuilt" }
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Failed to rebuild updates cache" }
+        }
+    }
+
+    override suspend fun checkUpdatesCacheIntegrity(): Pair<Long, Long> {
+        val count = databaseHandler.awaitOne { updates_cacheQueries.countAll() }
+        return Pair(count, count)
+    }
 }

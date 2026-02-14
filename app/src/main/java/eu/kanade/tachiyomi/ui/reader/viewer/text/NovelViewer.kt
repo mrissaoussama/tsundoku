@@ -1998,6 +1998,26 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         }
     }
 
+    private fun clearTextViewSelection(textView: TextView) {
+        try {
+            // Cancel any active action mode (floating toolbar)
+            val actionModeField = android.widget.TextView::class.java.getDeclaredField("mEditor")
+            actionModeField.isAccessible = true
+            val editor = actionModeField.get(textView)
+            if (editor != null) {
+                val hideMethod = editor.javaClass.getDeclaredMethod("hideControllers")
+                hideMethod.isAccessible = true
+                hideMethod.invoke(editor)
+            }
+        } catch (_: Exception) {
+        }
+        val spannable = textView.text
+        if (spannable is android.text.Spannable) {
+            android.text.Selection.removeSelection(spannable)
+        }
+        textView.clearFocus()
+    }
+
     /**
      * Apply user-configured find & replace rules to content.
      * Rules are stored as JSON in the novelRegexReplacements preference.
