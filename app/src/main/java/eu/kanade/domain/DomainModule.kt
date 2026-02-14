@@ -74,7 +74,6 @@ import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.history.interactor.GetHistory
 import tachiyomi.domain.history.interactor.GetNextChapters
 import tachiyomi.domain.history.interactor.GetTotalReadDuration
-import tachiyomi.domain.history.interactor.RefreshHistoryCache
 import tachiyomi.domain.history.interactor.RemoveHistory
 import tachiyomi.domain.history.interactor.UpsertHistory
 import tachiyomi.domain.history.repository.HistoryRepository
@@ -138,10 +137,6 @@ class DomainModule : InjektModule {
         addSingletonFactory { GetLibraryManga(get()) }
         // Singleton for library cache management
         addSingletonFactory { RefreshLibraryCache(get()) }
-        // Singleton for history cache management
-        addSingletonFactory { RefreshHistoryCache(get()) }
-        // Singleton for updates cache management
-        addSingletonFactory { RefreshUpdatesCache(get()) }
         addFactory { GetMangaWithChapters(get(), get()) }
         addFactory { GetMangaByUrlAndSourceId(get()) }
         addFactory { GetManga(get()) }

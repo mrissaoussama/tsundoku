@@ -109,10 +109,11 @@ class CustomSourceCreationTests {
                 }
             }
         }
+    }
 
-        companion object {
-            @JvmStatic
-            fun searchUrlTestCases(): Stream<Arguments> = Stream.of(
+    companion object {
+        @JvmStatic
+        fun searchUrlTestCases(): Stream<Arguments> = Stream.of(
                 // WordPress ?s= pattern
                 Arguments.of(
                     "WordPress ?s= pattern",
@@ -194,9 +195,7 @@ class CustomSourceCreationTests {
                     null
                 ),
             )
-        }
     }
-
     @Nested
     @DisplayName("Site Framework Detection Tests")
     inner class SiteFrameworkDetectionTests {

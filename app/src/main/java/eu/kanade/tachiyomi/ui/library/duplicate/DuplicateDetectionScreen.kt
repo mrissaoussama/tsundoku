@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileMove
@@ -40,6 +41,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -79,7 +81,11 @@ import eu.kanade.tachiyomi.source.getNameForMangaInfo
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import kotlinx.coroutines.launch
-import tachiyomi.domain.category.model.Category
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.outlined.FilterList
+import tachiyomi.domain.category.model.Category as CategoryModel
 import tachiyomi.domain.manga.interactor.DuplicateMatchMode
 import tachiyomi.domain.manga.model.MangaWithChapterCount
 import tachiyomi.domain.source.service.SourceManager
@@ -103,7 +109,7 @@ class DuplicateDetectionScreen : Screen {
 
         val screenModel = rememberScreenModel { DuplicateDetectionScreenModel() }
         val state by screenModel.state.collectAsState()
-        
+
         // Preserve scroll position across navigation
         val listState = rememberLazyListState()
 
@@ -299,6 +305,36 @@ class DuplicateDetectionScreen : Screen {
                     )
                 }
 
+                // Collapsible filter section
+                var filtersExpanded by rememberSaveable { mutableStateOf(true) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { filtersExpanded = !filtersExpanded }
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.FilterList,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "Filters & Sort",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                        imageVector = if (filtersExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                        contentDescription = if (filtersExpanded) "Collapse" else "Expand",
+                    )
+                }
+
+                @OptIn(ExperimentalLayoutApi::class)
+                AnimatedVisibility(visible = filtersExpanded) {
+                    Column {
+
                 // Content type selector (Manga/Novel/Both)
                 Row(
                     modifier = Modifier
@@ -410,7 +446,7 @@ class DuplicateDetectionScreen : Screen {
                     FilterChip(
                         selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.PINNED_SOURCE,
                         onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.PINNED_SOURCE) },
-                        label = { 
+                        label = {
                             Icon(
                                 imageVector = Icons.Filled.PushPin,
                                 contentDescription = "Pinned",
@@ -423,36 +459,72 @@ class DuplicateDetectionScreen : Screen {
                     )
                 }
 
-                // Category filters
+                // Tristate Category filters
                 if (state.categories.isNotEmpty()) {
-                    Row(
+                    val relevantCategories = state.categories.filter { category ->
+                        when (state.contentType) {
+                            DuplicateDetectionScreenModel.ContentType.ALL -> true
+                            DuplicateDetectionScreenModel.ContentType.NOVEL ->
+                                category.contentType == CategoryModel.CONTENT_TYPE_ALL ||
+                                    category.contentType == CategoryModel.CONTENT_TYPE_NOVEL
+                            DuplicateDetectionScreenModel.ContentType.MANGA ->
+                                category.contentType == CategoryModel.CONTENT_TYPE_ALL ||
+                                    category.contentType == CategoryModel.CONTENT_TYPE_MANGA
+                        }
+                    }
+
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(
-                            "Category:",
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.align(Alignment.CenterVertically),
-                        )
-                        if (state.selectedCategoryFilters.isNotEmpty()) {
-                            FilterChip(
-                                selected = true,
-                                onClick = { screenModel.clearCategoryFilters() },
-                                label = { Text("Clear") },
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Category:",
+                                style = MaterialTheme.typography.labelMedium,
                             )
+                            if (state.selectedCategoryFilters.isNotEmpty() || state.excludedCategoryFilters.isNotEmpty()) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                FilterChip(
+                                    selected = true,
+                                    onClick = { screenModel.clearCategoryFilters() },
+                                    label = { Text("Clear") },
+                                )
+                            }
                         }
-                        state.categories.take(5).forEach { category ->
-                            FilterChip(
-                                selected = category.id in state.selectedCategoryFilters,
-                                onClick = { screenModel.toggleCategoryFilter(category.id) },
-                                label = { Text(category.name) },
-                                leadingIcon = if (category.id in state.selectedCategoryFilters) {
-                                    { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                                } else null,
-                            )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            relevantCategories.forEach { category ->
+                                val isIncluded = category.id in state.selectedCategoryFilters
+                                val isExcluded = category.id in state.excludedCategoryFilters
+                                FilterChip(
+                                    selected = isIncluded || isExcluded,
+                                    onClick = { screenModel.toggleCategoryFilter(category.id) },
+                                    label = { Text(category.name) },
+                                    leadingIcon = if (isIncluded) {
+                                        { Icon(Icons.Filled.Check, contentDescription = "Included", Modifier.size(18.dp)) }
+                                    } else if (isExcluded) {
+                                        { Icon(Icons.Filled.Close, contentDescription = "Excluded", Modifier.size(18.dp)) }
+                                    } else null,
+                                    colors = if (isExcluded) {
+                                        FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                                            selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer,
+                                        )
+                                    } else {
+                                        FilterChipDefaults.filterChipColors()
+                                    },
+                                )
+                            }
                         }
+                    }
+                }
+
                     }
                 }
 
@@ -501,17 +573,42 @@ class DuplicateDetectionScreen : Screen {
                         LoadingScreen()
                     }
                     state.filteredDuplicateGroups.isEmpty() -> {
-                        EmptyScreen(message = if (state.duplicateGroups.isEmpty()) "No duplicates found in your library." else "No duplicates match the selected filters.")
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                            ) {
+                                Text(
+                                    if (state.duplicateGroups.isEmpty()) "No duplicates found in your library." else "No duplicates match the selected filters.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Button(
+                                    onClick = { screenModel.loadDuplicates() },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Re-analyze")
+                                }
+                            }
+                        }
                     }
                     else -> {
                         // Results summary
                         Text(
                             text = "Found ${state.filteredDuplicateGroups.size} groups with ${state.filteredDuplicateGroups.values.sumOf { it.size }} potential duplicates" +
-                                if (state.selectedCategoryFilters.isNotEmpty()) " (filtered)" else "",
+                                if (state.selectedCategoryFilters.isNotEmpty() || state.excludedCategoryFilters.isNotEmpty()) " (filtered)" else "",
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         )
-                        
+
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.fillMaxSize(),
@@ -571,14 +668,14 @@ private fun DuplicateGroupCard(
     groupTitle: String,
     mangaList: List<MangaWithChapterCount>,
     selection: Set<Long>,
-    mangaCategories: Map<Long, List<Category>>,
+    mangaCategories: Map<Long, List<CategoryModel>>,
     showFullUrls: Boolean,
     onToggleSelection: (Long) -> Unit,
     onSelectGroup: () -> Unit,
     onClickManga: (Long) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(true) }
-    
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -646,7 +743,7 @@ private fun DuplicateGroupCard(
 @Composable
 private fun DuplicateItem(
     manga: MangaWithChapterCount,
-    categories: List<Category>,
+    categories: List<CategoryModel>,
     isSelected: Boolean,
     isFirst: Boolean,
     showFullUrl: Boolean,
@@ -661,7 +758,7 @@ private fun DuplicateItem(
     val downloadedCount = remember(manga.manga.id) {
         downloadManager.getDownloadCount(manga.manga)
     }
-    
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -673,9 +770,9 @@ private fun DuplicateItem(
             checked = isSelected,
             onCheckedChange = { onToggleSelection() },
         )
-        
+
         Spacer(modifier = Modifier.width(8.dp))
-        
+
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -696,9 +793,9 @@ private fun DuplicateItem(
                     )
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(2.dp))
-            
+
             // First row: chapters and source
             Row {
                 Text(
@@ -739,7 +836,7 @@ private fun DuplicateItem(
                     )
                 }
             }
-            
+
             // Second row: categories
             if (categories.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(2.dp))
@@ -753,7 +850,7 @@ private fun DuplicateItem(
                     )
                 }
             }
-            
+
             // Third row: full URL (when enabled)
             if (showFullUrl) {
                 Spacer(modifier = Modifier.height(2.dp))
@@ -791,7 +888,7 @@ private fun DeleteSelectedDialog(
 ) {
     var deleteManga by remember { mutableStateOf(false) }
     var deleteChapters by remember { mutableStateOf(true) }
-    
+
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Delete $count novels?") },
@@ -830,12 +927,12 @@ private fun DeleteSelectedDialog(
 
 @Composable
 private fun MoveToCategoryDialog(
-    categories: List<tachiyomi.domain.category.model.Category>,
+    categories: List<CategoryModel>,
     onDismiss: () -> Unit,
     onConfirm: (List<Long>) -> Unit,
 ) {
     var selectedCategories by remember { mutableStateOf(setOf<Long>()) }
-    
+
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Move to Category") },

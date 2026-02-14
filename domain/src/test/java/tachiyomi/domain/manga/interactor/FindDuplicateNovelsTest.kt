@@ -42,7 +42,7 @@ class FindDuplicateNovelsTest {
         val mangaWithCount2 = MangaWithChapterCount(manga2, 20, 10)
 
         coEvery { mangaRepository.findDuplicatesExact() } returns listOf(group)
-        coEvery { mangaRepository.getMangaWithCounts(listOf(1L, 2L)) } returns listOf(mangaWithCount1, mangaWithCount2)
+        coEvery { mangaRepository.getMangaWithCountsLight(listOf(1L, 2L)) } returns listOf(mangaWithCount1, mangaWithCount2)
 
         // Act
         val result = findDuplicateNovels.findDuplicatesGrouped(DuplicateMatchMode.EXACT)
@@ -55,25 +55,23 @@ class FindDuplicateNovelsTest {
 
     @Test
     fun `findDuplicatesGrouped CONTAINS mode handles pairs correctly`() = runBlocking {
-        // Arrange
         val manga1 = mockk<Manga> { coEvery { id } returns 1L }
         val manga2 = mockk<Manga> { coEvery { id } returns 2L }
-        
-        val pair = DuplicatePair(1L, "Short Title", 2L, "Longer Short Title")
+
         val mangaWithCount1 = MangaWithChapterCount(manga1, 10, 0)
         val mangaWithCount2 = MangaWithChapterCount(manga2, 10, 0)
 
-        coEvery { mangaRepository.findDuplicatesContains() } returns listOf(pair)
-        coEvery { mangaRepository.getMangaWithCounts(listOf(1L, 2L)) } returns listOf(mangaWithCount1, mangaWithCount2)
+        coEvery { mangaRepository.getFavoriteIdAndTitle() } returns listOf(
+            1L to "Novel",
+            2L to "Novel Extended Title",
+        )
+        coEvery { mangaRepository.getMangaWithCountsLight(listOf(1L, 2L)) } returns listOf(mangaWithCount1, mangaWithCount2)
 
         // Act
         val result = findDuplicateNovels.findDuplicatesGrouped(DuplicateMatchMode.CONTAINS)
 
         // Assert
-        // Logic: key = shortest title (lower trimmed)
-        // "Short Title" -> "short title"
-        
-        assertTrue(result.containsKey("short title"))
-        assertEquals(2, result["short title"]?.size)
+        assertTrue(result.containsKey("novel"))
+        assertEquals(2, result["novel"]?.size)
     }
 }

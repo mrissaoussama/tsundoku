@@ -13,10 +13,13 @@ data class LibraryItem(
     val unreadCount: Long = -1,
     val isLocal: Boolean = false,
     val sourceLanguage: String = "",
-    private val sourceManager: SourceManager = Injekt.get(),
-    private val getChaptersByMangaId: GetChaptersByMangaId = Injekt.get(),
 ) {
     val id: Long = libraryManga.id
+
+    companion object {
+        private val sourceManager: SourceManager by lazy { Injekt.get() }
+        private val getChaptersByMangaId: GetChaptersByMangaId by lazy { Injekt.get() }
+    }
 
     /**
      * Gets the full URL by combining the source base URL with the manga URL path
@@ -53,7 +56,7 @@ data class LibraryItem(
         useRegex: Boolean = false,
     ): Boolean {
         val sourceName by lazy { sourceManager.getOrStub(libraryManga.manga.source).getNameForMangaInfo() }
-        
+
         // Special prefixes for searching specific fields
         if (constraint.startsWith("id:", true)) {
             return id == constraint.substringAfter("id:").toLongOrNull()
@@ -98,7 +101,7 @@ data class LibraryItem(
         if (constraint.startsWith("chapter:", true)) {
             return chapterMatchIds.contains(id)
         }
-        
+
         // Default: search title, author, artist, description, source, tags, URL (if enabled), and optionally chapters
         val basicMatch = matchString(libraryManga.manga.title, constraint, useRegex) ||
             (libraryManga.manga.author?.let { matchString(it, constraint, useRegex) } ?: false) ||
@@ -111,7 +114,7 @@ data class LibraryItem(
                         (libraryManga.manga.genre?.any { genre -> matchString(genre, it, useRegex) } ?: false)
                 }
             }
-        
+
         // Include chapter name matches if available
         return basicMatch || chapterMatchIds.contains(id)
     }

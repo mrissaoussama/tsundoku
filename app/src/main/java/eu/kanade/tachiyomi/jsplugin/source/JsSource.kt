@@ -494,7 +494,8 @@ class JsSource(
                 // Only override chapter_number if the plugin didn't provide one
                 // (default SChapter chapter_number is -1)
                 if (chapter.chapter_number < 0 || total > 1) {
-                    chapter.chapter_number = (total - index).toFloat()
+                    // Assign sequential numbers matching position: index 0 → 1, index 1 → 2, etc.
+                    chapter.chapter_number = (index + 1).toFloat()
                 }
             }
 

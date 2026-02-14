@@ -110,13 +110,7 @@ fun MangaCoverDialog(
                             Box {
                                 var expanded by remember { mutableStateOf(false) }
                                 IconButton(
-                                    onClick = {
-                                        if (isCustomCover) {
-                                            expanded = true
-                                        } else {
-                                            onEditClick(EditCoverAction.EDIT)
-                                        }
-                                    },
+                                    onClick = { expanded = true },
                                 ) {
                                     Icon(
                                         imageVector = Icons.Outlined.Edit,
@@ -135,10 +129,19 @@ fun MangaCoverDialog(
                                             expanded = false
                                         },
                                     )
+                                    if (isCustomCover) {
+                                        DropdownMenuItem(
+                                            text = { Text(text = stringResource(MR.strings.action_delete)) },
+                                            onClick = {
+                                                onEditClick(EditCoverAction.DELETE)
+                                                expanded = false
+                                            },
+                                        )
+                                    }
                                     DropdownMenuItem(
-                                        text = { Text(text = stringResource(MR.strings.action_delete)) },
+                                        text = { Text(text = stringResource(MR.strings.pref_clear_cover)) },
                                         onClick = {
-                                            onEditClick(EditCoverAction.DELETE)
+                                            onEditClick(EditCoverAction.CLEAR)
                                             expanded = false
                                         },
                                     )

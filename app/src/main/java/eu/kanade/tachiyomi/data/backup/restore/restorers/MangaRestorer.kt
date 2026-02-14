@@ -79,6 +79,24 @@ class MangaRestorer(
         }
     }
 
+    /**
+     * Restore only chapters and history for an already-existing manga,
+     * without overwriting its metadata (title, cover, description, etc.).
+     */
+    suspend fun restoreExistingChapters(
+        existingManga: Manga,
+        backupManga: BackupManga,
+        backupCategories: List<BackupCategory>,
+    ) {
+        handler.await(inTransaction = true) {
+            restoreChapters(existingManga, backupManga.chapters)
+            restoreHistory(existingManga, backupManga.history)
+            if (backupManga.categories.isNotEmpty()) {
+                restoreCategories(existingManga, backupManga.categories, backupCategories)
+            }
+        }
+    }
+
     private suspend fun findExistingManga(backupManga: BackupManga): Manga? {
         return getMangaByUrlAndSourceId.await(backupManga.url, backupManga.source)
     }
@@ -134,6 +152,7 @@ class MangaRestorer(
                 alternativeTitles = manga.alternativeTitles.takeIf {
                     it.isNotEmpty()
                 }?.let { StringListColumnAdapter.encode(it) },
+                isNovel = manga.isNovel,
             )
         }
         return manga
@@ -266,6 +285,7 @@ class MangaRestorer(
                 version = manga.version,
                 notes = manga.notes,
                 alternativeTitles = manga.alternativeTitles,
+                isNovel = manga.isNovel,
 
             )
             mangasQueries.selectLastInsertedRowId()
@@ -284,7 +304,7 @@ class MangaRestorer(
         restoreCategories(manga, categories, backupCategories)
         restoreChapters(manga, chapters)
         restoreTracking(manga, tracks)
-        restoreHistory(history)
+        restoreHistory(manga, history)
         restoreExcludedScanlators(manga, excludedScanlators)
         updateManga.awaitUpdateFetchInterval(manga, now, currentFetchWindow)
         return manga
@@ -302,15 +322,18 @@ class MangaRestorer(
         backupCategories: List<BackupCategory>,
     ) {
         val dbCategories = getCategories.await()
-        val dbCategoriesByName = dbCategories.associateBy { it.name }
+        val dbCategoriesByName = dbCategories.groupBy { it.name }
 
         val backupCategoriesByOrder = backupCategories.associateBy { it.order }
 
         val mangaCategoriesToUpdate = categories.mapNotNull { backupCategoryOrder ->
             backupCategoriesByOrder[backupCategoryOrder]?.let { backupCategory ->
-                dbCategoriesByName[backupCategory.name]?.let { dbCategory ->
-                    Pair(manga.id, dbCategory.id)
+                val dbCategory = if (backupCategory.contentType != tachiyomi.domain.category.model.Category.CONTENT_TYPE_ALL) {
+                    dbCategoriesByName[backupCategory.name]?.firstOrNull { it.contentType == backupCategory.contentType }
+                } else {
+                    dbCategoriesByName[backupCategory.name]?.firstOrNull()
                 }
+                dbCategory?.let { Pair(manga.id, it.id) }
             }
         }
 
@@ -324,31 +347,30 @@ class MangaRestorer(
         }
     }
 
-    private suspend fun restoreHistory(backupHistory: List<BackupHistory>) {
+    private suspend fun restoreHistory(manga: Manga, backupHistory: List<BackupHistory>) {
+        if (backupHistory.isEmpty()) return
+
+        val chaptersByUrl = getChaptersByMangaId.await(manga.id).associateBy { it.url }
+        val existingHistory = handler.awaitList { historyQueries.getHistoryByMangaId(manga.id) }
+            .associateBy { it.chapter_id }
+
         val toUpdate = backupHistory.mapNotNull { history ->
-            val dbHistory = handler.awaitOneOrNull { historyQueries.getHistoryByChapterUrl(history.url) }
+            val chapter = chaptersByUrl[history.url] ?: return@mapNotNull null
             val item = history.getHistoryImpl()
+            val dbHistory = existingHistory[chapter.id]
 
             if (dbHistory == null) {
-                val chapter = handler.awaitOneOrNull { chaptersQueries.getChapterByUrl(history.url) }
-                return@mapNotNull if (chapter == null) {
-                    // Chapter doesn't exist; skip
-                    null
-                } else {
-                    // New history entry
-                    item.copy(chapterId = chapter._id)
-                }
+                item.copy(chapterId = chapter.id)
+            } else {
+                item.copy(
+                    id = dbHistory._id,
+                    chapterId = dbHistory.chapter_id,
+                    readAt = max(item.readAt?.time ?: 0L, dbHistory.last_read?.time ?: 0L)
+                        .takeIf { it > 0L }
+                        ?.let { Date(it) },
+                    readDuration = max(item.readDuration, dbHistory.time_read) - dbHistory.time_read,
+                )
             }
-
-            // Update history entry
-            item.copy(
-                id = dbHistory._id,
-                chapterId = dbHistory.chapter_id,
-                readAt = max(item.readAt?.time ?: 0L, dbHistory.last_read?.time ?: 0L)
-                    .takeIf { it > 0L }
-                    ?.let { Date(it) },
-                readDuration = max(item.readDuration, dbHistory.time_read) - dbHistory.time_read,
-            )
         }
 
         if (toUpdate.isNotEmpty()) {

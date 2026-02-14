@@ -17,6 +17,8 @@ import uy.kohesive.injekt.api.get
 
 object SettingsNovelReaderScreen : SearchableSettings {
 
+    override val supportsReset: Boolean get() = true
+
     @ReadOnlyComposable
     @Composable
     override fun getTitleRes() = MR.strings.pref_category_novel

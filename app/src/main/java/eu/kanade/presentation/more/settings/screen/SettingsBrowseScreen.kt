@@ -25,6 +25,8 @@ import uy.kohesive.injekt.api.get
 
 object SettingsBrowseScreen : SearchableSettings {
 
+    override val supportsReset: Boolean get() = true
+
     @ReadOnlyComposable
     @Composable
     override fun getTitleRes() = MR.strings.browse

@@ -23,6 +23,8 @@ import java.text.NumberFormat
 
 object SettingsReaderScreen : SearchableSettings {
 
+    override val supportsReset: Boolean get() = true
+
     @ReadOnlyComposable
     @Composable
     override fun getTitleRes() = MR.strings.pref_category_reader

@@ -59,8 +59,8 @@ class RefreshLibraryCache(
      */
     suspend fun ensureIntegrity() {
         if (!checkIntegrity()) {
-            logcat(LogPriority.INFO) { "RefreshLibraryCache: Cache invalid, triggering refresh" }
-            await()
+            logcat(LogPriority.INFO) { "RefreshLibraryCache: Cache invalid, running incremental refresh" }
+            mangaRepository.refreshLibraryCacheIncremental()
         } else {
             logcat(LogPriority.DEBUG) { "RefreshLibraryCache: Cache integrity verified" }
         }

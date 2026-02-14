@@ -41,42 +41,42 @@ class JsPluginManager(
     private val sourcePreferences: SourcePreferences = Injekt.get()
     private val storageManager: StorageManager = Injekt.get()
     private val client: OkHttpClient get() = networkHelper.client
-    private val json = Json { 
-        ignoreUnknownKeys = true 
+    private val json = Json {
+        ignoreUnknownKeys = true
         isLenient = true
     }
-    
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    
+
     // Storage directories
     private val pluginsDir: UniFile?
         get() = storageManager.getLNReaderPluginsDirectory()
-        
+
     private val cacheDir: File = File(context.cacheDir, "lnreader_plugins_cache")
-    
+
     // State
     private val _repositories = MutableStateFlow<List<JsPluginRepository>>(emptyList())
     val repositories: StateFlow<List<JsPluginRepository>> = _repositories.asStateFlow()
-    
+
     private val _availablePlugins = MutableStateFlow<List<JsPlugin>>(emptyList())
     val availablePlugins: StateFlow<List<JsPlugin>> = _availablePlugins.asStateFlow()
-    
+
     private val _installedPlugins = MutableStateFlow<List<InstalledJsPlugin>>(emptyList())
     val installedPlugins: StateFlow<List<InstalledJsPlugin>> = _installedPlugins.asStateFlow()
-    
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-    
+
     private val _jsSources = MutableStateFlow<List<CatalogueSource>>(emptyList())
     val jsSources: StateFlow<List<CatalogueSource>> = _jsSources.asStateFlow()
-    
+
     init {
         cacheDir.mkdirs()
         loadInstalledPlugins()
         loadRepositories()
         loadCachedPluginList()
     }
-    
+
     private fun saveCachedPluginList(plugins: List<JsPlugin>) {
         try {
             val cacheFile = File(cacheDir, "plugin_list_cache.json")
@@ -87,7 +87,7 @@ class JsPluginManager(
             logcat(LogPriority.ERROR, e) { "Failed to save plugin list cache" }
         }
     }
-    
+
     private fun loadCachedPluginList() {
         try {
             val cacheFile = File(cacheDir, "plugin_list_cache.json")
@@ -101,7 +101,7 @@ class JsPluginManager(
             logcat(LogPriority.ERROR, e) { "Failed to load plugin list cache" }
         }
     }
-    
+
     /**
      * Refresh available plugins from all repositories
      */
@@ -113,9 +113,9 @@ class JsPluginManager(
                 logcat(LogPriority.DEBUG) { "Using cached plugin list (${_availablePlugins.value.size} plugins)" }
                 return
             }
-            
+
             val allPlugins = mutableListOf<JsPlugin>()
-            
+
             for (repo in _repositories.value.filter { it.enabled }) {
                 try {
                     val plugins = fetchPluginList(repo.url)
@@ -126,16 +126,16 @@ class JsPluginManager(
                     logcat(LogPriority.ERROR, e) { "Failed to fetch plugins from ${repo.name}" }
                 }
             }
-            
+
             _availablePlugins.value = allPlugins
-            
+
             // Save to cache file
             saveCachedPluginList(allPlugins)
         } finally {
             _isLoading.value = false
         }
     }
-    
+
     /**
      * Fetch plugin list from a repository URL
      */
@@ -146,37 +146,44 @@ class JsPluginManager(
             if (!response.isSuccessful) {
                 throw Exception("HTTP ${response.code}")
             }
-            
+
             val body = response.body?.string() ?: return@withContext emptyList()
-            json.decodeFromString<List<JsPlugin>>(body)
+            try {
+                json.decodeFromString<List<JsPlugin>>(body)
+            } catch (e: kotlinx.serialization.SerializationException) {
+                logcat(LogPriority.WARN) {
+                    "Failed to parse $url as JS plugin list: ${e.message}"
+                }
+                emptyList()
+            }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e) { "Failed to fetch plugin list from $url" }
             emptyList()
         }
     }
-    
+
     /**
      * Install a plugin by downloading and caching its code
      */
     suspend fun installPlugin(plugin: JsPlugin, repositoryUrl: String): Boolean = withContext(Dispatchers.IO) {
         try {
             _isLoading.value = true
-            
+
             val dir = pluginsDir ?: throw Exception("Plugin directory not available")
-            
+
             // Download plugin code
             val response = client.newCall(GET(plugin.url)).execute()
             if (!response.isSuccessful) {
                 logcat(LogPriority.ERROR) { "Failed to download plugin ${plugin.name}: HTTP ${response.code}" }
                 return@withContext false
             }
-            
+
             val code = response.body?.string() ?: return@withContext false
-            
+
             // Save to disk
             val pluginFile = dir.createFile("${plugin.id}.js") ?: throw Exception("Failed to create plugin file")
             pluginFile.writeUtf8(code)
-            
+
             // Save metadata
             val metadataFile = dir.createFile("${plugin.id}.json") ?: throw Exception("Failed to create metadata file")
             val installedPlugin = InstalledJsPlugin(
@@ -188,15 +195,15 @@ class JsPluginManager(
             val metadataJson = json.encodeToString(installedPlugin.plugin)
             logcat(LogPriority.INFO) { "Saving metadata for ${plugin.id}: ${metadataJson.take(200)}" }
             metadataFile.writeText(metadataJson)
-            
+
             // Update state
             _installedPlugins.update { current ->
                 current.filter { it.plugin.id != plugin.id } + installedPlugin
             }
-            
+
             // Rebuild sources
             rebuildSources()
-            
+
             // Auto-enable the plugin's language so the source appears in Novel Sources tab
             val langCode = plugin.langCode()
             if (langCode.isNotEmpty()) {
@@ -206,7 +213,7 @@ class JsPluginManager(
                     logcat(LogPriority.INFO) { "Auto-enabled language '$langCode' for plugin ${plugin.name}" }
                 }
             }
-            
+
             logcat(LogPriority.INFO) { "Installed plugin: ${plugin.name} v${plugin.version}" }
             true
         } catch (e: Exception) {
@@ -216,26 +223,26 @@ class JsPluginManager(
             _isLoading.value = false
         }
     }
-    
+
     /**
      * Uninstall a plugin
      */
     suspend fun uninstallPlugin(pluginId: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val dir = pluginsDir ?: return@withContext false
-            
+
             // Delete files
             dir.findFile("$pluginId.js")?.delete()
             dir.findFile("$pluginId.json")?.delete()
-            
+
             // Update state
             _installedPlugins.update { current ->
                 current.filter { it.plugin.id != pluginId }
             }
-            
+
             // Rebuild sources
             rebuildSources()
-            
+
             logcat(LogPriority.INFO) { "Uninstalled plugin: $pluginId" }
             true
         } catch (e: Exception) {
@@ -243,7 +250,7 @@ class JsPluginManager(
             false
         }
     }
-    
+
     /**
      * Check if a plugin has an update available
      */
@@ -251,7 +258,58 @@ class JsPluginManager(
         val available = _availablePlugins.value.find { it.id == installedPlugin.plugin.id }
         return available != null && available.version != installedPlugin.installedVersion
     }
-    
+
+    /**
+     * Install a plugin from raw JS code (e.g. from LNReader backup).
+     * Only installs if the plugin is not already installed or if the provided version is newer.
+     */
+    suspend fun installPluginFromCode(pluginId: String, code: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val dir = pluginsDir ?: throw Exception("Plugin directory not available")
+
+            val plugin = extractPluginInfo(code, pluginId)
+
+            val existing = _installedPlugins.value.find { it.plugin.id == plugin.id }
+            if (existing != null && existing.installedVersion >= plugin.version) {
+                logcat(LogPriority.DEBUG) { "Plugin '${plugin.id}' v${existing.installedVersion} already installed (backup has v${plugin.version}), skipping" }
+                return@withContext false
+            }
+
+            val pluginFile = dir.createFile("${plugin.id}.js") ?: throw Exception("Failed to create plugin file")
+            pluginFile.writeUtf8(code)
+
+            val metadataFile = dir.createFile("${plugin.id}.json") ?: throw Exception("Failed to create metadata file")
+            val metadataJson = json.encodeToString(plugin)
+            metadataFile.writeText(metadataJson)
+
+            val installedPlugin = InstalledJsPlugin(
+                plugin = plugin,
+                code = code,
+                installedVersion = plugin.version,
+                repositoryUrl = "",
+            )
+            _installedPlugins.update { current ->
+                current.filter { it.plugin.id != plugin.id } + installedPlugin
+            }
+
+            rebuildSources()
+
+            val langCode = plugin.langCode()
+            if (langCode.isNotEmpty()) {
+                val currentLangs = sourcePreferences.enabledLanguages().get()
+                if (langCode !in currentLangs) {
+                    sourcePreferences.enabledLanguages().set(currentLangs + langCode)
+                }
+            }
+
+            logcat(LogPriority.INFO) { "Installed plugin from backup: ${plugin.name} v${plugin.version}" }
+            true
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Failed to install plugin '$pluginId' from backup" }
+            false
+        }
+    }
+
     /**
      * Update a plugin to the latest version
      */
@@ -260,7 +318,7 @@ class JsPluginManager(
             ?: return false
         return installPlugin(available, installedPlugin.repositoryUrl)
     }
-    
+
     /**
      * Add a new repository
      */
@@ -275,7 +333,7 @@ class JsPluginManager(
         saveRepositories()
         scope.launch { refreshAvailablePlugins() }
     }
-    
+
     /**
      * Remove a repository
      */
@@ -285,33 +343,33 @@ class JsPluginManager(
         }
         saveRepositories()
     }
-    
+
     /**
      * Toggle repository enabled state
      */
     fun setRepositoryEnabled(url: String, enabled: Boolean) {
         _repositories.update { current ->
-            current.map { 
-                if (it.url == url) it.copy(enabled = enabled) else it 
+            current.map {
+                if (it.url == url) it.copy(enabled = enabled) else it
             }
         }
         saveRepositories()
     }
-    
+
     /**
      * Get all JS sources as CatalogueSources
      */
     fun getSources(): List<CatalogueSource> = _jsSources.value
-    
+
     /**
      * Get a specific source by ID
      */
     fun getSource(sourceId: Long): CatalogueSource? {
         return _jsSources.value.find { it.id == sourceId }
     }
-    
+
     // Private helpers
-    
+
     private fun loadInstalledPlugins() {
         scope.launch {
             val dir = pluginsDir
@@ -319,15 +377,15 @@ class JsPluginManager(
                 logcat(LogPriority.WARN) { "Plugins directory not available - storage may not be configured" }
                 return@launch
             }
-            
+
             logcat(LogPriority.DEBUG) { "Loading installed plugins from: ${dir.uri}" }
-            
+
             val allFiles = dir.listFiles()?.toList() ?: emptyList()
             val jsFiles = allFiles.filter { it.name?.endsWith(".js") == true }
             val jsonFiles = allFiles.filter { it.name?.endsWith(".json") == true }
             logcat(LogPriority.DEBUG) { "Found ${jsFiles.size} .js files and ${jsonFiles.size} .json files in plugins directory" }
             jsonFiles.forEach { f -> logcat(LogPriority.DEBUG) { "  JSON file: ${f.name}" } }
-            
+
             val plugins = jsFiles.mapNotNull { file ->
                 try {
                     var code = file.readUtf8()
@@ -383,7 +441,7 @@ class JsPluginManager(
                             logcat(LogPriority.ERROR, e) { "Re-download failed for '$nameWithoutExtension'" }
                         }
                     }
-                    
+
                     InstalledJsPlugin(
                         plugin = plugin,
                         code = code,
@@ -395,26 +453,26 @@ class JsPluginManager(
                     null
                 }
             }
-            
+
             _installedPlugins.value = plugins
             rebuildSources()
-            
+
             logcat(LogPriority.INFO) { "Loaded ${plugins.size} installed JS plugins" }
         }
     }
-    
+
     private fun extractPluginInfo(code: String, fallbackId: String): JsPlugin {
         // Try to extract plugin info from the minified JS code
         val idRegex = """this\.id\s*=\s*["']([^"']+)["']""".toRegex()
         val nameRegex = """this\.name\s*=\s*["']([^"']+)["']""".toRegex()
         val siteRegex = """this\.site\s*=\s*["']([^"']+)["']""".toRegex()
         val versionRegex = """this\.version\s*=\s*["']([^"']+)["']""".toRegex()
-        
+
         val id = idRegex.find(code)?.groupValues?.get(1) ?: fallbackId
         val name = nameRegex.find(code)?.groupValues?.get(1) ?: fallbackId
         val site = siteRegex.find(code)?.groupValues?.get(1) ?: ""
         val version = versionRegex.find(code)?.groupValues?.get(1) ?: "1.0.0"
-        
+
         return JsPlugin(
             id = id,
             name = name,
@@ -425,7 +483,7 @@ class JsPluginManager(
             iconUrl = "",
         )
     }
-    
+
     private fun rebuildSources() {
         val sources = _installedPlugins.value.map { installedPlugin ->
             JsSource(installedPlugin)
@@ -437,23 +495,44 @@ class JsPluginManager(
         _jsSources.value = sources
         logcat(LogPriority.INFO) { "JsPluginManager: rebuildSources() - _jsSources.value updated, new count: ${_jsSources.value.size}" }
     }
-    
+
     private fun loadRepositories() {
         try {
             val dir = pluginsDir
             if (dir == null) {
                 logcat(LogPriority.WARN) { "Plugins directory not available for loading repositories" }
-                // Start with empty list - user must add repositories manually
                 _repositories.value = emptyList()
                 return
             }
             val reposFile = dir.findFile("repositories.json")
             if (reposFile != null && reposFile.exists()) {
-                val content = reposFile.readText()
-                if (content.isNotBlank() && content.trim().startsWith("[")) {
-                    val repos = json.decodeFromString<List<JsPluginRepository>>(content)
-                    _repositories.value = repos
-                    logcat(LogPriority.INFO) { "Loaded ${repos.size} repositories from disk" }
+                val content = reposFile.readText().trim()
+                if (content.isNotBlank() && content.startsWith("[")) {
+                    val allRepos = mutableListOf<JsPluginRepository>()
+                    try {
+                        allRepos.addAll(json.decodeFromString<List<JsPluginRepository>>(content))
+                    } catch (e: Exception) {
+                        logcat(LogPriority.WARN) { "repositories.json has concatenated JSON, attempting to split and merge" }
+                        val segments = content.split(Regex("""\]\s*\["""))
+                        for ((i, segment) in segments.withIndex()) {
+                            val fixed = when {
+                                i == 0 && !segment.endsWith("]") -> "$segment]"
+                                i == segments.lastIndex && !segment.startsWith("[") -> "[$segment"
+                                !segment.startsWith("[") && !segment.endsWith("]") -> "[$segment]"
+                                else -> segment
+                            }
+                            try {
+                                allRepos.addAll(json.decodeFromString<List<JsPluginRepository>>(fixed))
+                            } catch (e2: Exception) {
+                                logcat(LogPriority.WARN) { "Skipping malformed JSON segment in repositories.json: ${e2.message}" }
+                            }
+                        }
+                    }
+                    _repositories.value = allRepos.distinctBy { it.url }
+                    logcat(LogPriority.INFO) { "Loaded ${allRepos.size} repositories from disk" }
+                    if (allRepos.isNotEmpty()) {
+                        saveRepositories()
+                    }
                     return
                 }
             }
@@ -466,7 +545,7 @@ class JsPluginManager(
             _repositories.value = emptyList()
         }
     }
-    
+
     private fun saveRepositories() {
         try {
             val dir = pluginsDir
@@ -486,20 +565,20 @@ class JsPluginManager(
             logcat(LogPriority.ERROR, e) { "Failed to save repositories" }
         }
     }
-    
+
     /**
      * Group plugins by language
      */
     fun getPluginsByLanguage(): Map<String, List<JsPlugin>> {
         return _availablePlugins.value.groupBy { it.lang }
     }
-    
+
     /**
      * Filter plugins by search query
      */
     fun searchPlugins(query: String): List<JsPlugin> {
         if (query.isBlank()) return _availablePlugins.value
-        
+
         val lowerQuery = query.lowercase()
         return _availablePlugins.value.filter { plugin ->
             plugin.name.lowercase().contains(lowerQuery) ||
@@ -507,26 +586,26 @@ class JsPluginManager(
             plugin.id.lowercase().contains(lowerQuery)
         }
     }
-    
+
     /**
      * Check if a plugin is installed
      */
     fun isInstalled(pluginId: String): Boolean {
         return _installedPlugins.value.any { it.plugin.id == pluginId }
     }
-    
+
     /**
      * Get installed plugin by ID
      */
     fun getInstalledPlugin(pluginId: String): InstalledJsPlugin? {
         return _installedPlugins.value.find { it.plugin.id == pluginId }
     }
-    
+
     // UniFile helpers
     private fun UniFile.readText(): String {
         return this.openInputStream().use { it.reader().readText() }
     }
-    
+
     private fun UniFile.writeText(text: String) {
         this.openOutputStream().use { output ->
             val writer = output.bufferedWriter(StandardCharsets.UTF_8)

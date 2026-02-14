@@ -25,5 +25,4 @@ interface HistoryRepository {
 
     suspend fun refreshHistoryCache()
 
-    suspend fun checkHistoryCacheIntegrity(): Pair<Long, Long>
 }

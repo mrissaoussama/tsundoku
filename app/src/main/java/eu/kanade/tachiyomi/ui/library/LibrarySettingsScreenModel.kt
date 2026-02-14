@@ -76,15 +76,19 @@ class LibrarySettingsScreenModel(
     // Loading state
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
-    
+
     // Tag search query state
     private val _tagSearchQuery = MutableStateFlow("")
     val tagSearchQuery = _tagSearchQuery.asStateFlow()
-    
+
+    // Committed tag search query
+    private val _committedTagQuery = MutableStateFlow("")
+    val committedTagQuery = _committedTagQuery.asStateFlow()
+
     // Tag options expanded state
     private val _tagOptionsExpanded = MutableStateFlow(false)
     val tagOptionsExpanded = _tagOptionsExpanded.asStateFlow()
-    
+
     // Flags to track if we've attempted to load from disk cache
     private val _extensionsLoaded = AtomicBoolean(false)
     private val _tagsLoaded = AtomicBoolean(false)
@@ -151,7 +155,7 @@ class LibrarySettingsScreenModel(
     fun toggleTagIncluded(tag: String) {
         val included = libraryPreferences.includedTags().get()
         val excluded = libraryPreferences.excludedTags().get()
-        
+
         when {
             tag in included -> {
                 // Currently included -> move to excluded
@@ -178,15 +182,24 @@ class LibrarySettingsScreenModel(
     fun toggleNoTagsFilter() {
         toggleFilter { libraryPreferences.filterNoTags() }
     }
-    
+
     fun setTagSearchQuery(query: String) {
         _tagSearchQuery.value = query
     }
-    
+
+    fun commitTagSearch() {
+        _committedTagQuery.value = _tagSearchQuery.value
+    }
+
+    fun clearTagSearch() {
+        _tagSearchQuery.value = ""
+        _committedTagQuery.value = ""
+    }
+
     fun toggleTagOptions() {
         _tagOptionsExpanded.value = !_tagOptionsExpanded.value
     }
-    
+
     /**
      * Refresh extensions list from database or cache.
      * This is the ONLY way to load extension data - no auto-subscription.
@@ -224,8 +237,12 @@ class LibrarySettingsScreenModel(
                         val displayName = if (source is JsSource) "${source.name} (JS)" else source.name
                         ExtensionInfo(sourceId, displayName, isStub)
                     } else null
-                }.sortedWith(compareBy({ !it.isStub }, { it.sourceName })) // Stub sources first, then alphabetically
-                
+                }.sortedWith(
+                    compareBy<ExtensionInfo> { it.sourceId != 0L && it.sourceId != 1L }
+                        .thenBy { !it.isStub }
+                        .thenBy(String.CASE_INSENSITIVE_ORDER) { it.sourceName },
+                )
+
                 _extensionsFlow.value = extensions
                 librarySettingsCache.saveExtensions(extensions)
                 _extensionsLoaded.set(true)
@@ -236,7 +253,7 @@ class LibrarySettingsScreenModel(
             }
         }
     }
-    
+
     /**
      * Refresh tags list and counts from database or cache.
      * This is the ONLY way to load tag data - no auto-subscription.
@@ -248,7 +265,7 @@ class LibrarySettingsScreenModel(
             _isLoading.value = true
             try {
                 logcat(LogPriority.INFO) { "LibrarySettingsScreenModel: refreshTags(forceRefresh=$forceRefresh, type=$type)" }
-                
+
                 // Skip cache when filtering by type - we need fresh filtered data
                 // Cache is only useful for All type
                 if (!forceRefresh && !_tagsLoaded.get() && type == LibraryScreenModel.LibraryType.All) {
@@ -267,7 +284,7 @@ class LibrarySettingsScreenModel(
                 logcat(LogPriority.INFO) { "LibrarySettingsScreenModel: Loading tags from database (lightweight query with source filtering)..." }
                 val genresList = getLibraryManga.awaitGenresWithSource()
                 logcat(LogPriority.DEBUG) { "LibrarySettingsScreenModel: Got ${genresList.size} manga from library" }
-                
+
                 // Calculate tag counts, filtering by type
                 val tagCounts = mutableMapOf<String, Int>()
                 var noTagsCount = 0
@@ -280,7 +297,7 @@ class LibrarySettingsScreenModel(
                         LibraryScreenModel.LibraryType.Manga -> !isNovel
                         LibraryScreenModel.LibraryType.Novel -> isNovel
                     }
-                    
+
                     if (shouldInclude) {
                         if (genres.isNullOrEmpty()) {
                             noTagsCount++
@@ -294,16 +311,16 @@ class LibrarySettingsScreenModel(
                         }
                     }
                 }
-                
+
                 logcat(LogPriority.INFO) { "LibrarySettingsScreenModel: Found ${tagCounts.size} unique tags, $noTagsCount items without tags (type=$type)" }
-                
+
                 val tagsList = tagCounts.entries
                     .sortedByDescending { it.value }
                     .map { it.key to it.value }
-                
+
                 _tagsFlow.value = tagsList
                 _noTagsCountFlow.value = noTagsCount
-                
+
                 // Only cache for All type
                 if (type == LibraryScreenModel.LibraryType.All) {
                     librarySettingsCache.saveTags(tagsList, noTagsCount)

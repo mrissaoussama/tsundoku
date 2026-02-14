@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import logcat.LogPriority
+import eu.kanade.tachiyomi.source.isNovelSource
 import mihon.domain.manga.model.toDomainManga
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.lang.withIOContext
@@ -417,7 +418,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                         .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
                     this.initialized = false
                 }
-                val manga = networkToLocalManga(placeholderManga.toDomainManga(source.id))
+                val manga = networkToLocalManga(placeholderManga.toDomainManga(source.id, source.isNovelSource()))
                 // Still add to library if requested
                 if (addToLibrary) {
                     mangaRepository.update(
@@ -455,7 +456,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         sManga.url = normalizedPath
 
         // Convert to local manga
-        val manga = networkToLocalManga(sManga.toDomainManga(source.id))
+        val manga = networkToLocalManga(sManga.toDomainManga(source.id, source.isNovelSource()))
 
         if (addToLibrary) {
             mangaRepository.update(

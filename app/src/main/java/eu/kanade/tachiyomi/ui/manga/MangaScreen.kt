@@ -298,6 +298,7 @@ class MangaScreen(
                             when (it) {
                                 EditCoverAction.EDIT -> getContent.launch("image/*")
                                 EditCoverAction.DELETE -> sm.deleteCustomCover(context)
+                                EditCoverAction.CLEAR -> sm.clearCover(context)
                             }
                         },
                         onDismissRequest = onDismissRequest,

@@ -27,7 +27,9 @@ import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.i18n.MR
+import tachiyomi.source.local.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
@@ -137,6 +139,28 @@ class MangaCoverScreenModel(
             try {
                 coverCache.deleteCustomCover(mangaId)
                 updateManga.awaitUpdateCoverLastModified(mangaId)
+                notifyCoverUpdated(context)
+            } catch (e: Exception) {
+                notifyFailedCoverUpdate(context, e)
+            }
+        }
+    }
+
+    fun clearCover(context: Context) {
+        val manga = state.value ?: return
+        screenModelScope.launchIO {
+            try {
+                if (!manga.isLocal()) {
+                    coverCache.deleteFromCache(manga, true)
+                }
+                coverCache.deleteCustomCover(manga.id)
+                updateManga.await(
+                    MangaUpdate(
+                        id = manga.id,
+                        thumbnailUrl = "",
+                        coverLastModified = System.currentTimeMillis(),
+                    ),
+                )
                 notifyCoverUpdated(context)
             } catch (e: Exception) {
                 notifyFailedCoverUpdate(context, e)

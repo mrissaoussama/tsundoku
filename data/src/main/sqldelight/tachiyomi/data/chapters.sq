@@ -27,6 +27,8 @@ CREATE INDEX chapters_library_aggregate_index ON chapters(manga_id, read, bookma
 CREATE INDEX chapters_manga_scanlator_index ON chapters(manga_id, scanlator);
 -- Index to speed up getReadMangaNotInLibrary query which scans for read chapters
 CREATE INDEX chapters_read_progress_index ON chapters(manga_id, read, last_page_read) WHERE read = 1 OR last_page_read != 0;
+-- Index for chapter URL lookups (used by backup restore, history restore, etc.)
+CREATE INDEX chapters_url_index ON chapters(url);
 
 CREATE TRIGGER update_last_modified_at_chapters
 AFTER UPDATE ON chapters
@@ -53,60 +55,34 @@ BEGIN
     WHERE _id = new.manga_id AND (SELECT is_syncing FROM mangas WHERE _id = new.manga_id) = 0;
 END;
 
--- Triggers for updates_cache
-
--- Insert into updates_cache when a chapter is inserted for a favorite manga
+-- updates_cache trigger: new chapter inserted for a favorited manga
 CREATE TRIGGER updates_cache_chapter_insert
 AFTER INSERT ON chapters
 WHEN (SELECT favorite FROM mangas WHERE _id = new.manga_id) = 1
 AND new.date_fetch > (SELECT date_added FROM mangas WHERE _id = new.manga_id)
 BEGIN
-    INSERT INTO updates_cache (
-        manga_id, manga_title, chapter_id, chapter_name, scanlator, chapter_url,
-        read, bookmark, last_page_read, source, favorite, thumbnail_url,
-        cover_last_modified, date_upload, date_fetch
+    INSERT OR IGNORE INTO updates_cache (
+        manga_id, manga_title, chapter_id, chapter_name, scanlator,
+        chapter_url, read, bookmark, last_page_read, source,
+        favorite, thumbnail_url, cover_last_modified, date_upload, date_fetch
     )
-    VALUES (
-        new.manga_id,
-        (SELECT title FROM mangas WHERE _id = new.manga_id),
-        new._id,
-        new.name,
-        new.scanlator,
-        new.url,
-        new.read,
-        new.bookmark,
-        new.last_page_read,
-        (SELECT source FROM mangas WHERE _id = new.manga_id),
-        (SELECT favorite FROM mangas WHERE _id = new.manga_id),
-        (SELECT thumbnail_url FROM mangas WHERE _id = new.manga_id),
-        (SELECT cover_last_modified FROM mangas WHERE _id = new.manga_id),
-        new.date_upload,
-        new.date_fetch
-    );
+    SELECT
+        new.manga_id, mangas.title, new._id, new.name, new.scanlator,
+        new.url, new.read, new.bookmark, new.last_page_read, mangas.source,
+        1, mangas.thumbnail_url, mangas.cover_last_modified, new.date_upload, new.date_fetch
+    FROM mangas WHERE mangas._id = new.manga_id;
 END;
 
--- Update updates_cache when chapter is updated (read status, bookmark, etc.)
+-- updates_cache trigger: chapter read/bookmark/progress changed
 CREATE TRIGGER updates_cache_chapter_update
-AFTER UPDATE ON chapters
+AFTER UPDATE OF read, bookmark, last_page_read ON chapters
 BEGIN
     UPDATE updates_cache
-    SET chapter_name = new.name,
-        scanlator = new.scanlator,
-        chapter_url = new.url,
-        read = new.read,
-        bookmark = new.bookmark,
-        last_page_read = new.last_page_read,
-        date_upload = new.date_upload,
-        date_fetch = new.date_fetch
+    SET read = new.read, bookmark = new.bookmark, last_page_read = new.last_page_read
     WHERE chapter_id = new._id;
 END;
 
--- Delete from updates_cache when chapter is deleted
-CREATE TRIGGER updates_cache_chapter_delete
-AFTER DELETE ON chapters
-BEGIN
-    DELETE FROM updates_cache WHERE chapter_id = old._id;
-END;
+
 
 getChapterById:
 SELECT *

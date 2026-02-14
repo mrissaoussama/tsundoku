@@ -40,6 +40,16 @@ interface MangaRepository {
 
     suspend fun getFavoriteSourceAndUrl(): List<Pair<Long, String>>
 
+    /**
+     * returns only (id, url) pairs for favorites.
+     */
+    suspend fun getFavoriteIdAndUrl(): List<Pair<Long, String>>
+
+    /**
+     * returns only (id, genre) pairs for favorites that have genres.
+     */
+    suspend fun getFavoriteIdAndGenre(): List<Pair<Long, List<String>?>>
+
     suspend fun getReadMangaNotInLibrary(): List<Manga>
 
     suspend fun getLibraryManga(): List<LibraryManga>
@@ -55,6 +65,11 @@ interface MangaRepository {
     suspend fun findDuplicatesExact(): List<DuplicateGroup>
 
     suspend fun findDuplicatesContains(): List<DuplicatePair>
+
+    /**
+     * Get ID + title pairs for all favorites.
+     */
+    suspend fun getFavoriteIdAndTitle(): List<Pair<Long, String>>
 
     /**
      * Find duplicates by URL within the same source.
@@ -88,6 +103,8 @@ interface MangaRepository {
 
     suspend fun getMangaWithCounts(ids: List<Long>): List<MangaWithChapterCount>
 
+    suspend fun getMangaWithCountsLight(ids: List<Long>): List<MangaWithChapterCount>
+
     suspend fun getUpcomingManga(statuses: Set<Long>): Flow<List<Manga>>
 
     suspend fun resetViewerFlags(): Boolean
@@ -107,7 +124,7 @@ interface MangaRepository {
     suspend fun insertNetworkManga(manga: List<Manga>): List<Manga>
 
     suspend fun normalizeAllUrls(): Int
-    
+
     /**
      * Data class to hold information about a duplicate URL entry.
      */
@@ -117,7 +134,7 @@ interface MangaRepository {
         val oldUrl: String,
         val normalizedUrl: String,
     )
-    
+
     /**
      * Normalize URLs with advanced options.
      * @param removeDoubleSlashes whether to also remove double slashes from URLs
@@ -135,9 +152,14 @@ interface MangaRepository {
 
     /**
      * Refresh the library cache table.
-     * Call this after bulk operations or on app startup to ensure cache integrity.
+     * Call this after bulk operations to ensure cache integrity.
      */
     suspend fun refreshLibraryCache()
+
+    /**
+     * Incrementally refresh the library cache
+     */
+    suspend fun refreshLibraryCacheIncremental()
 
     /**
      * Refresh the library cache for a specific manga.
