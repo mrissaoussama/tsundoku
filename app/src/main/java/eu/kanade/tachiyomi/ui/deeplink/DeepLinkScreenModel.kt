@@ -6,6 +6,7 @@ import cafe.adriel.voyager.core.model.screenModelScope
 import eu.kanade.domain.chapter.interactor.SyncChaptersWithSource
 import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.tachiyomi.source.Source
+import eu.kanade.tachiyomi.source.isNovelSource
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.online.ResolvableSource
 import eu.kanade.tachiyomi.source.online.UriType
@@ -35,7 +36,7 @@ class DeepLinkScreenModel(
                 .firstOrNull { it.getUriType(query) != UriType.Unknown }
 
             val manga = source?.getManga(query)?.let {
-                networkToLocalManga(it.toDomainManga(source.id))
+                networkToLocalManga(it.toDomainManga(source.id, source.isNovelSource()))
             }
 
             val chapter = if (source?.getUriType(query) == UriType.Chapter && manga != null) {

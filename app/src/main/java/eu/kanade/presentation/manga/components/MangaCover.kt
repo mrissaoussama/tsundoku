@@ -32,6 +32,7 @@ enum class MangaCover(val ratio: Float) {
             model = data,
             placeholder = ColorPainter(CoverPlaceholderColor),
             error = rememberResourceBitmapPainter(id = R.drawable.cover_error),
+            fallback = rememberResourceBitmapPainter(id = R.drawable.cover_default),
             contentDescription = contentDescription,
             modifier = modifier
                 .aspectRatio(ratio)

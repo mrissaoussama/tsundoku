@@ -32,6 +32,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.interactor.SetMangaCategories
 import tachiyomi.domain.category.model.Category
+import tachiyomi.domain.chapter.interactor.GetChapter
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.history.interactor.GetHistory
 import tachiyomi.domain.history.interactor.GetNextChapters
@@ -51,6 +52,7 @@ enum class HistoryFilter { ALL, MANGA, NOVELS }
 class HistoryScreenModel(
     private val addTracks: AddTracks = Injekt.get(),
     private val getCategories: GetCategories = Injekt.get(),
+    private val getChapter: GetChapter = Injekt.get(),
     private val getDuplicateLibraryManga: GetDuplicateLibraryManga = Injekt.get(),
     private val getHistory: GetHistory = Injekt.get(),
     private val getManga: GetManga = Injekt.get(),
@@ -77,7 +79,7 @@ class HistoryScreenModel(
                             logcat(LogPriority.ERROR, error)
                             _events.send(Event.InternalError)
                         }
-                        .map { histories -> 
+                        .map { histories ->
                             val filtered = histories.filterBy(filter)
                             val grouped = if (groupByNovel) filtered.groupByNovel() else filtered
                             grouped.toHistoryUiModels()
@@ -87,7 +89,7 @@ class HistoryScreenModel(
                 .collect { newList -> mutableState.update { it.copy(list = newList) } }
         }
     }
-    
+
     private fun List<HistoryWithRelations>.groupByNovel(): List<HistoryWithRelations> {
         // Group by manga and keep only the latest entry for each
         return groupBy { it.mangaId }
@@ -125,7 +127,8 @@ class HistoryScreenModel(
 
     fun getNextChapterForManga(mangaId: Long, chapterId: Long) {
         screenModelScope.launchIO {
-            sendNextChapterEvent(getNextChapters.await(mangaId, chapterId, onlyUnread = false))
+            val chapter = getChapter.await(chapterId)
+            _events.send(Event.OpenChapter(chapter))
         }
     }
 

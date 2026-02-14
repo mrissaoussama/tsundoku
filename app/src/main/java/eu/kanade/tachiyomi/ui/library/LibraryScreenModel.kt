@@ -199,7 +199,6 @@ class LibraryScreenModel(
                     loggedInTrackerIds = (trackingFilters as Map<Long, TriState>).keys,
                 )
             }
-                .distinctUntilChanged()
                 .collectLatest { libraryData ->
                     mutableState.update { state ->
                         state.copy(libraryData = libraryData)
@@ -211,7 +210,6 @@ class LibraryScreenModel(
             state
                 .dropWhile { !it.libraryData.isInitialized }
                 .map { it.libraryData }
-                .distinctUntilChanged()
                 .map { data ->
                     data.favorites
                         .applyGrouping(data.categories, data.showSystemCategory)
@@ -293,8 +291,7 @@ class LibraryScreenModel(
         val filterFnDownloaded: (LibraryItem) -> Boolean = {
             applyFilter(filterDownloaded) {
                 it.libraryManga.manga.isLocal() ||
-                    it.downloadCount > 0 ||
-                    downloadManager.getDownloadCount(it.libraryManga.manga) > 0
+                    it.downloadCount > 0
             }
         }
 
@@ -341,10 +338,17 @@ class LibraryScreenModel(
         }
 
         val filterFnNovel: (LibraryItem) -> Boolean = { item ->
-            val source = sourceManager.get(item.libraryManga.manga.source)
-            val isNovel = source?.isNovelSource() == true
+            val isNovel = item.libraryManga.manga.isNovel
             applyFilter(preferences.filterNovel) { isNovel }
         }
+
+        val tagIncluded = preferences.includedTags
+        val tagExcluded = preferences.excludedTags
+        val tagCaseSensitive = preferences.tagCaseSensitive
+        val normalizedIncluded = if (tagCaseSensitive) tagIncluded else tagIncluded.mapTo(HashSet()) { it.lowercase() }
+        val normalizedExcluded = if (tagCaseSensitive) tagExcluded else tagExcluded.mapTo(HashSet()) { it.lowercase() }
+        val tagIncludeModeAnd = preferences.tagIncludeModeAnd
+        val tagExcludeModeAnd = preferences.tagExcludeModeAnd
 
         val filterFnTags: (LibraryItem) -> Boolean = tags@{ item ->
             val mangaTags = item.libraryManga.manga.genre
@@ -363,37 +367,23 @@ class LibraryScreenModel(
                 }
             }
 
-            val includedTags = preferences.includedTags
-            val excludedTags = preferences.excludedTags
-            val caseSensitive = preferences.tagCaseSensitive
+            if (normalizedIncluded.isEmpty() && normalizedExcluded.isEmpty()) return@tags true
 
-            // If no tag filters are set, pass through
-            if (includedTags.isEmpty() && excludedTags.isEmpty()) return@tags true
+            val normalizedMangaTags = if (tagCaseSensitive) mangaTags else mangaTags.map { it.lowercase() }
 
-            // Normalize tags for comparison if case insensitive
-            val normalizedMangaTags = if (caseSensitive) mangaTags else mangaTags.map { it.lowercase() }
-            val normalizedIncluded = if (caseSensitive) includedTags else includedTags.map { it.lowercase() }.toSet()
-            val normalizedExcluded = if (caseSensitive) excludedTags else excludedTags.map { it.lowercase() }.toSet()
-
-            // Check excluded tags
             if (normalizedExcluded.isNotEmpty()) {
-                val hasExcludedTag = if (preferences.tagExcludeModeAnd) {
-                    // AND mode: all excluded tags must be present to exclude
+                val hasExcludedTag = if (tagExcludeModeAnd) {
                     normalizedExcluded.all { excludedTag -> normalizedMangaTags.any { it == excludedTag } }
                 } else {
-                    // OR mode: any excluded tag present means exclude
                     normalizedMangaTags.any { tag -> tag in normalizedExcluded }
                 }
                 if (hasExcludedTag) return@tags false
             }
 
-            // Check included tags
             if (normalizedIncluded.isNotEmpty()) {
-                val hasIncludedTag = if (preferences.tagIncludeModeAnd) {
-                    // AND mode: all included tags must be present
+                val hasIncludedTag = if (tagIncludeModeAnd) {
                     normalizedIncluded.all { includedTag -> normalizedMangaTags.any { it == includedTag } }
                 } else {
-                    // OR mode: any included tag present means include
                     normalizedMangaTags.any { tag -> tag in normalizedIncluded }
                 }
                 if (!hasIncludedTag) return@tags false
@@ -514,10 +504,6 @@ class LibraryScreenModel(
         }
     }
 
-    private fun isNovel(sourceId: Long): Boolean {
-        return sourceManager.get(sourceId)?.isNovelSource() == true
-    }
-
     private fun getLibraryItemPreferencesFlow(): Flow<ItemPreferences> {
         return combine(
             combine(
@@ -572,29 +558,38 @@ class LibraryScreenModel(
         }
     }
 
+    private var isNovelBackfillDone = false
+
     private fun getFavoritesFlow(): Flow<List<LibraryItem>> {
         return combine(
-            // Repository already has debounce(300) and distinctUntilChanged()
             getLibraryManga.subscribe(),
             getLibraryItemPreferencesFlow(),
             downloadCache.changes,
         ) { libraryManga, preferences, _ ->
+            if (!isNovelBackfillDone) {
+                isNovelBackfillDone = true
+                val toUpdate = libraryManga
+                    .filter { !it.manga.isNovel }
+                    .filter { sourceManager.get(it.manga.source)?.isNovelSource() == true }
+                    .map { MangaUpdate(id = it.manga.id, isNovel = true) }
+                if (toUpdate.isNotEmpty()) {
+                    screenModelScope.launchIO { updateManga.awaitAll(toUpdate) }
+                }
+            }
+
             libraryManga
                 .filter { item ->
                     when (type) {
                         LibraryType.All -> true
-                        LibraryType.Manga -> !isNovel(item.manga.source)
-                        LibraryType.Novel -> isNovel(item.manga.source)
+                        LibraryType.Manga -> !item.manga.isNovel
+                        LibraryType.Novel -> item.manga.isNovel
                     }
                 }
                 .map { manga ->
+                  val dlCount = downloadManager.getDownloadCount(manga.manga).toLong()
                     LibraryItem(
                         libraryManga = manga,
-                        downloadCount = if (preferences.downloadBadge) {
-                            downloadManager.getDownloadCount(manga.manga).toLong()
-                        } else {
-                            0
-                        },
+                        downloadCount = dlCount,
                         unreadCount = if (preferences.unreadBadge) {
                             manga.unreadCount
                         } else {
@@ -701,9 +696,7 @@ class LibraryScreenModel(
     fun translateSelectedNovels() {
         val translationService: TranslationService = Injekt.get()
         val mangas = state.value.selectedManga.filter { manga ->
-            // Only process novels (not manga)
-            val source = sourceManager.get(manga.source)
-            source?.isNovelSource() == true
+            manga.isNovel
         }
         clearSelection()
         screenModelScope.launchNonCancellable {
@@ -736,6 +729,15 @@ class LibraryScreenModel(
                     read = read,
                 )
             }
+            val updates = selection.associate { manga ->
+                manga.id to { libraryManga: tachiyomi.domain.library.model.LibraryManga ->
+                    libraryManga.copy(
+                        readCount = if (read) libraryManga.totalChapters else 0,
+                        lastRead = if (read) System.currentTimeMillis() else libraryManga.lastRead,
+                    )
+                }
+            }
+            getLibraryManga.applyBatchChapterUpdates(updates)
         }
         clearSelection()
     }
@@ -801,7 +803,11 @@ class LibraryScreenModel(
                 }
             }
             val updates = mangas.map {
-                MangaUpdate(id = it.id, coverLastModified = java.time.Instant.now().toEpochMilli())
+                MangaUpdate(
+                    id = it.id,
+                    thumbnailUrl = "",
+                    coverLastModified = System.currentTimeMillis(),
+                )
             }
             updateManga.awaitAll(updates)
 
@@ -1108,7 +1114,7 @@ class LibraryScreenModel(
 
     fun openExportEpubDialog() {
         val selectedNovels = state.value.selectedManga.filter { manga ->
-            sourceManager.get(manga.source)?.isNovelSource() == true
+            manga.isNovel
         }
         if (selectedNovels.isEmpty()) {
             screenModelScope.launchIO {

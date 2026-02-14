@@ -9,6 +9,7 @@ import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.presentation.util.ioCoroutineScope
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.source.CatalogueSource
+import eu.kanade.tachiyomi.source.isNovelSource
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.mutate
 import kotlinx.collections.immutable.persistentMapOf
@@ -167,7 +168,7 @@ abstract class SearchScreenModel(
                         }
 
                         val titles = page.mangas
-                            .map { it.toDomainManga(source.id) }
+                            .map { it.toDomainManga(source.id, source.isNovelSource()) }
                             .distinctBy { it.url }
                             .let { networkToLocalManga(it) }
 

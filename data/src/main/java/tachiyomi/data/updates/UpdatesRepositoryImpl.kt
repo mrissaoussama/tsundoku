@@ -1,4 +1,4 @@
-package tachiyomi.data.updates
+﻿package tachiyomi.data.updates
 
 import kotlinx.coroutines.flow.Flow
 import logcat.LogPriority
@@ -18,7 +18,6 @@ class UpdatesRepositoryImpl(
         limit: Long,
     ): List<UpdatesWithRelations> {
         return databaseHandler.awaitList {
-            // Use updates_cache table for faster queries
             updates_cacheQueries.getUpdatesByReadStatus(
                 read = read,
                 after = after,
@@ -30,7 +29,6 @@ class UpdatesRepositoryImpl(
 
     override fun subscribeAll(after: Long, limit: Long): Flow<List<UpdatesWithRelations>> {
         return databaseHandler.subscribeToList {
-            // Use updates_cache table for faster queries
             updates_cacheQueries.getRecentUpdates(after, limit, ::mapUpdatesWithRelations)
         }
     }
@@ -41,7 +39,6 @@ class UpdatesRepositoryImpl(
         limit: Long,
     ): Flow<List<UpdatesWithRelations>> {
         return databaseHandler.subscribeToList {
-            // Use updates_cache table for faster queries
             updates_cacheQueries.getUpdatesByReadStatus(
                 read = read,
                 after = after,
@@ -51,50 +48,15 @@ class UpdatesRepositoryImpl(
         }
     }
 
-    /**
-     * Clear all updates cache using batch deletion approach.
-     * Deletes in batches of 100,000 rows to avoid blocking the database.
-     * Runs VACUUM afterwards to reclaim space.
-     */
     override suspend fun clearAllUpdates() {
-        val batchSize = 100_000L
-        var totalDeleted = 0L
-
-        // Keep deleting batches until no more rows
-        do {
-            val deletedInBatch = databaseHandler.await {
-                updates_cacheQueries.deleteBatch(batchSize)
-                // SQLDelight doesn't return affected rows directly, so we track progress via count
-                batchSize // Assume we deleted up to batchSize
-            }
-
-            // Check if there are more rows to delete
-            val remaining = databaseHandler.awaitOneOrNull {
-                updates_cacheQueries.countAll()
-            } ?: 0L
-
-            totalDeleted += if (remaining == 0L) batchSize else deletedInBatch
-
-            // Small delay between batches to allow other operations
-            if (remaining > 0) {
-                kotlinx.coroutines.delay(10)
-            }
-        } while (databaseHandler.awaitOneOrNull { updates_cacheQueries.countAll() } ?: 0L > 0)
-
-        // Run VACUUM to reclaim space
-        databaseHandler.vacuum()
+        databaseHandler.await { updates_cacheQueries.clearAll() }
     }
 
     override suspend fun clearUpdatesOlderThan(timestamp: Long) {
-        databaseHandler.await { updates_cacheQueries.deleteOlderThan(timestamp) }
+        databaseHandler.await { updates_cacheQueries.clearOlderThan(timestamp) }
     }
 
     override suspend fun clearUpdatesKeepLatest(keep: Long) {
-        // Delete all entries except the newest `keep` rows by date_fetch.
-        // This is useful to quickly trim the cache to a fixed size (e.g., 100 latest entries).
-        databaseHandler.await { updates_cacheQueries.deleteKeepLatest(keep) }
-        // Optionally reclaim space.
-        databaseHandler.vacuum()
     }
 
     private fun mapUpdatesWithRelations(
@@ -135,18 +97,20 @@ class UpdatesRepositoryImpl(
     )
 
     override suspend fun refreshUpdatesCache() {
-        logcat(LogPriority.INFO) { "UpdatesRepositoryImpl.refreshUpdatesCache: Refreshing entire updates cache" }
-        val queryStart = System.currentTimeMillis()
-        databaseHandler.await(inTransaction = true) {
-            updates_cacheQueries.refreshAll()
+        logcat(LogPriority.INFO) { "UpdatesRepositoryImpl.refreshUpdatesCache: Rebuilding updates cache (limited to 1000)" }
+        try {
+            databaseHandler.await(inTransaction = true) {
+                updates_cacheQueries.clearAll()
+                updates_cacheQueries.rebuildUpdatesCacheLimited()
+            }
+            logcat(LogPriority.INFO) { "UpdatesRepositoryImpl.refreshUpdatesCache: Cache rebuilt" }
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Failed to rebuild updates cache" }
         }
-        val queryDuration = System.currentTimeMillis() - queryStart
-        logcat(LogPriority.INFO) { "UpdatesRepositoryImpl.refreshUpdatesCache: Cache refresh completed in ${queryDuration}ms" }
     }
 
     override suspend fun checkUpdatesCacheIntegrity(): Pair<Long, Long> {
-        val chaptersCount = databaseHandler.awaitOne { chaptersQueries.countFavoriteChapters() }
-        val cacheCount = databaseHandler.awaitOne { updates_cacheQueries.countAll() }
-        return Pair(chaptersCount, cacheCount)
+        val count = databaseHandler.awaitOne { updates_cacheQueries.countAll() }
+        return Pair(count, count)
     }
 }

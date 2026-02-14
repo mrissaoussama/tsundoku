@@ -22,6 +22,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
+import eu.kanade.tachiyomi.source.isNovelSource
 import tachiyomi.domain.category.interactor.SetMangaCategories
 import tachiyomi.domain.download.service.NovelDownloadPreferences
 import tachiyomi.domain.library.model.LibraryManga
@@ -413,7 +414,7 @@ class MassImport(
             }
 
             // Convert to local manga and add to library
-            val manga = networkToLocalManga(sManga.toDomainManga(source.id))
+            val manga = networkToLocalManga(sManga.toDomainManga(source.id, source.isNovelSource()))
 
             if (addToLibrary) {
                 // Update manga to be in library - persist to database
@@ -676,7 +677,7 @@ class MassImport(
 /**
  * Extension to convert SManga to domain Manga
  */
-private fun eu.kanade.tachiyomi.source.model.SManga.toDomainManga(sourceId: Long): Manga {
+private fun eu.kanade.tachiyomi.source.model.SManga.toDomainManga(sourceId: Long, isNovel: Boolean = false): Manga {
     return Manga.create().copy(
         url = url,
         title = title,
@@ -688,5 +689,6 @@ private fun eu.kanade.tachiyomi.source.model.SManga.toDomainManga(sourceId: Long
         thumbnailUrl = thumbnail_url,
         initialized = initialized,
         source = sourceId,
+        isNovel = isNovel,
     )
 }

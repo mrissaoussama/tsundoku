@@ -22,13 +22,18 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import logcat.LogPriority
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -85,8 +90,14 @@ class ExtensionsScreenModel(
         }
 
         screenModelScope.launchIO {
+            val searchQueryFlow = state.map { it.searchQuery }.distinctUntilChanged()
+            val debouncedSearch = merge(
+                searchQueryFlow.take(1),
+                searchQueryFlow.drop(1).debounce(SEARCH_DEBOUNCE_MILLIS),
+            )
+
             combine(
-                state.map { it.searchQuery }.distinctUntilChanged().debounce(SEARCH_DEBOUNCE_MILLIS),
+                debouncedSearch,
                 currentDownloads,
                 getExtensions.subscribe(),
             ) { query, downloads, (_updates, _installed, _available, _untrusted) ->

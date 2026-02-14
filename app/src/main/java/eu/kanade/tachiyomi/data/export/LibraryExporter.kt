@@ -105,12 +105,7 @@ object LibraryExporter {
             }
 
             if (options.includeIsNovel) {
-                val isNovel = try {
-                    sourceManager.get(manga.source)?.isNovelSource == true
-                } catch (_: Exception) {
-                    false
-                }
-                row.add(if (isNovel) "Yes" else "No")
+                row.add(if (manga.isNovel) "Yes" else "No")
             }
 
             if (options.includeDescription) {

@@ -8,6 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import eu.kanade.tachiyomi.source.isNovelSource
 import mihon.domain.manga.model.toDomainManga
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.domain.manga.interactor.NetworkToLocalManga
@@ -79,7 +80,7 @@ abstract class BaseSourcePagingSource(
             }
 
             val manga = mangasPage.mangas
-                .map { it.toDomainManga(source.id) }
+                .map { it.toDomainManga(source.id, source.isNovelSource()) }
                 .filter { seenManga.add(it.url) }
                 .let { networkToLocalManga(it) }
 

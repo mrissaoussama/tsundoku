@@ -62,7 +62,6 @@ import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
-import tachiyomi.domain.history.interactor.RefreshHistoryCache
 import tachiyomi.domain.library.interactor.RefreshLibraryCache
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.updates.interactor.RefreshUpdatesCache
@@ -194,19 +193,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                     logcat(LogPriority.ERROR, e) { "Failed to ensure library cache integrity" }
                 }
 
-                try {
-                    val refreshHistoryCache = Injekt.get<RefreshHistoryCache>()
-                    refreshHistoryCache.ensureIntegrity()
-                } catch (e: Exception) {
-                    logcat(LogPriority.ERROR, e) { "Failed to ensure history cache integrity" }
-                }
 
-                try {
-                    val refreshUpdatesCache = Injekt.get<RefreshUpdatesCache>()
-                    refreshUpdatesCache.ensureIntegrity()
-                } catch (e: Exception) {
-                    logcat(LogPriority.ERROR, e) { "Failed to ensure updates cache integrity" }
-                }
             }
         }
     }

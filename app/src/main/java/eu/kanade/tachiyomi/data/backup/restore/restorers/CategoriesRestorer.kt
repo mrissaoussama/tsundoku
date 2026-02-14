@@ -17,13 +17,17 @@ class CategoriesRestorer(
     suspend operator fun invoke(backupCategories: List<BackupCategory>) {
         if (backupCategories.isNotEmpty()) {
             val dbCategories = getCategories.await()
-            val dbCategoriesByName = dbCategories.associateBy { it.name }
+            val dbCategoriesByName = dbCategories.groupBy { it.name }
             var nextOrder = dbCategories.maxOfOrNull { it.order }?.plus(1) ?: 0
 
             val categories = backupCategories
                 .sortedBy { it.order }
                 .map {
-                    val dbCategory = dbCategoriesByName[it.name]
+                    val dbCategory = if (it.contentType != Category.CONTENT_TYPE_ALL) {
+                        dbCategoriesByName[it.name]?.firstOrNull { db -> db.contentType == it.contentType }
+                    } else {
+                        dbCategoriesByName[it.name]?.firstOrNull()
+                    }
                     if (dbCategory != null) return@map dbCategory
                     val order = nextOrder++
                     handler.awaitOneExecutable {

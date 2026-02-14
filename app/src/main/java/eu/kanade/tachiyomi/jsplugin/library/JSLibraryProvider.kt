@@ -427,7 +427,6 @@ class JSLibraryProvider(
         }
         val handle = ++handleCounter
         elementCache[handle] = elements
-        logcat(LogPriority.DEBUG) { "[$pluginId] cheerioSelect($selector): ${elements.size} matches from parent=$parentHandle -> handle=$handle" }
         return handle
     }
 

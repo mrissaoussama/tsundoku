@@ -72,7 +72,7 @@ class NovelExtensionReposScreen : Screen() {
             },
             floatingActionButton = {
                 FloatingActionButton(
-                    onClick = { screenModel.showDialog(NovelRepoDialog.Create) },
+                    onClick = { screenModel.showDialog(NovelRepoDialog.CreateJs) },
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Add,
@@ -98,28 +98,104 @@ class NovelExtensionReposScreen : Screen() {
                     contentPadding = contentPadding,
                     verticalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
                 ) {
-                    items(successState.repos) { repo ->
-                        NovelRepoListItem(
-                            repo = repo,
-                            onDelete = { screenModel.showDialog(NovelRepoDialog.Delete(repo)) },
-                        )
+                    if (successState.jsRepos.isNotEmpty()) {
+                        item(key = "js-header") {
+                            Text(
+                                text = "JS Plugin Repos",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(
+                                    horizontal = MaterialTheme.padding.medium,
+                                    vertical = MaterialTheme.padding.small,
+                                ),
+                            )
+                        }
+                        items(
+                            items = successState.jsRepos,
+                            key = { "js-${it.url}" },
+                        ) { repo ->
+                            NovelRepoListItem(
+                                repo = repo,
+                                onDelete = { screenModel.showDialog(NovelRepoDialog.DeleteJs(repo)) },
+                            )
+                        }
+                    }
+
+                    if (successState.kotlinRepos.isNotEmpty()) {
+                        item(key = "kotlin-header") {
+                            Text(
+                                text = "Kotlin Extension Repos",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(
+                                    horizontal = MaterialTheme.padding.medium,
+                                    vertical = MaterialTheme.padding.small,
+                                ),
+                            )
+                        }
+                        items(
+                            items = successState.kotlinRepos.toList(),
+                            key = { "kotlin-${it.baseUrl}" },
+                        ) { repo ->
+                            KotlinRepoListItem(
+                                repo = repo,
+                                onDelete = { screenModel.showDialog(NovelRepoDialog.DeleteKotlin(repo.baseUrl)) },
+                            )
+                        }
+                    }
+
+                    item(key = "add-kotlin-repo") {
+                        TextButton(
+                            onClick = { screenModel.showDialog(NovelRepoDialog.CreateKotlin) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = MaterialTheme.padding.medium),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Add,
+                                contentDescription = null,
+                                modifier = Modifier.padding(end = MaterialTheme.padding.small),
+                            )
+                            Text("Add Kotlin extension repo")
+                        }
                     }
                 }
             }
 
             when (val dialog = successState.dialog) {
                 null -> {}
-                is NovelRepoDialog.Create -> {
+                is NovelRepoDialog.CreateJs -> {
                     NovelRepoCreateDialog(
                         onDismissRequest = screenModel::dismissDialog,
-                        onCreate = { name, url -> screenModel.createRepo(name, url) },
+                        onCreate = { name, url -> screenModel.createJsRepo(name, url) },
                     )
                 }
-                is NovelRepoDialog.Delete -> {
+                is NovelRepoDialog.CreateKotlin -> {
+                    KotlinRepoCreateDialog(
+                        onDismissRequest = screenModel::dismissDialog,
+                        onCreate = { url -> screenModel.createKotlinRepo(url) },
+                    )
+                }
+                is NovelRepoDialog.DeleteJs -> {
                     NovelRepoDeleteDialog(
                         onDismissRequest = screenModel::dismissDialog,
-                        onDelete = { screenModel.deleteRepo(dialog.repo.url) },
+                        onDelete = { screenModel.deleteJsRepo(dialog.repo.url) },
                         repoName = dialog.repo.name,
+                    )
+                }
+                is NovelRepoDialog.DeleteKotlin -> {
+                    NovelRepoDeleteDialog(
+                        onDismissRequest = screenModel::dismissDialog,
+                        onDelete = { screenModel.deleteKotlinRepo(dialog.baseUrl) },
+                        repoName = dialog.baseUrl,
+                    )
+                }
+                is NovelRepoDialog.KotlinConflict -> {
+                    KotlinRepoConflictDialog(
+                        onDismissRequest = screenModel::dismissDialog,
+                        onReplace = { screenModel.replaceKotlinRepo(dialog.newRepo) },
+                        oldRepo = dialog.oldRepo,
+                        newRepo = dialog.newRepo,
                     )
                 }
             }
@@ -249,6 +325,142 @@ private fun NovelRepoDeleteDialog(
         confirmButton = {
             TextButton(onClick = onDelete) {
                 Text(text = stringResource(MR.strings.action_delete))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(text = stringResource(MR.strings.action_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun KotlinRepoListItem(
+    repo: mihon.domain.extensionrepo.model.ExtensionRepo,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+
+    ElevatedCard(
+        modifier = modifier.padding(horizontal = MaterialTheme.padding.medium),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = MaterialTheme.padding.medium,
+                    top = MaterialTheme.padding.medium,
+                    end = MaterialTheme.padding.medium,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(imageVector = Icons.AutoMirrored.Outlined.Label, contentDescription = null)
+            androidx.compose.foundation.layout.Column(
+                modifier = Modifier.padding(start = MaterialTheme.padding.medium),
+            ) {
+                Text(
+                    text = repo.name,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = repo.baseUrl,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            IconButton(onClick = {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(repo.baseUrl))
+                context.startActivity(intent)
+            }) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+                    contentDescription = stringResource(MR.strings.action_open_in_browser),
+                )
+            }
+
+            IconButton(
+                onClick = {
+                    context.copyToClipboard(repo.baseUrl, repo.baseUrl)
+                },
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ContentCopy,
+                    contentDescription = stringResource(MR.strings.action_copy_to_clipboard),
+                )
+            }
+
+            IconButton(onClick = onDelete) {
+                Icon(
+                    imageVector = Icons.Outlined.Delete,
+                    contentDescription = stringResource(MR.strings.action_delete),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun KotlinRepoCreateDialog(
+    onDismissRequest: () -> Unit,
+    onCreate: (String) -> Unit,
+) {
+    var url by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text(text = "Add Kotlin extension repo") },
+        text = {
+            OutlinedTextField(
+                value = url,
+                onValueChange = { url = it },
+                label = { Text(text = "Repository URL") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onCreate(url) },
+                enabled = url.isNotBlank(),
+            ) {
+                Text(text = stringResource(MR.strings.action_add))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(text = stringResource(MR.strings.action_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun KotlinRepoConflictDialog(
+    onDismissRequest: () -> Unit,
+    onReplace: () -> Unit,
+    oldRepo: mihon.domain.extensionrepo.model.ExtensionRepo,
+    newRepo: mihon.domain.extensionrepo.model.ExtensionRepo,
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text(text = "Repository conflict") },
+        text = {
+            Text(
+                text = "A repository with the same signing key already exists (${oldRepo.name}). " +
+                    "Replace it with ${newRepo.name}?",
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onReplace) {
+                Text(text = "Replace")
             }
         },
         dismissButton = {

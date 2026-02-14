@@ -233,7 +233,7 @@ class LibraryPreferences(
      * Whether to verify library cache integrity on app startup.
      * Disabling this speeds up startup but may result in stale cache data.
      */
-    fun verifyCacheOnStartup() = preferenceStore.getBoolean("pref_verify_cache_on_startup", true)
+    fun verifyCacheOnStartup() = preferenceStore.getBoolean("pref_verify_cache_on_startup", false)
     // endregion
 
     // region Swipe Actions

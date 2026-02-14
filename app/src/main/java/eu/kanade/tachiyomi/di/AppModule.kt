@@ -40,13 +40,13 @@ import tachiyomi.data.Database
 import tachiyomi.data.DatabaseHandler
 import tachiyomi.data.DateColumnAdapter
 import tachiyomi.data.History
-import tachiyomi.data.History_cache
 import tachiyomi.data.Mangas
 import tachiyomi.data.StringListColumnAdapter
 import tachiyomi.data.UpdateStrategyColumnAdapter
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.storage.service.StorageManager
 import tachiyomi.source.local.image.LocalCoverManager
+import tachiyomi.source.local.image.LocalNovelCoverManager
 import tachiyomi.source.local.io.LocalNovelSourceFileSystem
 import tachiyomi.source.local.io.LocalSourceFileSystem
 import uy.kohesive.injekt.api.InjektModule
@@ -99,9 +99,7 @@ class AppModule(val app: Application) : InjektModule {
                 historyAdapter = History.Adapter(
                     last_readAdapter = DateColumnAdapter,
                 ),
-                history_cacheAdapter = History_cache.Adapter(
-                    last_readAdapter = DateColumnAdapter,
-                ),
+
                 mangasAdapter = Mangas.Adapter(
                     genreAdapter = StringListColumnAdapter,
                     update_strategyAdapter = UpdateStrategyColumnAdapter,
@@ -166,6 +164,7 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { LocalSourceFileSystem(get()) }
         addSingletonFactory { LocalNovelSourceFileSystem(get()) }
         addSingletonFactory { LocalCoverManager(app, get()) }
+        addSingletonFactory { LocalNovelCoverManager(app, get()) }
         addSingletonFactory { StorageManager(app, get()) }
 
         // Font management

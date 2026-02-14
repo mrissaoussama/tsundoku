@@ -22,10 +22,13 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import tachiyomi.core.common.util.lang.launchIO
@@ -81,7 +84,7 @@ class NovelExtensionsScreenModel(
                                 extension.name.contains(input, ignoreCase = true)
                         }
                         is Extension.Untrusted -> extension.name.contains(input, ignoreCase = true)
-                        is Extension.JsPlugin -> 
+                        is Extension.JsPlugin ->
                             extension.name.contains(input, ignoreCase = true) ||
                                 extension.lang.contains(input, ignoreCase = true) ||
                                 extension.pkgName.contains(input, ignoreCase = true)
@@ -255,7 +258,7 @@ class NovelExtensionsScreenModel(
                 logcat(LogPriority.ERROR) { "Plugin repo URL is empty: ${extension.pkgName}" }
                 return@launchIO
             }
-            
+
             logcat(LogPriority.INFO) { "Installing JS plugin: ${extension.name} from ${extension.repoUrl}" }
             jsPluginManager.installPlugin(plugin, extension.repoUrl)
         }

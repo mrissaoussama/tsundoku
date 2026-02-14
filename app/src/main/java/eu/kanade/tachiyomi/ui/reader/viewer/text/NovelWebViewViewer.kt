@@ -283,12 +283,16 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     hideLoadingIndicator()
                     injectCustomStyles()
                     injectCustomScript()
+                    injectScrollTracking()
                     restoreScrollPosition()
+                    if (!preferences.novelInfiniteScroll().get()) {
+                        injectNextChapterButton()
+                    }
                 }
             }
 
             // Add JavaScript interface for progress saving
-            addJavascriptInterface(WebViewInterface(), "Android")
+            addJavascriptInterface(this@NovelWebViewViewer.WebViewInterface(), "Android")
 
             // Enable text selection via long press
             isLongClickable = true
@@ -489,7 +493,44 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         } catch (e: Exception) {
             logcat(LogPriority.ERROR) { "Failed to parse JS snippets: ${e.message}" }
         }
+    }
 
+    /**
+     * Injects a "Next Chapter" button at the bottom of the WebView content
+     * when infinite scroll is disabled.
+     */
+    private fun injectNextChapterButton() {
+        val hasNext = currentChapters?.nextChapter != null
+        if (!hasNext) return
+
+        val js = """
+            (function() {
+                // Remove existing button if any
+                var existing = document.getElementById('next-chapter-btn-container');
+                if (existing) existing.remove();
+
+                var container = document.createElement('div');
+                container.id = 'next-chapter-btn-container';
+                container.style.cssText = 'padding: 32px 16px; text-align: center;';
+
+                var btn = document.createElement('button');
+                btn.textContent = 'Next Chapter →';
+                btn.style.cssText = 'width: 100%; padding: 12px 24px; font-size: 16px; ' +
+                    'background-color: #ADD8E6; color: #000000; ' +
+                    'border: 2px solid #000000; border-radius: 8px; ' +
+                    'cursor: pointer; text-transform: none;';
+                btn.onclick = function() {
+                    Android.loadNextChapter();
+                };
+                container.appendChild(btn);
+                document.body.appendChild(container);
+            })();
+        """.trimIndent()
+
+        evaluateJavascriptSafe(js, null)
+    }
+
+    private fun injectScrollTracking() {
         // Add scroll tracking script with infinite scroll support
         val infiniteScrollEnabled = preferences.novelInfiniteScroll().get()
         val autoLoadThreshold = preferences.novelAutoLoadNextChapterAt().get()
@@ -634,16 +675,16 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         currentPage?.let { page ->
             val savedProgress = page.chapter.chapter.last_page_read
             val isRead = page.chapter.chapter.read
-            
-            logcat(LogPriority.DEBUG) { 
-                "NovelWebViewViewer: Restoring progress, savedProgress=$savedProgress, isRead=$isRead for ${page.chapter.chapter.name}" 
+
+            logcat(LogPriority.DEBUG) {
+                "NovelWebViewViewer: Restoring progress, savedProgress=$savedProgress, isRead=$isRead for ${page.chapter.chapter.name}"
             }
 
             // If chapter is marked as read, start from top (0%) to avoid infinite scroll issues
             if (!isRead && savedProgress > 0 && savedProgress <= 100) {
                 val progress = savedProgress / 100f
                 lastSavedProgress = progress
-                
+
                 // Wait a bit for content to be fully rendered before scrolling
                 webView.postDelayed({
                     val js = """
@@ -1120,7 +1161,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
         val js = """
             (function() {
-                var divider = document.createElement('div');
+                var divider = document.createElement('hr');
                 divider.className = 'chapter-divider';
                 divider.setAttribute('data-chapter-id', '$chapterId');
                 document.body.appendChild(divider);
@@ -1200,10 +1241,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     }
                     .chapter-divider {
                         height: 1px;
-                        margin: 20px 0;
+                        margin: 32px auto;
                         padding: 0;
-                        background-color: $textColorHex;
-                        opacity: 0.2;
+                        border: none;
+                        border-top: 1px solid $textColorHex;
+                        opacity: 0.4;
+                        width: 60%;
                     }
                     img {
                         max-width: 100%;
@@ -1484,7 +1527,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 logcat(LogPriority.DEBUG) {
                     "NovelWebViewViewer: loadNextChapter triggered, infiniteScroll=${preferences.novelInfiniteScroll().get()}, isLoadingNext=$isLoadingNext, loadedCount=${loadedChapterIds.size}"
                 }
-                if (preferences.novelInfiniteScroll().get() && !isLoadingNext) {
+                if (!preferences.novelInfiniteScroll().get()) {
+                    activity.loadNextChapter()
+                } else if (!isLoadingNext) {
                     isLoadingNext = true
                     scope.launch {
                         try {
@@ -1810,7 +1855,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
     fun startTts() {
         ensureTtsInitialized()
-        
+
         if (!ttsInitialized) {
             logcat(LogPriority.WARN) { "TTS (WebView): Not initialized yet, waiting..." }
             // Queue the speech to start when TTS becomes available
@@ -1831,7 +1876,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             }
             return
         }
-        
+
         isTtsAutoPlay = true // Enable auto-continue
         // Extract text from WebView using JavaScript
         evaluateJavascriptSafe(

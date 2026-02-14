@@ -84,6 +84,9 @@ class MangaCoverFetcher(
     }
 
     private fun fileLoader(file: File): FetchResult {
+        if (!file.exists()) {
+            throw IOException("Cover file not found: ${file.absolutePath}")
+        }
         return SourceFetchResult(
             source = ImageSource(
                 file = file.toOkioPath(),
