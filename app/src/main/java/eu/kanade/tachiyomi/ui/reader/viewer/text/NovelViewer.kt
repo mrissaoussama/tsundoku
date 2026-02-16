@@ -1998,6 +1998,43 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         }
     }
 
+    /**
+     * Apply user-configured find & replace rules to content.
+     * Rules are stored as JSON in the novelRegexReplacements preference.
+     * Each enabled rule is applied in order — supports both plain text and regex patterns.
+     */
+    private fun applyRegexReplacements(content: String): String {
+        val rulesJson = preferences.novelRegexReplacements().get()
+        if (rulesJson.isBlank() || rulesJson == "[]") return content
+
+        val rules: List<RegexReplacement> = try {
+            kotlinx.serialization.json.Json.decodeFromString(rulesJson)
+        } catch (e: Exception) {
+            logcat(LogPriority.WARN) { "Failed to parse regex replacements: ${e.message}" }
+            return content
+        }
+
+        var result = content
+        for (rule in rules) {
+            if (!rule.enabled || rule.pattern.isBlank()) continue
+            try {
+                result = if (rule.isRegex) {
+                    val regex = Regex(rule.pattern)
+                    regex.replace(result, rule.replacement)
+                } else {
+                    result.replace(rule.pattern, rule.replacement)
+                }
+            } catch (e: Exception) {
+                logcat(LogPriority.WARN) { "Regex replacement '${rule.title}' failed: ${e.message}" }
+            }
+        }
+        return result
+    }
+
+    /**
+     * Dismiss any active text selection (action mode / handles) without toggling
+     * [TextView.setTextIsSelectable].  Toggling selectable state on every
+     */
     private fun clearTextViewSelection(textView: TextView) {
         try {
             // Cancel any active action mode (floating toolbar)
@@ -2005,9 +2042,22 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             actionModeField.isAccessible = true
             val editor = actionModeField.get(textView)
             if (editor != null) {
-                val hideMethod = editor.javaClass.getDeclaredMethod("hideControllers")
-                hideMethod.isAccessible = true
-                hideMethod.invoke(editor)
+                try {
+                    val hideMethod = editor.javaClass.getDeclaredMethod("hideControllers")
+                    hideMethod.isAccessible = true
+                    hideMethod.invoke(editor)
+                } catch (_: Exception) {}
+                try {
+                    val stopMethod = editor.javaClass.getDeclaredMethod("stopTextActionMode")
+                    stopMethod.isAccessible = true
+                    stopMethod.invoke(editor)
+                } catch (_: Exception) {
+                    try {
+                        val stopMethod = editor.javaClass.getDeclaredMethod("stopSelectionActionMode")
+                        stopMethod.isAccessible = true
+                        stopMethod.invoke(editor)
+                    } catch (_: Exception) {}
+                }
             }
         } catch (_: Exception) {
         }
