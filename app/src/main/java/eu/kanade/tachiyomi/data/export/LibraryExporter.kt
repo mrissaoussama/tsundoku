@@ -2,16 +2,16 @@ package eu.kanade.tachiyomi.data.export
 
 import android.content.Context
 import android.net.Uri
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import tachiyomi.domain.manga.model.Manga
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import tachiyomi.domain.library.model.LibraryManga
+import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import tachiyomi.domain.manga.repository.MangaRepository
-import tachiyomi.domain.library.model.LibraryManga
 
 object LibraryExporter {
 
@@ -43,8 +43,9 @@ object LibraryExporter {
     ) {
         withContext(Dispatchers.IO) {
             context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                val csvData = generateCsvData(favorites, options, onProgress)
-                outputStream.write(csvData.toByteArray())
+                outputStream.bufferedWriter().use { writer ->
+                    writeCsvData(writer, favorites, options, onProgress)
+                }
             }
             onExportComplete()
         }
@@ -52,11 +53,12 @@ object LibraryExporter {
 
     private val escapeRequired = listOf("\r", "\n", "\"", ",")
 
-    private suspend fun generateCsvData(
+    private suspend fun writeCsvData(
+        writer: java.io.Writer,
         favorites: List<Manga>,
         options: ExportOptions,
         onProgress: (ExportProgress) -> Unit = {},
-    ): String {
+    ) {
         val sourceManager = Injekt.get<SourceManager>()
         val mangaRepo = Injekt.get<MangaRepository>()
         val getCategories = Injekt.get<tachiyomi.domain.category.interactor.GetCategories>()
@@ -85,8 +87,7 @@ object LibraryExporter {
         if (options.includeUrl) columns.add("URL")
         if (options.includeChapterCount) columns.add("Chapter Count")
 
-        val rows = mutableListOf<List<String?>>()
-        rows.add(columns)
+        writer.appendLine(columns.joinToString(","))
 
         val total = favorites.size
         favorites.forEachIndexed { index, manga ->
@@ -105,12 +106,7 @@ object LibraryExporter {
             }
 
             if (options.includeIsNovel) {
-                val isNovel = try {
-                    sourceManager.get(manga.source)?.isNovelSource == true
-                } catch (_: Exception) {
-                    false
-                }
-                row.add(if (isNovel) "Yes" else "No")
+                row.add(if (manga.isNovel) "Yes" else "No")
             }
 
             if (options.includeDescription) {
@@ -143,18 +139,17 @@ object LibraryExporter {
                 row.add(count)
             }
 
-            rows.add(row)
-        }
-
-        return rows.joinToString("\r\n") { columns ->
-            columns.joinToString(",") columns@{ column ->
-                if (column.isNullOrBlank()) return@columns ""
-                if (escapeRequired.any { column.contains(it) }) {
-                    column.replace("\"", "\"\"").let { "\"$it\"" }
-                } else {
-                    column
-                }
-            }
+            writer.appendLine(
+                row.joinToString(",") { column ->
+                    if (column.isNullOrBlank()) {
+                        ""
+                    } else if (escapeRequired.any { column.contains(it) }) {
+                        column.replace("\"", "\"\"").let { "\"$it\"" }
+                    } else {
+                        column
+                    }
+                },
+            )
         }
     }
 }

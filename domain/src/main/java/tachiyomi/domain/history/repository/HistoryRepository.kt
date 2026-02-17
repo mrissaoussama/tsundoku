@@ -22,8 +22,4 @@ interface HistoryRepository {
     suspend fun deleteAllHistory(): Boolean
 
     suspend fun upsertHistory(historyUpdate: HistoryUpdate)
-
-    suspend fun refreshHistoryCache()
-
-    suspend fun checkHistoryCacheIntegrity(): Pair<Long, Long>
 }

@@ -16,11 +16,8 @@ import tachiyomi.domain.library.model.LibraryMangaForUpdate
 import tachiyomi.domain.manga.repository.MangaRepository
 
 /**
- * Interactor for getting library manga with AGGRESSIVE caching.
- * 
- * The libraryView query is extremely expensive (~20+ seconds for 27k items).
- * SQLDelight's reactive Flow re-runs the query on ANY table change, which is unacceptable.
- * 
+ * Interactor for getting library manga.
+ *
  * This class uses a manual StateFlow that is ONLY refreshed when explicitly requested,
  * preventing the query from running hundreds of times during normal app usage.
  */
@@ -29,20 +26,22 @@ class GetLibraryManga(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
-    
+
     // Cached library data - ONLY updated via refresh()
     private val _libraryState = MutableStateFlow<List<LibraryManga>>(emptyList())
     private val _isLoading = MutableStateFlow(true)
     private var isInitialized = false
     private var lastRefreshTime = 0L
-    
-    // Minimum time between refreshes (prevent spam)
+
+    // Minimum time between refreshes
     private val minRefreshIntervalMs = 2000L
-    
+
+    private var _version = 0
+
     init {
-        // Initial load on creation
         scope.launch {
-            refreshInternal(force = true)
+            logcat(LogPriority.INFO) { "GetLibraryManga: Loading library from mangas table" }
+            refreshInternal(force = false)
         }
     }
 
@@ -59,34 +58,46 @@ class GetLibraryManga(
         }
         return _libraryState.value
     }
-    
+
     /**
      * Check if library is currently loading
      */
     fun isLoading(): Flow<Boolean> = _isLoading.asStateFlow()
-    
+
     /**
      * Force a refresh of the library cache.
-     * This is the ONLY way to trigger a new database query.
-     * Use sparingly - only when user explicitly requests refresh or after bulk operations.
-     * 
-     * Note: This launches the refresh in an isolated scope so it won't be cancelled
-     * if the calling scope is cancelled (e.g., when navigating away from a screen).
      */
     fun refresh() {
+        val stackTrace = Thread.currentThread().stackTrace
+            .drop(2).take(8)
+            .joinToString(" <- ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+        logcat(LogPriority.WARN) { "GetLibraryManga.refresh() called! Stack: $stackTrace" }
         scope.launch {
             refreshInternal(force = false)
         }
     }
 
     /**
+     * Force the library StateFlow to re-emit its current value.
+     * This triggers downstream recomputation (e.g., download badges) without a full DB refresh.
+     */
+    fun notifyChanged() {
+        _version++
+        _libraryState.value = _libraryState.value.toList()
+    }
+
+    /**
      * Force a refresh and bypass the minimum refresh interval.
      * Use when user explicitly requests a reload (e.g., after backup restore).
      * Returns the updated library list.
-     * 
+     *
      * This is a suspend function that waits for the refresh to complete.
      */
     suspend fun refreshForced(): List<LibraryManga> {
+        val stackTrace = Thread.currentThread().stackTrace
+            .drop(2).take(8)
+            .joinToString(" <- ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+        logcat(LogPriority.WARN) { "GetLibraryManga.refreshForced() called! Stack: $stackTrace" }
         refreshInternal(force = true)
         return _libraryState.value
     }
@@ -111,17 +122,200 @@ class GetLibraryManga(
         if (mangaIds.isEmpty()) return
         mutex.withLock {
             val idSet = mangaIds.toSet()
-            _libraryState.value = _libraryState.value.map { item ->
-                if (item.id !in idSet) return@map item
+            val current = _libraryState.value
+            val result = ArrayList<LibraryManga>(current.size)
+            var changed = false
+            for (item in current) {
+                if (item.id !in idSet) {
+                    result.add(item)
+                } else {
+                    val updated = item.categories.toMutableSet()
+                    addCategories.forEach { updated.add(it) }
+                    removeCategories.forEach { updated.remove(it) }
+                    result.add(item.copy(categories = updated.toList()))
+                    changed = true
+                }
+            }
+            if (changed) _libraryState.value = result
+        }
+    }
 
-                val updated = item.categories.toMutableSet()
-                addCategories.forEach { updated.add(it) }
-                removeCategories.forEach { updated.remove(it) }
-                item.copy(categories = updated.toList())
+    /**
+     * Replace all categories for the given manga in-memory.
+     * Use for "set" operations where the full category list is replaced.
+     */
+    suspend fun setCategoriesForManga(mangaIds: List<Long>, categoryIds: List<Long>) {
+        if (mangaIds.isEmpty()) return
+        mutex.withLock {
+            val idSet = mangaIds.toSet()
+            val current = _libraryState.value
+            val result = ArrayList<LibraryManga>(current.size)
+            var changed = false
+            for (item in current) {
+                if (item.id !in idSet) {
+                    result.add(item)
+                } else {
+                    result.add(item.copy(categories = categoryIds))
+                    changed = true
+                }
+            }
+            if (changed) _libraryState.value = result
+        }
+    }
+
+    /**
+     * Apply chapter count/read updates to the in-memory library list without a full DB refresh.
+     * Call this after chapters are read, downloaded, or deleted to keep badges accurate.
+     */
+    suspend fun applyChapterUpdates(mangaId: Long, totalChapters: Long? = null, readCount: Long? = null, bookmarkCount: Long? = null, lastRead: Long? = null) {
+        mutex.withLock {
+            val current = _libraryState.value
+            val result = ArrayList<LibraryManga>(current.size)
+            var changed = false
+            for (item in current) {
+                if (item.id != mangaId) {
+                    result.add(item)
+                } else {
+                    result.add(item.copy(
+                        totalChapters = totalChapters ?: item.totalChapters,
+                        readCount = readCount ?: item.readCount,
+                        bookmarkCount = bookmarkCount ?: item.bookmarkCount,
+                        lastRead = lastRead ?: item.lastRead,
+                    ))
+                    changed = true
+                }
+            }
+            if (changed) _libraryState.value = result
+        }
+    }
+
+    /**
+     * Apply batch chapter count updates for multiple manga at once.
+     * More efficient than calling applyChapterUpdates individually.
+     */
+    suspend fun applyBatchChapterUpdates(updates: Map<Long, LibraryManga.() -> LibraryManga>) {
+        if (updates.isEmpty()) return
+        mutex.withLock {
+            val current = _libraryState.value
+            val result = ArrayList<LibraryManga>(current.size)
+            var changed = false
+            for (item in current) {
+                val updater = updates[item.id]
+                if (updater != null) {
+                    result.add(updater(item))
+                    changed = true
+                } else {
+                    result.add(item)
+                }
+            }
+            if (changed) _libraryState.value = result
+        }
+    }
+
+    /**
+     * Apply manga detail updates (title, cover URL, status, etc.) to the in-memory list.
+     * This avoids a full DB refresh when a single manga's metadata changes.
+     */
+    suspend fun applyMangaDetailUpdate(mangaId: Long, updater: (tachiyomi.domain.manga.model.Manga) -> tachiyomi.domain.manga.model.Manga) {
+        mutex.withLock {
+            val current = _libraryState.value
+            val result = ArrayList<LibraryManga>(current.size)
+            var changed = false
+            for (item in current) {
+                if (item.id != mangaId) {
+                    result.add(item)
+                } else {
+                    result.add(item.copy(manga = updater(item.manga)))
+                    changed = true
+                }
+            }
+            if (changed) _libraryState.value = result
+        }
+    }
+
+    /**
+     * Non-suspend version of applyMangaDetailUpdate for use in onDispose() callbacks
+     * where the calling scope is about to be cancelled.
+     */
+    fun applyMangaDetailUpdateSync(mangaId: Long, updater: (tachiyomi.domain.manga.model.Manga) -> tachiyomi.domain.manga.model.Manga) {
+        // Direct update without mutex since this is called from onDispose where ordering is guaranteed
+        val current = _libraryState.value
+        val result = ArrayList<LibraryManga>(current.size)
+        var changed = false
+        for (item in current) {
+            if (item.id != mangaId) {
+                result.add(item)
+            } else {
+                result.add(item.copy(manga = updater(item.manga)))
+                changed = true
+            }
+        }
+        if (changed) _libraryState.value = result
+    }
+
+    /**
+     * Add a single manga to the in-memory library list after it becomes a favorite.
+     * Fetches its LibraryManga data from the DB (requires library_cache row to exist).
+     */
+    suspend fun addToLibrary(mangaId: Long) {
+        mangaRepository.refreshLibraryCacheForManga(mangaId)
+        val libraryManga = mangaRepository.getLibraryMangaById(mangaId) ?: run {
+            logcat(LogPriority.WARN) { "GetLibraryManga.addToLibrary: Could not fetch LibraryManga for $mangaId, falling back to refresh" }
+            refresh()
+            return
+        }
+        mutex.withLock {
+            val existing = _libraryState.value.any { it.id == mangaId }
+            if (!existing) {
+                _libraryState.value = _libraryState.value + libraryManga
             }
         }
     }
-    
+
+    /**
+     * Add multiple manga to the in-memory library list in bulk.
+     * Much more efficient than calling addToLibrary individually for batch operations.
+     */
+    suspend fun addToLibraryBulk(mangaIds: List<Long>) {
+        if (mangaIds.isEmpty()) return
+        for (id in mangaIds) {
+            mangaRepository.refreshLibraryCacheForManga(id)
+        }
+        val newItems = mangaRepository.getLibraryMangaByIds(mangaIds)
+        if (newItems.isEmpty()) {
+            logcat(LogPriority.WARN) { "GetLibraryManga.addToLibraryBulk: Could not fetch any LibraryManga for ${mangaIds.size} ids, falling back to refresh" }
+            refresh()
+            return
+        }
+        mutex.withLock {
+            val existingIds = _libraryState.value.map { it.id }.toSet()
+            val toAdd = newItems.filter { it.id !in existingIds }
+            if (toAdd.isNotEmpty()) {
+                _libraryState.value = _libraryState.value + toAdd
+            }
+        }
+    }
+
+    /**
+     * Remove a single manga from the in-memory library list after it's unfavorited.
+     */
+    suspend fun removeFromLibrary(mangaId: Long) {
+        mutex.withLock {
+            _libraryState.value = _libraryState.value.filter { it.id != mangaId }
+        }
+    }
+
+    /**
+     * Remove multiple manga from the in-memory library list.
+     */
+    suspend fun removeFromLibrary(mangaIds: List<Long>) {
+        if (mangaIds.isEmpty()) return
+        val idSet = mangaIds.toSet()
+        mutex.withLock {
+            _libraryState.value = _libraryState.value.filter { it.id !in idSet }
+        }
+    }
+
     private suspend fun refreshInternal(force: Boolean) {
         mutex.withLock {
             val now = System.currentTimeMillis()
@@ -129,21 +323,27 @@ class GetLibraryManga(
                 logcat(LogPriority.DEBUG) { "GetLibraryManga: Skipping refresh (too soon, ${now - lastRefreshTime}ms since last)" }
                 return
             }
-            
-            // Always invalidate the repository's in-memory cache so refresh returns fresh data
-            mangaRepository.invalidateLibraryCache()
-            
+
             _isLoading.value = true
-            val caller = Thread.currentThread().stackTrace.getOrNull(3)?.let { "${it.className}.${it.methodName}" } ?: "unknown"
-            logcat(LogPriority.INFO) { "GetLibraryManga: Refreshing library cache (force=$force, caller=$caller)" }
+            val stackTrace = Thread.currentThread().stackTrace
+                .drop(2).take(10)
+                .joinToString("\n    ") { "${it.className.substringAfterLast('.')}.${it.methodName}(${it.fileName}:${it.lineNumber})" }
+            //logcat(LogPriority.WARN) { "GetLibraryManga: refreshInternal(force=$force) FULL STACK TRACE:\n    $stackTrace" }
+
+            if (force) {
+                logcat(LogPriority.INFO) { "GetLibraryManga: Rebuilding library_cache table (forced)" }
+                mangaRepository.refreshLibraryCache()
+            } else {
+                mangaRepository.invalidateLibraryCache()
+            }
             val startTime = System.currentTimeMillis()
-            
+
             try {
                 val library = mangaRepository.getLibraryManga()
                 _libraryState.value = library
                 isInitialized = true
                 lastRefreshTime = System.currentTimeMillis()
-                
+
                 val duration = System.currentTimeMillis() - startTime
                 logcat(LogPriority.INFO) { "GetLibraryManga: Refresh complete in ${duration}ms, ${library.size} items" }
             } catch (e: Exception) {

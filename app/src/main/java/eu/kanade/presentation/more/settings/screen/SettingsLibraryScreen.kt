@@ -46,6 +46,8 @@ import uy.kohesive.injekt.api.get
 
 object SettingsLibraryScreen : SearchableSettings {
 
+    override val supportsReset: Boolean get() = true
+
     @Composable
     @ReadOnlyComposable
     override fun getTitleRes() = MR.strings.pref_category_library

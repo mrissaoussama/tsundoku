@@ -9,9 +9,9 @@ import eu.kanade.domain.source.service.SourcePreferences
 import eu.kanade.presentation.components.SEARCH_DEBOUNCE_MILLIS
 import eu.kanade.tachiyomi.extension.ExtensionManager
 import eu.kanade.tachiyomi.extension.model.Extension
+import eu.kanade.tachiyomi.extension.model.InstallStep
 import eu.kanade.tachiyomi.jsplugin.JsPluginManager
 import eu.kanade.tachiyomi.jsplugin.model.JsPlugin
-import eu.kanade.tachiyomi.extension.model.InstallStep
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.system.LocaleHelper
 import kotlinx.coroutines.delay
@@ -22,14 +22,17 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import tachiyomi.core.common.util.lang.launchIO
 import logcat.LogPriority
+import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
@@ -81,7 +84,7 @@ class NovelExtensionsScreenModel(
                                 extension.name.contains(input, ignoreCase = true)
                         }
                         is Extension.Untrusted -> extension.name.contains(input, ignoreCase = true)
-                        is Extension.JsPlugin -> 
+                        is Extension.JsPlugin ->
                             extension.name.contains(input, ignoreCase = true) ||
                                 extension.lang.contains(input, ignoreCase = true) ||
                                 extension.pkgName.contains(input, ignoreCase = true)
@@ -121,13 +124,13 @@ class NovelExtensionsScreenModel(
                                 id = plugin.sourceId(),
                                 lang = plugin.lang,
                                 name = plugin.name,
-                                baseUrl = plugin.site
-                            )
+                                baseUrl = plugin.site,
+                            ),
                         ),
                         iconUrl = plugin.iconUrl,
                         repoUrl = plugin.repositoryUrl ?: "",
                         isInstalled = installed != null,
-                        hasUpdate = installed != null && verCode > instVerCode
+                        hasUpdate = installed != null && verCode > instVerCode,
                     )
                 }
 
@@ -152,13 +155,13 @@ class NovelExtensionsScreenModel(
                                     id = plugin.sourceId(),
                                     lang = plugin.lang,
                                     name = plugin.name,
-                                    baseUrl = plugin.site
-                                )
+                                    baseUrl = plugin.site,
+                                ),
                             ),
                             iconUrl = plugin.iconUrl,
                             repoUrl = installed.repositoryUrl,
                             isInstalled = true,
-                            hasUpdate = false
+                            hasUpdate = false,
                         )
                     }
 
@@ -173,9 +176,11 @@ class NovelExtensionsScreenModel(
                     itemsGroups[ExtensionUiModel.Header.Resource(MR.strings.ext_updates_pending)] = updates
                 }
 
-                val installed = (_installed.filter {
-                    it.isNovel
-                } + jsInstalledExt).filter(queryFilter(searchQuery)).map(extensionMapper(downloads))
+                val installed = (
+                    _installed.filter {
+                        it.isNovel
+                    } + jsInstalledExt
+                    ).filter(queryFilter(searchQuery)).map(extensionMapper(downloads))
                 val untrusted = _untrusted.filter {
                     it.isNovel
                 }.filter(queryFilter(searchQuery)).map(extensionMapper(downloads))
@@ -183,8 +188,10 @@ class NovelExtensionsScreenModel(
                     itemsGroups[ExtensionUiModel.Header.Resource(MR.strings.ext_installed)] = (installed + untrusted)
                 }
 
-                val languagesWithExtensions = (_available
-                    .filter { it.isNovel } + jsAvailableExt)
+                val languagesWithExtensions = (
+                    _available
+                        .filter { it.isNovel } + jsAvailableExt
+                    )
                     .filter(queryFilter(searchQuery))
                     .groupBy { it.lang }
                     .toSortedMap(LocaleHelper.comparator)
@@ -248,14 +255,16 @@ class NovelExtensionsScreenModel(
             val pluginId = extension.pkgName.removePrefix(JsPlugin.PKG_PREFIX)
             val plugin = jsPluginManager.availablePlugins.value.find { it.id == pluginId }
             if (plugin == null) {
-                logcat(LogPriority.ERROR) { "Plugin not found in available plugins: $pluginId (pkgName: ${extension.pkgName})" }
+                logcat(LogPriority.ERROR) {
+                    "Plugin not found in available plugins: $pluginId (pkgName: ${extension.pkgName})"
+                }
                 return@launchIO
             }
             if (extension.repoUrl.isEmpty()) {
                 logcat(LogPriority.ERROR) { "Plugin repo URL is empty: ${extension.pkgName}" }
                 return@launchIO
             }
-            
+
             logcat(LogPriority.INFO) { "Installing JS plugin: ${extension.name} from ${extension.repoUrl}" }
             jsPluginManager.installPlugin(plugin, extension.repoUrl)
         }

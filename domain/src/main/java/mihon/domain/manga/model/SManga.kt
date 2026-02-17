@@ -3,7 +3,7 @@ package mihon.domain.manga.model
 import eu.kanade.tachiyomi.source.model.SManga
 import tachiyomi.domain.manga.model.Manga
 
-fun SManga.toDomainManga(sourceId: Long): Manga {
+fun SManga.toDomainManga(sourceId: Long, isNovel: Boolean = false): Manga {
     return Manga.create().copy(
         url = url,
         title = title,
@@ -16,5 +16,6 @@ fun SManga.toDomainManga(sourceId: Long): Manga {
         updateStrategy = update_strategy,
         initialized = initialized,
         source = sourceId,
+        isNovel = isNovel,
     )
 }

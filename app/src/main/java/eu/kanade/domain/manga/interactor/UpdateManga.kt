@@ -33,9 +33,16 @@ class UpdateManga(
 
     suspend fun awaitAll(mangaUpdates: List<MangaUpdate>): Boolean {
         val result = mangaRepository.updateAll(mangaUpdates)
-        // Refresh library if any favorite status changed
         if (result && mangaUpdates.any { it.favorite != null }) {
-            getLibraryManga.refreshForced()
+            val favoriteChanges = mangaUpdates.filter { it.favorite != null }
+            val toAdd = favoriteChanges.filter { it.favorite == true }.map { it.id }
+            val toRemove = favoriteChanges.filter { it.favorite == false }.map { it.id }
+            if (toAdd.isNotEmpty()) {
+                getLibraryManga.addToLibraryBulk(toAdd)
+            }
+            if (toRemove.isNotEmpty()) {
+                getLibraryManga.removeFromLibrary(toRemove)
+            }
         }
         return result
     }
@@ -98,9 +105,15 @@ class UpdateManga(
         if (success && title != null) {
             downloadManager.renameManga(localManga, title)
         }
-        // Refresh library cache if this is a favorite manga (metadata may have changed)
         if (success && localManga.favorite) {
-            getLibraryManga.refresh()
+            getLibraryManga.applyMangaDetailUpdate(localManga.id) { manga ->
+                manga.copy(
+                    title = title ?: manga.title,
+                    thumbnailUrl = thumbnailUrl ?: manga.thumbnailUrl,
+                    coverLastModified = coverLastModified ?: manga.coverLastModified,
+                    status = remoteManga.status.toLong(),
+                )
+            }
         }
         return success
     }
@@ -131,10 +144,12 @@ class UpdateManga(
         val result = mangaRepository.update(
             MangaUpdate(id = mangaId, favorite = favorite, dateAdded = dateAdded),
         )
-        // Refresh library cache after favorite status changes - use forced refresh
-        // to ensure the change is immediately visible in the library
         if (result) {
-            getLibraryManga.refreshForced()
+            if (favorite) {
+                getLibraryManga.addToLibrary(mangaId)
+            } else {
+                getLibraryManga.removeFromLibrary(mangaId)
+            }
         }
         return result
     }
@@ -161,9 +176,8 @@ class UpdateManga(
         val result = mangaRepository.update(
             MangaUpdate(id = mangaId, title = title),
         )
-        // Refresh library cache after title changes
         if (result) {
-            getLibraryManga.refresh()
+            getLibraryManga.applyMangaDetailUpdate(mangaId) { it.copy(title = title) }
         }
         return result
     }
@@ -182,7 +196,7 @@ class UpdateManga(
 
     /**
      * Translate manga title and/or tags based on translation preferences.
-     * 
+     *
      * If replaceTitle is enabled: translated title becomes the main title, original is added to alternative titles.
      * If saveTranslatedTitleAsAlternative is enabled: translated title is added to alternative titles.
      * If translateTags is enabled: translated tags are merged with original tags.
@@ -199,7 +213,7 @@ class UpdateManga(
     ): Boolean {
         val translationPreferences: TranslationPreferences = Injekt.get()
         val engineManager: TranslationEngineManager = Injekt.get()
-        
+
         if (!translationPreferences.translationEnabled().get()) {
             return false
         }

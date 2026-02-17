@@ -22,6 +22,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
+import eu.kanade.tachiyomi.source.isNovelSource
 import tachiyomi.domain.category.interactor.SetMangaCategories
 import tachiyomi.domain.download.service.NovelDownloadPreferences
 import tachiyomi.domain.library.model.LibraryManga
@@ -313,7 +314,7 @@ class MassImport(
 
         _progress.update { it?.copy(isRunning = false, status = "Complete") }
         _result.value = currentResult
-        
+
         // Refresh library cache so UI reflects newly imported manga/novels
         if (currentResult.added.isNotEmpty()) {
             try {
@@ -413,7 +414,7 @@ class MassImport(
             }
 
             // Convert to local manga and add to library
-            val manga = networkToLocalManga(sManga.toDomainManga(source.id))
+            val manga = networkToLocalManga(sManga.toDomainManga(source.id, source.isNovelSource()))
 
             if (addToLibrary) {
                 // Update manga to be in library - persist to database
@@ -465,7 +466,7 @@ class MassImport(
             .filter { it is HttpSource || it is JsSource }
             .filter { it.isNovelSource() }
     }
-    
+
     /**
      * Get all manga sources (non-novel)
      */
@@ -474,7 +475,7 @@ class MassImport(
             .filter { it is HttpSource || it is JsSource }
             .filter { !it.isNovelSource() }
     }
-    
+
     /**
      * Get all sources (both manga and novel)
      */
@@ -489,7 +490,7 @@ class MassImport(
      */
     private fun findMatchingSource(url: String, sources: List<CatalogueSource>): CatalogueSource? {
         val normalizedUrl = stripScheme(url).removePrefix("www.").removeSuffix("/")
-        
+
         // Find all matching sources
         val matchingSources = sources.filter { source ->
             try {
@@ -499,13 +500,13 @@ class MassImport(
                 false
             }
         }
-        
+
         if (matchingSources.isEmpty()) return null
         if (matchingSources.size == 1) return matchingSources.first()
-        
+
         // Prioritize Kotlin extensions over JS plugins
         val kotlinSources = matchingSources.filter { it !is JsSource }
-        
+
         return kotlinSources.firstOrNull() ?: matchingSources.first()
     }
 
@@ -592,7 +593,7 @@ class MassImport(
         val preprocessed = text
             .replace(Regex("(?<=[^\\s])(?=https?://)"), "\n")  // Add newline before http(s):// if not preceded by whitespace
             .replace(Regex("(?<!https?:)//+"), "/")  // Replace // with / except in protocol (http://, https://)
-        
+
         return preprocessed
             .split("\n", ",", ";", " ")
             .map { it.trim() }
@@ -618,7 +619,7 @@ class MassImport(
      */
     suspend fun analyzeUrls(text: String): UrlAnalysisResult = kotlinx.coroutines.withContext(Dispatchers.IO) {
         val novelSources = getAllSources() // Support both manga and novel extensions
-        
+
         // Use efficient query that only fetches source_id and url
         val libraryUrlIndex: Set<Pair<Long, String>> = try {
             mangaRepository.getFavoriteSourceAndUrl().toSet()
@@ -676,7 +677,7 @@ class MassImport(
 /**
  * Extension to convert SManga to domain Manga
  */
-private fun eu.kanade.tachiyomi.source.model.SManga.toDomainManga(sourceId: Long): Manga {
+private fun eu.kanade.tachiyomi.source.model.SManga.toDomainManga(sourceId: Long, isNovel: Boolean = false): Manga {
     return Manga.create().copy(
         url = url,
         title = title,
@@ -688,5 +689,6 @@ private fun eu.kanade.tachiyomi.source.model.SManga.toDomainManga(sourceId: Long
         thumbnailUrl = thumbnail_url,
         initialized = initialized,
         source = sourceId,
+        isNovel = isNovel,
     )
 }

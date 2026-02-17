@@ -80,8 +80,9 @@ import tachiyomi.domain.chapter.model.NoChaptersException
 import tachiyomi.domain.chapter.service.calculateChapterGap
 import tachiyomi.domain.chapter.service.getChapterSort
 import tachiyomi.domain.library.service.LibraryPreferences
-import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
 import tachiyomi.domain.manga.interactor.FindDuplicateNovels
+import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
+import tachiyomi.domain.manga.interactor.GetLibraryManga
 import tachiyomi.domain.manga.interactor.GetMangaWithChapters
 import tachiyomi.domain.manga.interactor.SetMangaChapterFlags
 import tachiyomi.domain.manga.model.Manga
@@ -131,6 +132,7 @@ class MangaScreenModel(
     private val filterChaptersForDownload: FilterChaptersForDownload = Injekt.get(),
     private val translatedChapterRepository: TranslatedChapterRepository = Injekt.get(),
     private val translationService: TranslationService = Injekt.get(),
+    private val getLibraryManga: GetLibraryManga = Injekt.get(),
     val snackbarHostState: SnackbarHostState = SnackbarHostState(),
 ) : StateScreenModel<MangaScreenModel.State>(State.Loading) {
 
@@ -163,6 +165,14 @@ class MangaScreenModel(
 
     private val selectedPositions: Array<Int> = arrayOf(-1, -1) // first and last selected index in list
     private val selectedChapterIds: HashSet<Long> = HashSet()
+
+    override fun onDispose() {
+        val currentManga = manga
+        if (currentManga != null && currentManga.favorite) {
+            getLibraryManga.applyMangaDetailUpdateSync(currentManga.id) { currentManga }
+        }
+        super.onDispose()
+    }
 
     /**
      * Helper function to update the UI state only if it's currently in success state
@@ -249,7 +259,7 @@ class MangaScreenModel(
                     isRefreshingData = needRefreshInfo || needRefreshChapter,
                     dialog = null,
                     hideMissingChapters = libraryPreferences.hideMissingChapters().get(),
-                    isNovel = source.isNovelSource(),
+                    isNovel = manga.isNovel,
                 )
             }
 
@@ -363,12 +373,12 @@ class MangaScreenModel(
 
                 // Now check if user previously set categories, when available
                 // Filter categories based on content type (manga vs novel)
-                val isNovel = state.source.isNovelSource()
+                val isNovel = state.manga.isNovel
                 val contentType = if (isNovel) Category.CONTENT_TYPE_NOVEL else Category.CONTENT_TYPE_MANGA
                 val allCategories = getCategories()
                 // Show content-type specific + universal (CONTENT_TYPE_ALL) categories
-                val categories = allCategories.filter { 
-                    it.contentType == contentType || it.contentType == Category.CONTENT_TYPE_ALL 
+                val categories = allCategories.filter {
+                    it.contentType == contentType || it.contentType == Category.CONTENT_TYPE_ALL
                 }
                 val defaultCategoryId = libraryPreferences.defaultCategory().get().toLong()
                 val defaultCategory = categories.find { it.id == defaultCategoryId }
@@ -402,11 +412,11 @@ class MangaScreenModel(
         val source = successState?.source ?: return
         screenModelScope.launch {
             // Filter categories based on content type (manga vs novel)
-            val isNovel = source.isNovelSource()
+            val isNovel = manga.isNovel
             val contentType = if (isNovel) Category.CONTENT_TYPE_NOVEL else Category.CONTENT_TYPE_MANGA
             val allCategories = getCategories()
-            val categories = allCategories.filter { 
-                it.contentType == contentType || it.contentType == Category.CONTENT_TYPE_ALL 
+            val categories = allCategories.filter {
+                it.contentType == contentType || it.contentType == Category.CONTENT_TYPE_ALL
             }
             val selection = getMangaCategoryIds(manga)
             updateSuccessState { successState ->
@@ -517,6 +527,7 @@ class MangaScreenModel(
     fun updateAlternativeTitles(alternativeTitles: List<String>) {
         screenModelScope.launchIO {
             updateManga.awaitUpdateAlternativeTitles(mangaId, alternativeTitles)
+            getLibraryManga.applyMangaDetailUpdate(mangaId) { it.copy(alternativeTitles = alternativeTitles) }
         }
     }
 
@@ -528,6 +539,9 @@ class MangaScreenModel(
         screenModelScope.launchIO {
             updateManga.awaitUpdateTitle(mangaId, newMainTitle)
             updateManga.awaitUpdateAlternativeTitles(mangaId, updatedAltTitles)
+            getLibraryManga.applyMangaDetailUpdate(mangaId) {
+                it.copy(title = newMainTitle, alternativeTitles = updatedAltTitles)
+            }
         }
     }
 
@@ -541,6 +555,7 @@ class MangaScreenModel(
                 genre = tags,
             )
             updateManga.await(update)
+            getLibraryManga.applyMangaDetailUpdate(mangaId) { it.copy(genre = tags) }
         }
     }
 
@@ -595,6 +610,7 @@ class MangaScreenModel(
             // Save translated genres if provided (as genres)
             if (translatedGenres != null && translatedGenres.isNotEmpty()) {
                 updateManga.awaitUpdateGenre(mangaId, translatedGenres)
+                getLibraryManga.applyMangaDetailUpdate(mangaId) { it.copy(genre = translatedGenres) }
             }
         }
 
@@ -879,6 +895,21 @@ class MangaScreenModel(
                 chapters = chapters.toTypedArray(),
             )
 
+            val changedIds = chapters.map { it.id }.toSet()
+            val chapterItems = successState?.chapters
+            if (chapterItems != null) {
+                val newReadCount = chapterItems.count { item ->
+                    if (item.chapter.id in changedIds) read else item.chapter.read
+                }.toLong()
+                val newBookmarkCount = chapterItems.count { item -> item.chapter.bookmark }.toLong()
+                getLibraryManga.applyChapterUpdates(
+                    mangaId,
+                    readCount = newReadCount,
+                    bookmarkCount = newBookmarkCount,
+                    lastRead = if (read) System.currentTimeMillis() else null,
+                )
+            }
+
             if (!read || successState?.hasLoggedInTrackers == false || autoTrackState == AutoTrackState.NEVER) {
                 return@launchIO
             }
@@ -952,6 +983,15 @@ class MangaScreenModel(
                 .filterNot { it.bookmark == bookmarked }
                 .map { ChapterUpdate(id = it.id, bookmark = bookmarked) }
                 .let { updateChapter.awaitAll(it) }
+
+            val changedIds = chapters.map { it.id }.toSet()
+            val chapterItems = successState?.chapters
+            if (chapterItems != null) {
+                val newBookmarkCount = chapterItems.count { item ->
+                    if (item.chapter.id in changedIds) bookmarked else item.chapter.bookmark
+                }.toLong()
+                getLibraryManga.applyChapterUpdates(mangaId, bookmarkCount = newBookmarkCount)
+            }
         }
         toggleAllSelection(false)
     }
@@ -1212,7 +1252,10 @@ class MangaScreenModel(
         data class DeleteChapters(val chapters: List<Chapter>) : Dialog
         data class RemoveChaptersFromDb(val chapters: List<Chapter>) : Dialog
         data class DuplicateManga(val manga: Manga, val duplicates: List<MangaWithChapterCount>) : Dialog
-        data class SimilarNovels(val similarNovels: List<MangaWithChapterCount>, val categories: List<Category>) : Dialog
+        data class SimilarNovels(
+            val similarNovels: List<MangaWithChapterCount>,
+            val categories: List<Category>,
+        ) : Dialog
         data class Migrate(val target: Manga, val current: Manga) : Dialog
         data class SetFetchInterval(val manga: Manga) : Dialog
         data class EditAlternativeTitles(val manga: Manga) : Dialog
@@ -1292,11 +1335,11 @@ class MangaScreenModel(
             }
             val categories = getCategories.await()
             withUIContext {
-                updateSuccessState { 
+                updateSuccessState {
                     it.copy(
                         similarNovels = similarNovels,
-                        dialog = Dialog.SimilarNovels(similarNovels, categories)
-                    ) 
+                        dialog = Dialog.SimilarNovels(similarNovels, categories),
+                    )
                 }
             }
         }

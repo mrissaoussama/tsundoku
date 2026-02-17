@@ -40,9 +40,31 @@ interface MangaRepository {
 
     suspend fun getFavoriteSourceAndUrl(): List<Pair<Long, String>>
 
+    /**
+     * returns only (id, url) pairs for favorites.
+     */
+    suspend fun getFavoriteIdAndUrl(): List<Pair<Long, String>>
+
+    /**
+     * returns only (id, genre) pairs for favorites that have genres.
+     */
+    suspend fun getFavoriteIdAndGenre(): List<Pair<Long, List<String>?>>
+
     suspend fun getReadMangaNotInLibrary(): List<Manga>
 
     suspend fun getLibraryManga(): List<LibraryManga>
+
+    /**
+     * Get a single LibraryManga by ID from the library cache.
+     * Returns null if the manga is not in the library or cache is missing.
+     */
+    suspend fun getLibraryMangaById(mangaId: Long): LibraryManga?
+
+    /**
+     * Get multiple LibraryManga by IDs from the library cache.
+     * Only returns items that exist in the library cache.
+     */
+    suspend fun getLibraryMangaByIds(mangaIds: List<Long>): List<LibraryManga>
 
     suspend fun getLibraryMangaForUpdate(): List<LibraryMangaForUpdate>
 
@@ -55,6 +77,11 @@ interface MangaRepository {
     suspend fun findDuplicatesExact(): List<DuplicateGroup>
 
     suspend fun findDuplicatesContains(): List<DuplicatePair>
+
+    /**
+     * Get ID + title pairs for all favorites.
+     */
+    suspend fun getFavoriteIdAndTitle(): List<Pair<Long, String>>
 
     /**
      * Find duplicates by URL within the same source.
@@ -88,6 +115,8 @@ interface MangaRepository {
 
     suspend fun getMangaWithCounts(ids: List<Long>): List<MangaWithChapterCount>
 
+    suspend fun getMangaWithCountsLight(ids: List<Long>): List<MangaWithChapterCount>
+
     suspend fun getUpcomingManga(statuses: Set<Long>): Flow<List<Manga>>
 
     suspend fun resetViewerFlags(): Boolean
@@ -107,7 +136,7 @@ interface MangaRepository {
     suspend fun insertNetworkManga(manga: List<Manga>): List<Manga>
 
     suspend fun normalizeAllUrls(): Int
-    
+
     /**
      * Data class to hold information about a duplicate URL entry.
      */
@@ -117,7 +146,7 @@ interface MangaRepository {
         val oldUrl: String,
         val normalizedUrl: String,
     )
-    
+
     /**
      * Normalize URLs with advanced options.
      * @param removeDoubleSlashes whether to also remove double slashes from URLs
@@ -135,9 +164,14 @@ interface MangaRepository {
 
     /**
      * Refresh the library cache table.
-     * Call this after bulk operations or on app startup to ensure cache integrity.
+     * Call this after bulk operations to ensure cache integrity.
      */
     suspend fun refreshLibraryCache()
+
+    /**
+     * Incrementally refresh the library cache
+     */
+    suspend fun refreshLibraryCacheIncremental()
 
     /**
      * Refresh the library cache for a specific manga.
@@ -162,8 +196,9 @@ interface MangaRepository {
     suspend fun normalizeAllTags(): Int
 
     /**
-     * Check library cache integrity.
-     * @return Pair of (favoriteCount, cacheCount) - should be equal if cache is valid
+     * Check library aggregate integrity.
+     * With aggregates stored directly on the mangas table, this always reports valid.
+     * @return Pair of (favoriteCount, cacheCount) - always matching
      */
     suspend fun checkLibraryCacheIntegrity(): Pair<Long, Long>
 }

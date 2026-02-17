@@ -1,13 +1,26 @@
 package eu.kanade.presentation.more.settings.screen
 
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.RestartAlt
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import cafe.adriel.voyager.core.screen.Screen
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.PreferenceScaffold
 import eu.kanade.presentation.util.LocalBackPress
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
 
 interface SearchableSettings : Screen {
 
@@ -18,8 +31,42 @@ interface SearchableSettings : Screen {
     @Composable
     fun getPreferences(): List<Preference>
 
+    /**
+     * Whether this screen supports per-screen reset.
+     * Override to return true to show a reset button in the app bar.
+     */
+    val supportsReset: Boolean get() = false
+
     @Composable
     fun RowScope.AppBarAction() {
+        if (supportsReset) {
+            var showResetDialog by remember { mutableStateOf(false) }
+            val preferences = getPreferences()
+            IconButton(onClick = { showResetDialog = true }) {
+                Icon(Icons.Outlined.RestartAlt, contentDescription = "Reset to defaults")
+            }
+
+            if (showResetDialog) {
+                AlertDialog(
+                    onDismissRequest = { showResetDialog = false },
+                    title = { Text("Reset settings") },
+                    text = { Text("Reset all settings on this screen to their default values?") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            resetPreferencesToDefaults(preferences)
+                            showResetDialog = false
+                        }) {
+                            Text("Reset")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showResetDialog = false }) {
+                            Text(stringResource(MR.strings.action_cancel))
+                        }
+                    },
+                )
+            }
+        }
     }
 
     @Composable
@@ -39,5 +86,38 @@ interface SearchableSettings : Screen {
         // Set before showing the destination screen and reset after
         // See BasePreferenceWidget.highlightBackground
         var highlightKey: String? = null
+
+        /**
+         * Resets all resettable preferences in the given preference list to their default values.
+         */
+        fun resetPreferencesToDefaults(preferences: List<Preference>) {
+            for (pref in preferences) {
+                when (pref) {
+                    is Preference.PreferenceGroup -> {
+                        for (item in pref.preferenceItems) {
+                            resetPreferenceItem(item)
+                        }
+                    }
+                    is Preference.PreferenceItem<*, *> -> {
+                        resetPreferenceItem(pref)
+                    }
+                }
+            }
+        }
+
+        private fun resetPreferenceItem(item: Preference.PreferenceItem<*, *>) {
+            when (item) {
+                is Preference.PreferenceItem.SwitchPreference -> item.preference.delete()
+                is Preference.PreferenceItem.ListPreference<*> -> item.preference.delete()
+                is Preference.PreferenceItem.MultiSelectListPreference -> item.preference.delete()
+                is Preference.PreferenceItem.EditTextPreference -> item.preference.delete()
+                is Preference.PreferenceItem.SliderPreference -> {}
+                is Preference.PreferenceItem.TextPreference -> {}
+                is Preference.PreferenceItem.TrackerPreference -> {}
+                is Preference.PreferenceItem.InfoPreference -> {}
+                is Preference.PreferenceItem.CustomPreference -> {}
+                is Preference.PreferenceItem.BasicListPreference -> {}
+            }
+        }
     }
 }

@@ -34,6 +34,7 @@ import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
+import eu.kanade.presentation.reader.settings.RegexReplacement
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
 import kotlinx.coroutines.CancellationException
@@ -242,6 +243,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         val chapter: ReaderChapter,
         val textView: TextView,
         val headerView: TextView,
+        var separatorView: View? = null,
         var isLoaded: Boolean = false,
     )
 
@@ -360,8 +362,11 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             private var touchedTextView: TextView? = null
 
             override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-                // Always pass touch events to gesture detector first
-                gestureDetector.onTouchEvent(ev)
+                val hasActiveSelection = preferences.novelTextSelectable().get() &&
+                    (isTextSelectionMode || loadedChapters.any { it.textView.hasSelection() })
+                if (!hasActiveSelection) {
+                    gestureDetector.onTouchEvent(ev)
+                }
                 return super.dispatchTouchEvent(ev)
             }
 
@@ -372,10 +377,10 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                     textView.getLocationOnScreen(location)
                     val scrollViewLocation = IntArray(2)
                     this.getLocationOnScreen(scrollViewLocation)
-                    
+
                     val relativeTop = location[1] - scrollViewLocation[1]
                     val relativeBottom = relativeTop + textView.height
-                    
+
                     if (y >= relativeTop && y <= relativeBottom) {
                         return textView
                     }
@@ -398,16 +403,16 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                             if (isTextSelectionMode) {
                                 return false
                             }
-                            
+
                             val deltaX = kotlin.math.abs(ev.x - selectionStartX)
                             val deltaY = kotlin.math.abs(ev.y - selectionStartY)
-                            
+
                             // If horizontal movement is greater than vertical, likely text selection
                             if (deltaX > deltaY && deltaX > 10) {
                                 isTextSelectionMode = true
                                 return false
                             }
-                            
+
                             // Check for small movements (likely text selection vs scroll)
                             if (deltaY < 20 && deltaX < 20) {
                                 // Very small movement - might be selecting text, don't intercept
@@ -512,8 +517,6 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         val effectiveChapterHeight = (chapterHeight - visibleHeight).coerceAtLeast(1)
         val chapterScrollY = (scrollY - chapterTop).coerceIn(0, effectiveChapterHeight)
         return (chapterScrollY.toFloat() / effectiveChapterHeight).coerceIn(0f, 1f)
-
-        return 0f
     }
 
     private fun scheduleProgressSave(progress: Float) {
@@ -922,15 +925,14 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                 }
         }
 
-        // Observe paragraph formatting preferences separately (require content reload)
         scope.launch {
             merge(
                 preferences.novelParagraphIndent().changes(),
                 preferences.novelParagraphSpacing().changes(),
                 preferences.novelShowRawHtml().changes(),
-            ).drop(3) // Drop initial emissions
+                preferences.novelRegexReplacements().changes(),
+            ).drop(4)
                 .collect {
-                    // Reload content to apply new formatting
                     currentChapters?.let { setChapters(it) }
                 }
         }
@@ -947,6 +949,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                     activity.runOnUiThread {
                         // Update text selection on existing loaded chapters immediately
                         loadedChapters.forEach { loaded ->
+                            clearTextViewSelection(loaded.textView)
                             loaded.textView.setTextIsSelectable(selectable)
                             loaded.textView.isFocusable = selectable
                             loaded.textView.isFocusableInTouchMode = selectable
@@ -958,11 +961,11 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                             }
                         }
                         // Also reload to ensure consistent state
-                        currentChapters?.let { 
+                        currentChapters?.let {
                             contentContainer.removeAllViews()
                             loadedChapters.clear()
                             currentChapterIndex = 0
-                            setChapters(it) 
+                            setChapters(it)
                         }
                     }
                 }
@@ -1005,17 +1008,17 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     private fun createSelectableTextView(): TextView {
         return TextView(activity).apply {
             val isSelectable = preferences.novelTextSelectable().get()
-            
+
             // Set explicit layout params with MATCH_PARENT width for text selection to work
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
-            
+
             // setTextIsSelectable MUST be called and we should NOT override movementMethod
             // Android internally sets up the correct movement method for selection when this is true
             setTextIsSelectable(isSelectable)
-            
+
             // For text selection to work, we need to ensure the textview can receive focus
             if (isSelectable) {
                 isFocusable = true
@@ -1028,7 +1031,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                 // When not selectable, use LinkMovementMethod for clicking links
                 movementMethod = android.text.method.LinkMovementMethod.getInstance()
             }
-            
+
             // Request parent not intercept when trying to select text
             setOnTouchListener { v, event ->
                 val textView = v as TextView
@@ -1056,7 +1059,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                 }
                 false // Let the TextView handle the event
             }
-            
+
             // Set up long click listener for text selection
             if (isSelectable) {
                 setOnLongClickListener {
@@ -1082,7 +1085,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     private var isTtsAutoPlay = false // Track if TTS should auto-continue to next chapter
     private var ttsPaused = false
     private var ttsChunks: List<String> = emptyList()
-    private var ttsCurrentChunkIndex = 0
+    @Volatile private var ttsCurrentChunkIndex = 0
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
@@ -1194,10 +1197,15 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
 
         ttsPaused = false
 
-        // Android TTS has a max length limit (~4000 chars), chunk long text
         val maxLength = TextToSpeech.getMaxSpeechInputLength()
+        val paragraphs = text.split("\n").filter { it.isNotBlank() }
 
-        ttsChunks = if (text.length <= maxLength) {
+        ttsChunks = if (paragraphs.size > 1) {
+            paragraphs.flatMap { para ->
+                if (para.length <= maxLength) listOf(para)
+                else splitTextForTts(para, maxLength)
+            }
+        } else if (text.length <= maxLength) {
             listOf(text)
         } else {
             splitTextForTts(text, maxLength)
@@ -1257,7 +1265,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
 
     fun startTts() {
         ensureTtsInitialized()
-        
+
         if (!ttsInitialized) {
             logcat(LogPriority.WARN) { "TTS: Not initialized yet, waiting..." }
             // Queue the speech to start when TTS becomes available
@@ -1278,7 +1286,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             }
             return
         }
-        
+
         isTtsAutoPlay = true // Enable auto-continue
         val text = loadedChapters.getOrNull(currentChapterIndex)?.textView?.text?.toString()
             ?: loadedChapters.firstOrNull()?.textView?.text?.toString()
@@ -1307,7 +1315,9 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     fun pauseTts() {
         if (ttsInitialized && tts?.isSpeaking == true) {
             ttsPaused = true
-            tts?.stop() // TTS doesn't have native pause, so stop and track position
+            tts?.stop()
+            val progress = calculateCurrentChapterProgress(scrollView.scrollY)
+            scheduleProgressSave(progress)
         }
     }
 
@@ -1563,6 +1573,22 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             currentChapterIndex = loadedChapters.size - 1
         }
 
+        if (isAppend) {
+            val separator = TextView(activity).apply {
+                text = "──────────"
+                textSize = 16f
+                setTextColor(0xFF888888.toInt())
+                gravity = Gravity.CENTER
+                setPadding(16, 48, 16, 48)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
+            }
+            contentContainer.addView(separator)
+            loadedChapter.separatorView = separator
+        }
+
         // Add views to container
         contentContainer.addView(headerView)
         contentContainer.addView(textView)
@@ -1582,8 +1608,67 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
 
         applyBackgroundColor()
 
-        // Clean up old chapters if too many loaded
+        if (!preferences.novelInfiniteScroll().get()) {
+            addNextChapterButton()
+        }
+
         cleanupDistantChapters()
+
+        if (isAppend) {
+            textView.post {
+                val progress = calculateCurrentChapterProgress(scrollView.scrollY)
+                activity.onNovelProgressChanged(progress)
+            }
+        }
+    }
+
+    private val NEXT_CHAPTER_BUTTON_TAG = "next_chapter_button"
+
+    /**
+     * Adds a "Next Chapter" navigation button at the bottom of the content
+     * when infinite scroll is off.
+     */
+    private fun addNextChapterButton() {
+        contentContainer.findViewWithTag<View>(NEXT_CHAPTER_BUTTON_TAG)?.let {
+            contentContainer.removeView(it)
+        }
+
+        val chapters = currentChapters ?: return
+        val hasNext = chapters.nextChapter != null
+
+        if (!hasNext) return
+
+        val buttonContainer = LinearLayout(activity).apply {
+            tag = NEXT_CHAPTER_BUTTON_TAG
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(32, 48, 32, 48)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+
+        val nextButton = android.widget.Button(activity).apply {
+            text = "Next Chapter →"
+            isAllCaps = false
+            textSize = 16f
+            setTextColor(android.graphics.Color.BLACK)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(android.graphics.Color.parseColor("#ADD8E6"))
+                setStroke(2, android.graphics.Color.BLACK)
+                cornerRadius = 12f
+            }
+            setPadding(32, 24, 32, 24)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            setOnClickListener { activity.loadNextChapter() }
+        }
+        buttonContainer.addView(nextButton)
+
+        contentContainer.addView(buttonContainer)
     }
 
     private fun cleanupDistantChapters() {
@@ -1592,12 +1677,25 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         val maxChapters = 3
         while (loadedChapters.size > maxChapters && currentChapterIndex > 0) {
             val toRemove = loadedChapters.first()
-            val removedHeight = toRemove.headerView.height + toRemove.textView.height
+            var removedHeight = toRemove.headerView.height + toRemove.textView.height
+
+            toRemove.separatorView?.let { sep ->
+                removedHeight += sep.height
+                contentContainer.removeView(sep)
+            }
 
             contentContainer.removeView(toRemove.headerView)
             contentContainer.removeView(toRemove.textView)
             loadedChapters.removeAt(0)
             currentChapterIndex--
+
+            if (loadedChapters.isNotEmpty()) {
+                loadedChapters.first().separatorView?.let { sep ->
+                    removedHeight += sep.height
+                    contentContainer.removeView(sep)
+                    loadedChapters.first().separatorView = null
+                }
+            }
 
             // Adjust scroll position to prevent visual jump
             // Content shifted UP by removedHeight, so we must scroll UP by the same amount
@@ -1621,12 +1719,12 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             val progress = savedProgress / 100f
             // Set lastSavedProgress BEFORE posting to prevent race condition with scroll listener
             lastSavedProgress = progress
-            
+
             // Wait for layout to complete before scrolling
             scrollView.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
                 override fun onGlobalLayout() {
                     scrollView.viewTreeObserver.removeOnGlobalLayoutListener(this)
-                    
+
                     // Double-check the content is loaded
                     val child = scrollView.getChildAt(0) ?: return
                     val totalHeight = child.height - scrollView.height
@@ -1640,7 +1738,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                         }, 200)
                         return
                     }
-                    
+
                     isRestoringScroll = true
                     setScrollProgress(progress.coerceIn(0f, 1f))
                     logcat(LogPriority.DEBUG) { "NovelViewer: Scroll restored to ${(progress * 100).toInt()}%" }
@@ -1788,13 +1886,14 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         val showRawHtml = preferences.novelShowRawHtml().get()
         if (showRawHtml) {
             // Display raw HTML tags without parsing
+            clearTextViewSelection(textView)
             textView.text = content
             return
         }
 
         // Process content to ensure paragraph tags exist for styling
         var processedContent = content
-        
+
         // Strip script tags and their content — they would render as visible text
         processedContent = processedContent.replace(Regex("<script[^>]*>[\\s\\S]*?</script>", RegexOption.IGNORE_CASE), "")
         processedContent = processedContent.replace(Regex("<script[^>]*/>", RegexOption.IGNORE_CASE), "")
@@ -1803,6 +1902,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         processedContent = processedContent.replace(Regex("<style[^>]*/>", RegexOption.IGNORE_CASE), "")
         // Strip noscript tags
         processedContent = processedContent.replace(Regex("<noscript[^>]*>[\\s\\S]*?</noscript>", RegexOption.IGNORE_CASE), "")
+
+        processedContent = applyRegexReplacements(processedContent)
 
         // Optionally strip media tags entirely when blocking media
         if (preferences.novelBlockMedia().get()) {
@@ -1891,24 +1992,80 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             }
 
             withContext(Dispatchers.Main) {
+                clearTextViewSelection(textView)
                 textView.setText(spannable, TextView.BufferType.SPANNABLE)
-                // Re-apply text selection after setting text — Android can lose
-                // the internal Editor state when text changes.
-                // Toggle false→true to force full re-initialization (calling with
-                // the same value is a no-op in the Android framework).
-                if (preferences.novelTextSelectable().get()) {
-                    textView.setTextIsSelectable(false)
-                    textView.setTextIsSelectable(true)
-                    textView.isFocusable = true
-                    textView.isFocusableInTouchMode = true
-                    textView.isLongClickable = true
-                    // Post requestFocus to ensure layout is complete
-                    textView.post {
-                        textView.requestFocus()
-                    }
-                }
             }
         }
+    }
+
+    /**
+     * Apply user-configured find & replace rules to content.
+     * Rules are stored as JSON in the novelRegexReplacements preference.
+     * Each enabled rule is applied in order — supports both plain text and regex patterns.
+     */
+    private fun applyRegexReplacements(content: String): String {
+        val rulesJson = preferences.novelRegexReplacements().get()
+        if (rulesJson.isBlank() || rulesJson == "[]") return content
+
+        val rules: List<RegexReplacement> = try {
+            kotlinx.serialization.json.Json.decodeFromString(rulesJson)
+        } catch (e: Exception) {
+            logcat(LogPriority.WARN) { "Failed to parse regex replacements: ${e.message}" }
+            return content
+        }
+
+        var result = content
+        for (rule in rules) {
+            if (!rule.enabled || rule.pattern.isBlank()) continue
+            try {
+                result = if (rule.isRegex) {
+                    val regex = Regex(rule.pattern)
+                    regex.replace(result, rule.replacement)
+                } else {
+                    result.replace(rule.pattern, rule.replacement)
+                }
+            } catch (e: Exception) {
+                logcat(LogPriority.WARN) { "Regex replacement '${rule.title}' failed: ${e.message}" }
+            }
+        }
+        return result
+    }
+
+    /**
+     * Dismiss any active text selection (action mode / handles) without toggling
+     * [TextView.setTextIsSelectable].  Toggling selectable state on every
+     */
+    private fun clearTextViewSelection(textView: TextView) {
+        try {
+            // Cancel any active action mode (floating toolbar)
+            val actionModeField = android.widget.TextView::class.java.getDeclaredField("mEditor")
+            actionModeField.isAccessible = true
+            val editor = actionModeField.get(textView)
+            if (editor != null) {
+                try {
+                    val hideMethod = editor.javaClass.getDeclaredMethod("hideControllers")
+                    hideMethod.isAccessible = true
+                    hideMethod.invoke(editor)
+                } catch (_: Exception) {}
+                try {
+                    val stopMethod = editor.javaClass.getDeclaredMethod("stopTextActionMode")
+                    stopMethod.isAccessible = true
+                    stopMethod.invoke(editor)
+                } catch (_: Exception) {
+                    try {
+                        val stopMethod = editor.javaClass.getDeclaredMethod("stopSelectionActionMode")
+                        stopMethod.isAccessible = true
+                        stopMethod.invoke(editor)
+                    } catch (_: Exception) {}
+                }
+            }
+        } catch (_: Exception) {
+        }
+        val spannable = textView.text
+        if (spannable is android.text.Spannable) {
+            android.text.Selection.removeSelection(spannable)
+        }
+        textView.clearFocus()
     }
 
     /**
@@ -2010,7 +2167,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     }
 
     private var initialLoadingView: TextView? = null
-    
+
     private fun showLoadingIndicator() {
         // Use inline loading text instead of progress bar
         contentContainer.removeAllViews()
@@ -2107,9 +2264,15 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
 
     /**
      * Gets the current scroll progress as percentage (0 to 100)
+     * In infinite scroll mode, returns progress within the current chapter.
      */
     fun getProgressPercent(): Int {
         val scrollY = scrollView.scrollY
+        if (loadedChapters.size > 1 && preferences.novelInfiniteScroll().get()) {
+            val progress = calculateCurrentChapterProgress(scrollY)
+            val percent = if (progress >= 0.98f) 100 else (progress * 100).toInt()
+            return percent.coerceIn(0, 100)
+        }
         val child = scrollView.getChildAt(0)
         val totalHeight = if (child != null) child.height - scrollView.height else 0
         if (totalHeight <= 0) return 100 // If no scrollable content, we're at 100%

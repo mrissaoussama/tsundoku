@@ -62,10 +62,8 @@ import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
-import tachiyomi.domain.history.interactor.RefreshHistoryCache
 import tachiyomi.domain.library.interactor.RefreshLibraryCache
 import tachiyomi.domain.library.service.LibraryPreferences
-import tachiyomi.domain.updates.interactor.RefreshUpdatesCache
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.widget.WidgetManager
 import uy.kohesive.injekt.Injekt
@@ -182,33 +180,6 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                 preference.set(BuildConfig.VERSION_CODE)
             },
         )
-
-        // Ensure library cache integrity after migrations (if enabled)
-        val libraryPreferences = Injekt.get<LibraryPreferences>()
-        if (libraryPreferences.verifyCacheOnStartup().get()) {
-            ProcessLifecycleOwner.get().lifecycleScope.launch(Dispatchers.IO) {
-                try {
-                    val refreshLibraryCache = Injekt.get<RefreshLibraryCache>()
-                    refreshLibraryCache.ensureIntegrity()
-                } catch (e: Exception) {
-                    logcat(LogPriority.ERROR, e) { "Failed to ensure library cache integrity" }
-                }
-
-                try {
-                    val refreshHistoryCache = Injekt.get<RefreshHistoryCache>()
-                    refreshHistoryCache.ensureIntegrity()
-                } catch (e: Exception) {
-                    logcat(LogPriority.ERROR, e) { "Failed to ensure history cache integrity" }
-                }
-
-                try {
-                    val refreshUpdatesCache = Injekt.get<RefreshUpdatesCache>()
-                    refreshUpdatesCache.ensureIntegrity()
-                } catch (e: Exception) {
-                    logcat(LogPriority.ERROR, e) { "Failed to ensure updates cache integrity" }
-                }
-            }
-        }
     }
 
     override fun newImageLoader(context: Context): ImageLoader {

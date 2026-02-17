@@ -13,7 +13,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
@@ -39,6 +43,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.TabbedDialog
 import eu.kanade.presentation.components.TabbedDialogPaddings
@@ -78,6 +84,14 @@ fun LibrarySettingsDialog(
             "Extensions",
         ),
     ) { page ->
+        if (page == 3) {
+            Column(
+                modifier = Modifier
+                    .padding(vertical = TabbedDialogPaddings.Vertical),
+            ) {
+                TagsPage(screenModel = screenModel)
+            }
+        } else {
         Column(
             modifier = Modifier
                 .padding(vertical = TabbedDialogPaddings.Vertical)
@@ -101,6 +115,7 @@ fun LibrarySettingsDialog(
                     screenModel = screenModel,
                 )
             }
+        }
         }
     }
 }
@@ -380,17 +395,18 @@ private fun ColumnScope.TagsPage(
     val filterNoTags by screenModel.libraryPreferences.filterNoTags().collectAsState()
     val noTagsCount by screenModel.noTagsCountFlow.collectAsState()
     val isLoading by screenModel.isLoading.collectAsState()
-    
+
     // Tag options
     val tagIncludeModeAnd by screenModel.libraryPreferences.tagIncludeMode().collectAsState()
     val tagExcludeModeAnd by screenModel.libraryPreferences.tagExcludeMode().collectAsState()
     val tagSortByName by screenModel.libraryPreferences.tagSortByName().collectAsState()
     val tagSortAscending by screenModel.libraryPreferences.tagSortAscending().collectAsState()
     val tagCaseSensitive by screenModel.libraryPreferences.tagCaseSensitive().collectAsState()
-    
+
     // Tag search state
     val tagSearchQuery by screenModel.tagSearchQuery.collectAsState()
-    
+    val committedTagQuery by screenModel.committedTagQuery.collectAsState()
+
     // Options expanded state
     val optionsExpanded by screenModel.tagOptionsExpanded.collectAsState()
 
@@ -421,7 +437,7 @@ private fun ColumnScope.TagsPage(
             Text("Refresh")
         }
     }
-    
+
     // Collapsible options section
     if (optionsExpanded) {
         Column(
@@ -450,9 +466,9 @@ private fun ColumnScope.TagsPage(
                     )
                 }
             }
-            
+
             Spacer(Modifier.height(8.dp))
-            
+
             // Exclude mode toggle
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -474,9 +490,9 @@ private fun ColumnScope.TagsPage(
                     )
                 }
             }
-            
+
             Spacer(Modifier.height(8.dp))
-            
+
             // Sort options
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -498,9 +514,9 @@ private fun ColumnScope.TagsPage(
                     )
                 }
             }
-            
+
             Spacer(Modifier.height(8.dp))
-            
+
             // Sort direction
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -522,9 +538,9 @@ private fun ColumnScope.TagsPage(
                     )
                 }
             }
-            
+
             Spacer(Modifier.height(8.dp))
-            
+
             // Case sensitivity toggle
             CheckboxItem(
                 label = "Case sensitive matching",
@@ -551,24 +567,32 @@ private fun ColumnScope.TagsPage(
         state = filterNoTags,
         onClick = { screenModel.toggleNoTagsFilter() },
     )
-    
+
     // Tag search input
+    val keyboardController = LocalSoftwareKeyboardController.current
     OutlinedTextField(
         value = tagSearchQuery,
         onValueChange = { screenModel.setTagSearchQuery(it) },
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = TabbedDialogPaddings.Horizontal, vertical = 8.dp),
-        placeholder = { Text("Search tags...") },
+        placeholder = { Text("Search tags... (press Enter)") },
         leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
         trailingIcon = if (tagSearchQuery.isNotEmpty()) {
             {
-                IconButton(onClick = { screenModel.setTagSearchQuery("") }) {
+                IconButton(onClick = { screenModel.clearTagSearch() }) {
                     Icon(Icons.Default.Clear, contentDescription = "Clear search")
                 }
             }
         } else null,
         singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(
+            onSearch = {
+                screenModel.commitTagSearch()
+                keyboardController?.hide()
+            },
+        ),
     )
 
     if (tags.isEmpty() && !isLoading) {
@@ -593,24 +617,24 @@ private fun ColumnScope.TagsPage(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = TabbedDialogPaddings.Horizontal, vertical = 4.dp),
         )
-        
+
         // Sort and filter tags
-        val sortedTags = remember(tags, tagSortByName, tagSortAscending, tagSearchQuery, includedTags, excludedTags, tagCaseSensitive) {
-            val filtered = if (tagSearchQuery.isBlank()) {
+        val sortedTags = remember(tags, tagSortByName, tagSortAscending, committedTagQuery, includedTags, excludedTags, tagCaseSensitive) {
+            val filtered = if (committedTagQuery.isBlank()) {
                 tags
             } else {
-                val query = if (tagCaseSensitive) tagSearchQuery else tagSearchQuery.lowercase()
+                val query = if (tagCaseSensitive) committedTagQuery else committedTagQuery.lowercase()
                 tags.filter { (tag, _) ->
                     val tagToMatch = if (tagCaseSensitive) tag else tag.lowercase()
                     tagToMatch.contains(query)
                 }
             }
-            
+
             // Sort with active tags prioritized
             val (activeTags, inactiveTags) = filtered.partition { (tag, _) ->
                 tag in includedTags || tag in excludedTags
             }
-            
+
             val sortComparator: Comparator<Pair<String, Int>> = if (tagSortByName) {
                 if (tagSortAscending) {
                     compareBy { it.first.lowercase() }
@@ -624,18 +648,28 @@ private fun ColumnScope.TagsPage(
                     compareByDescending { it.second }
                 }
             }
-            
+
             activeTags.sortedWith(sortComparator) + inactiveTags.sortedWith(sortComparator)
         }
 
-        FlowRow(
+        Text(
+            text = "${sortedTags.size} tags",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = TabbedDialogPaddings.Horizontal, vertical = 2.dp),
+        )
+
+        LazyVerticalStaggeredGrid(
+            columns = StaggeredGridCells.Adaptive(minSize = 100.dp),
             modifier = Modifier
                 .fillMaxWidth()
+                .weight(1f)
                 .padding(horizontal = TabbedDialogPaddings.Horizontal, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalItemSpacing = 8.dp,
         ) {
-            sortedTags.forEach { (tag, count) ->
+            items(sortedTags.size, key = { sortedTags[it].first }) { index ->
+                val (tag, count) = sortedTags[index]
                 val isIncluded = tag in includedTags
                 val isExcluded = tag in excludedTags
 

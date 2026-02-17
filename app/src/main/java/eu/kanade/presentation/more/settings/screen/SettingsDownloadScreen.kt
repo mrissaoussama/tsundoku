@@ -27,6 +27,8 @@ import uy.kohesive.injekt.api.get
 
 object SettingsDownloadScreen : SearchableSettings {
 
+    override val supportsReset: Boolean get() = true
+
     @ReadOnlyComposable
     @Composable
     override fun getTitleRes() = MR.strings.pref_category_downloads

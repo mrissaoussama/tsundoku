@@ -175,6 +175,7 @@ class ReaderPreferences(
     fun novelVolumeKeysScroll() = preferenceStore.getBoolean("pref_novel_volume_keys_scroll", false)
     fun novelTapToScroll() = preferenceStore.getBoolean("pref_novel_tap_to_scroll", false)
     fun novelTextSelectable() = preferenceStore.getBoolean("pref_novel_text_selectable", true)
+
     // Block media elements (images, videos) in WebView and TextView readers
     fun novelBlockMedia() = preferenceStore.getBoolean("pref_novel_block_media", false)
 
@@ -209,6 +210,10 @@ class ReaderPreferences(
 
     // Currently active global preset name (empty = none)
     fun novelActivePreset() = preferenceStore.getString("pref_novel_active_preset", "")
+
+    // Regex find/replace rules stored as JSON array of {title, pattern, replacement, enabled, isRegex}
+    // Applied to chapter HTML content before rendering in both WebView and TextView modes
+    fun novelRegexReplacements() = preferenceStore.getString("pref_novel_regex_replacements", "[]")
 
     // Infinite scroll - automatically load next/previous chapters
     fun novelInfiniteScroll() = preferenceStore.getBoolean("pref_novel_infinite_scroll", false)

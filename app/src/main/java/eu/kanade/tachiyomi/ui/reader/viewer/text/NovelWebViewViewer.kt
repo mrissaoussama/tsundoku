@@ -13,6 +13,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import eu.kanade.presentation.reader.settings.CodeSnippet
+import eu.kanade.presentation.reader.settings.RegexReplacement
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.reader.loader.PageLoader
@@ -283,12 +284,16 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     hideLoadingIndicator()
                     injectCustomStyles()
                     injectCustomScript()
+                    injectScrollTracking()
                     restoreScrollPosition()
+                    if (!preferences.novelInfiniteScroll().get()) {
+                        injectNextChapterButton()
+                    }
                 }
             }
 
             // Add JavaScript interface for progress saving
-            addJavascriptInterface(WebViewInterface(), "Android")
+            addJavascriptInterface(this@NovelWebViewViewer.WebViewInterface(), "Android")
 
             // Enable text selection via long press
             isLongClickable = true
@@ -352,6 +357,15 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     webView.reload()
                 }
         }
+
+        // Observe regex replacements — requires full content reload
+        scope.launch {
+            preferences.novelRegexReplacements().changes()
+                .drop(1)
+                .collect {
+                    currentChapters?.let { setChapters(it) }
+                }
+        }
     }
 
     private fun injectCustomStyles() {
@@ -393,7 +407,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
         // Generate font-face declaration for custom fonts
         // For custom fonts (URIs), copy to cache and use file:// URL
-        val (fontFaceDeclaration, effectiveFontFamily) = if (!useOriginalFonts && (fontFamily.startsWith("file://") || fontFamily.startsWith("content://"))) {
+        val (fontFaceDeclaration, effectiveFontFamily) = if (!useOriginalFonts &&
+            (fontFamily.startsWith("file://") || fontFamily.startsWith("content://"))
+        ) {
             try {
                 // Copy font to cache directory for WebView access
                 val fontUri = android.net.Uri.parse(fontFamily)
@@ -489,7 +505,44 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         } catch (e: Exception) {
             logcat(LogPriority.ERROR) { "Failed to parse JS snippets: ${e.message}" }
         }
+    }
 
+    /**
+     * Injects a "Next Chapter" button at the bottom of the WebView content
+     * when infinite scroll is disabled.
+     */
+    private fun injectNextChapterButton() {
+        val hasNext = currentChapters?.nextChapter != null
+        if (!hasNext) return
+
+        val js = """
+            (function() {
+                // Remove existing button if any
+                var existing = document.getElementById('next-chapter-btn-container');
+                if (existing) existing.remove();
+
+                var container = document.createElement('div');
+                container.id = 'next-chapter-btn-container';
+                container.style.cssText = 'padding: 32px 16px; text-align: center;';
+
+                var btn = document.createElement('button');
+                btn.textContent = 'Next Chapter →';
+                btn.style.cssText = 'width: 100%; padding: 12px 24px; font-size: 16px; ' +
+                    'background-color: #ADD8E6; color: #000000; ' +
+                    'border: 2px solid #000000; border-radius: 8px; ' +
+                    'cursor: pointer; text-transform: none;';
+                btn.onclick = function() {
+                    Android.loadNextChapter();
+                };
+                container.appendChild(btn);
+                document.body.appendChild(container);
+            })();
+        """.trimIndent()
+
+        evaluateJavascriptSafe(js, null)
+    }
+
+    private fun injectScrollTracking() {
         // Add scroll tracking script with infinite scroll support
         val infiniteScrollEnabled = preferences.novelInfiniteScroll().get()
         val autoLoadThreshold = preferences.novelAutoLoadNextChapterAt().get()
@@ -634,16 +687,16 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         currentPage?.let { page ->
             val savedProgress = page.chapter.chapter.last_page_read
             val isRead = page.chapter.chapter.read
-            
-            logcat(LogPriority.DEBUG) { 
-                "NovelWebViewViewer: Restoring progress, savedProgress=$savedProgress, isRead=$isRead for ${page.chapter.chapter.name}" 
+
+            logcat(LogPriority.DEBUG) {
+                "NovelWebViewViewer: Restoring progress, savedProgress=$savedProgress, isRead=$isRead for ${page.chapter.chapter.name}"
             }
 
             // If chapter is marked as read, start from top (0%) to avoid infinite scroll issues
             if (!isRead && savedProgress > 0 && savedProgress <= 100) {
                 val progress = savedProgress / 100f
                 lastSavedProgress = progress
-                
+
                 // Wait a bit for content to be fully rendered before scrolling
                 webView.postDelayed({
                     val js = """
@@ -680,19 +733,41 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 // Follow app theme - use actual Material theme colors
                 val typedValue = android.util.TypedValue()
                 val theme = activity.theme
-                val bgColor = if (theme.resolveAttribute(com.google.android.material.R.attr.colorSurface, typedValue, true)) {
+                val bgColor = if (theme.resolveAttribute(
+                        com.google.android.material.R.attr.colorSurface,
+                        typedValue,
+                        true,
+                    )
+                ) {
                     typedValue.data
                 } else {
                     val nightMode = activity.resources.configuration.uiMode and
                         android.content.res.Configuration.UI_MODE_NIGHT_MASK
-                    if (nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES) 0xFF121212.toInt() else 0xFFFFFFFF.toInt()
+                    if (nightMode ==
+                        android.content.res.Configuration.UI_MODE_NIGHT_YES
+                    ) {
+                        0xFF121212.toInt()
+                    } else {
+                        0xFFFFFFFF.toInt()
+                    }
                 }
-                val textColor = if (theme.resolveAttribute(com.google.android.material.R.attr.colorOnSurface, typedValue, true)) {
+                val textColor = if (theme.resolveAttribute(
+                        com.google.android.material.R.attr.colorOnSurface,
+                        typedValue,
+                        true,
+                    )
+                ) {
                     typedValue.data
                 } else {
                     val nightMode = activity.resources.configuration.uiMode and
                         android.content.res.Configuration.UI_MODE_NIGHT_MASK
-                    if (nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES) 0xFFE0E0E0.toInt() else 0xFF000000.toInt()
+                    if (nightMode ==
+                        android.content.res.Configuration.UI_MODE_NIGHT_YES
+                    ) {
+                        0xFFE0E0E0.toInt()
+                    } else {
+                        0xFF000000.toInt()
+                    }
                 }
                 bgColor to textColor
             }
@@ -1120,7 +1195,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
         val js = """
             (function() {
-                var divider = document.createElement('div');
+                var divider = document.createElement('hr');
                 divider.className = 'chapter-divider';
                 divider.setAttribute('data-chapter-id', '$chapterId');
                 document.body.appendChild(divider);
@@ -1157,6 +1232,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         if (blockMedia) {
             cleanContent = stripMediaTags(cleanContent)
         }
+
+        // Apply user's regex find & replace rules
+        cleanContent = applyRegexReplacements(cleanContent)
 
         val theme = preferences.novelTheme().get()
         val (themeBgColor, themeTextColor) = getThemeColors(theme)
@@ -1200,10 +1278,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     }
                     .chapter-divider {
                         height: 1px;
-                        margin: 20px 0;
+                        margin: 32px auto;
                         padding: 0;
-                        background-color: $textColorHex;
-                        opacity: 0.2;
+                        border: none;
+                        border-top: 1px solid $textColorHex;
+                        opacity: 0.4;
+                        width: 60%;
                     }
                     img {
                         max-width: 100%;
@@ -1238,6 +1318,39 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             .replace(Regex("<video[^>]*>[\\s\\S]*?</video>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<audio[^>]*>[\\s\\S]*?</audio>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<source[^>]*>", RegexOption.IGNORE_CASE), "")
+    }
+
+    /**
+     * Apply user-configured find & replace rules to content.
+     * Rules are stored as JSON in the novelRegexReplacements preference.
+     * Each enabled rule is applied in order — supports both plain text and regex patterns.
+     */
+    private fun applyRegexReplacements(content: String): String {
+        val rulesJson = preferences.novelRegexReplacements().get()
+        if (rulesJson.isBlank() || rulesJson == "[]") return content
+
+        val rules: List<RegexReplacement> = try {
+            kotlinx.serialization.json.Json.decodeFromString(rulesJson)
+        } catch (e: Exception) {
+            logcat(LogPriority.WARN) { "Failed to parse regex replacements: ${e.message}" }
+            return content
+        }
+
+        var result = content
+        for (rule in rules) {
+            if (!rule.enabled || rule.pattern.isBlank()) continue
+            try {
+                result = if (rule.isRegex) {
+                    val regex = Regex(rule.pattern)
+                    regex.replace(result, rule.replacement)
+                } else {
+                    result.replace(rule.pattern, rule.replacement)
+                }
+            } catch (e: Exception) {
+                logcat(LogPriority.WARN) { "Regex replacement '${rule.title}' failed: ${e.message}" }
+            }
+        }
+        return result
     }
 
     /**
@@ -1484,7 +1597,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 logcat(LogPriority.DEBUG) {
                     "NovelWebViewViewer: loadNextChapter triggered, infiniteScroll=${preferences.novelInfiniteScroll().get()}, isLoadingNext=$isLoadingNext, loadedCount=${loadedChapterIds.size}"
                 }
-                if (preferences.novelInfiniteScroll().get() && !isLoadingNext) {
+                if (!preferences.novelInfiniteScroll().get()) {
+                    activity.loadNextChapter()
+                } else if (!isLoadingNext) {
                     isLoadingNext = true
                     scope.launch {
                         try {
@@ -1802,7 +1917,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             } catch (e: Exception) {
                 logcat(LogPriority.ERROR) { "TTS (WebView): Failed to create TextToSpeech instance: ${e.message}" }
                 activity.runOnUiThread {
-                    logcat(LogPriority.DEBUG) {"TTS engine not available. Please install a TTS engine from Google Play."}
+                    logcat(LogPriority.DEBUG) {
+                        "TTS engine not available. Please install a TTS engine from Google Play."
+                    }
                 }
             }
         }
@@ -1810,7 +1927,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
     fun startTts() {
         ensureTtsInitialized()
-        
+
         if (!ttsInitialized) {
             logcat(LogPriority.WARN) { "TTS (WebView): Not initialized yet, waiting..." }
             // Queue the speech to start when TTS becomes available
@@ -1825,13 +1942,13 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     startTts() // Retry now that it's initialized
                 } else {
                     activity.runOnUiThread {
-                        logcat(LogPriority.WARN) {"TTS not available. Please check your TTS settings."}
+                        logcat(LogPriority.WARN) { "TTS not available. Please check your TTS settings." }
                     }
                 }
             }
             return
         }
-        
+
         isTtsAutoPlay = true // Enable auto-continue
         // Extract text from WebView using JavaScript
         evaluateJavascriptSafe(

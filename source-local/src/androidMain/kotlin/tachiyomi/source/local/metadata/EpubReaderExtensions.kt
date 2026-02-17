@@ -14,23 +14,17 @@ import java.util.Locale
 fun EpubReader.fillMetadata(manga: SManga, chapter: SChapter) {
     val ref = getPackageHref()
     val doc = getPackageDocument(ref)
-
     var title = doc.getElementsByTag("dc:title").firstOrNull()?.text()
-
-    // Fallback: try to get title from docTitle metadata
     if (title.isNullOrBlank()) {
         title = doc.select("docTitle").firstOrNull()?.text()
     }
 
-    // Fallback: try to get title from meta name="title"
     if (title.isNullOrBlank()) {
         title = doc.select("meta[name=title]").firstOrNull()?.attr("content")
     }
-
     val publisher = doc.getElementsByTag("dc:publisher").firstOrNull()
     val creator = doc.getElementsByTag("dc:creator").firstOrNull()
     var description = doc.getElementsByTag("dc:description").firstOrNull()?.text()
-
     var date = doc.getElementsByTag("dc:date").firstOrNull()
     if (date == null) {
         date = doc.select("meta[property=dcterms:modified]").firstOrNull()
@@ -55,18 +49,23 @@ fun EpubReader.fillMetadata(manga: SManga, chapter: SChapter) {
                 chapter.date_upload = parsedDate.time
             }
         } catch (e: ParseException) {
-            // Empty
         }
     }
 
-    // Extract and set cover image
     extractCoverUrl(manga, doc, ref)
 }
 
 /**
  * Extracts the cover image from the EPUB and sets it as thumbnail.
+ * Skips extraction if thumbnail_url is already set to a valid external URI
+ * (e.g., by LocalCoverManager/LocalNovelCoverManager).
  */
 private fun EpubReader.extractCoverUrl(manga: SManga, doc: org.jsoup.nodes.Document, packageRef: String) {
+    val existing = manga.thumbnail_url
+    if (!existing.isNullOrBlank() && (existing.startsWith("content://") || existing.startsWith("file://"))) {
+        return
+    }
+
     try {
         val coverPath = getCoverImage()
         if (!coverPath.isNullOrBlank()) {
@@ -74,25 +73,20 @@ private fun EpubReader.extractCoverUrl(manga: SManga, doc: org.jsoup.nodes.Docum
             return
         }
 
-        // Try to find cover via manifest cover property
         var coverId = doc.select("meta[name=cover]").firstOrNull()?.attr("content")
 
-        // Fallback: look for cover-image id in manifest
         if (coverId.isNullOrBlank()) {
             coverId = doc.select("manifest > item[properties*=cover-image]").firstOrNull()?.attr("id")
         }
 
-        // If we found a cover id, get its href
         if (!coverId.isNullOrBlank()) {
             val coverHref = doc.select("manifest > item#$coverId").firstOrNull()?.attr("href")
             if (!coverHref.isNullOrBlank()) {
-                // Store the cover href as thumbnail URL (will be extracted during import)
                 manga.thumbnail_url = coverHref
                 return
             }
         }
 
-        // Fallback: look for cover in spine (first image in first chapter)
         val pages = getPagesFromDocument(doc)
         if (pages.isNotEmpty()) {
             val coverImages = getImagesFromPages()
@@ -101,6 +95,5 @@ private fun EpubReader.extractCoverUrl(manga: SManga, doc: org.jsoup.nodes.Docum
             }
         }
     } catch (e: Exception) {
-        // Continue without cover
     }
 }

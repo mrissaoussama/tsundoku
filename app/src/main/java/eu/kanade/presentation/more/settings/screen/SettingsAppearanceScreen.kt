@@ -30,6 +30,8 @@ import java.time.LocalDate
 
 object SettingsAppearanceScreen : SearchableSettings {
 
+    override val supportsReset: Boolean get() = true
+
     @ReadOnlyComposable
     @Composable
     override fun getTitleRes() = MR.strings.pref_category_appearance

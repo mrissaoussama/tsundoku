@@ -17,6 +17,8 @@ import uy.kohesive.injekt.api.get
 
 object SettingsNovelReaderScreen : SearchableSettings {
 
+    override val supportsReset: Boolean get() = true
+
     @ReadOnlyComposable
     @Composable
     override fun getTitleRes() = MR.strings.pref_category_novel
@@ -86,7 +88,10 @@ object SettingsNovelReaderScreen : SearchableSettings {
     }
 
     @Composable
-    private fun getTextGroup(readerPreferences: ReaderPreferences, navigator: cafe.adriel.voyager.navigator.Navigator): Preference.PreferenceGroup {
+    private fun getTextGroup(
+        readerPreferences: ReaderPreferences,
+        navigator: cafe.adriel.voyager.navigator.Navigator,
+    ): Preference.PreferenceGroup {
         val fontSize = readerPreferences.novelFontSize().collectAsState().value
         val lineHeight = readerPreferences.novelLineHeight().collectAsState().value
 
@@ -268,7 +273,7 @@ object SettingsNovelReaderScreen : SearchableSettings {
                     value = autoLoadNextAt,
                     valueRange = 50..100,
                     title = "Auto-load next chapter at",
-                    valueString = "${autoLoadNextAt}%",
+                    valueString = "$autoLoadNextAt%",
                     onValueChanged = { readerPreferences.novelAutoLoadNextChapterAt().set(it) },
                 ),
                 Preference.PreferenceItem.SwitchPreference(

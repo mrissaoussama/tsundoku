@@ -223,6 +223,7 @@ object SettingsAdvancedScreen : SearchableSettings {
         var categories by remember { mutableStateOf<List<Category>>(emptyList()) }
         var isDeleting by remember { mutableStateOf(false) }
         var showBulkRemovalDialog by remember { mutableStateOf(false) }
+        var showResetSettingsDialog by remember { mutableStateOf(false) }
 
         // Load categories when dialog is shown
         if (showMoveToCategoryDialog && categories.isEmpty()) {
@@ -259,6 +260,49 @@ object SettingsAdvancedScreen : SearchableSettings {
             )
         }
 
+        if (showResetSettingsDialog) {
+            AlertDialog(
+                onDismissRequest = { showResetSettingsDialog = false },
+                title = { Text(text = "Reset settings to default") },
+                text = {
+                    Text(text = "Are you sure you want to reset all app settings to their default values? This will not delete your library data, downloads, or backups. The app will restart afterwards.")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+
+                                val prefsDir = File(context.applicationInfo.dataDir, "shared_prefs")
+                                if (prefsDir.exists()) {
+                                    prefsDir.listFiles()?.forEach { file ->
+                                        val prefName = file.nameWithoutExtension
+                                        // Skip source-specific preferences
+                                        if (prefName.startsWith("source_")) return@forEach
+                                        context.getSharedPreferences(prefName, 0)
+                                            .edit()
+                                            .clear()
+                                            .apply()
+                                    }
+                                }
+                                showResetSettingsDialog = false
+                                val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+                                intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                                Runtime.getRuntime().exit(0)
+                            }
+                        },
+                    ) {
+                        Text(text = "Reset")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showResetSettingsDialog = false }) {
+                        Text(text = stringResource(MR.strings.action_cancel))
+                    }
+                },
+            )
+        }
+
         // Move to category dialog
         if (showMoveToCategoryDialog && categories.isNotEmpty()) {
             AlertDialog(
@@ -273,15 +317,15 @@ object SettingsAdvancedScreen : SearchableSettings {
                                 onClick = {
                                     scope.launch {
                                         val setCategories = Injekt.get<SetMangaCategories>()
-                                        
+
                                         // Use manga IDs directly from duplicate info
                                         val mangaIds = duplicateUrls.map { it.mangaId }
-                                        
+
                                         // Batch set categories (if supported) or do sequentially
                                         mangaIds.forEach { mangaId ->
                                             setCategories.await(mangaId, listOf(category.id))
                                         }
-                                        
+
                                         context.toast("Moved ${mangaIds.size} novels to ${category.name}")
                                         showMoveToCategoryDialog = false
                                     }
@@ -315,17 +359,17 @@ object SettingsAdvancedScreen : SearchableSettings {
                                     scope.launch {
                                         isDeleting = true
                                         val mangaRepo = Injekt.get<MangaRepository>()
-                                        
+
                                         // Use manga IDs directly for deletion (unfavorite)
                                         val updates = duplicateUrls.map { info ->
                                             MangaUpdate(id = info.mangaId, favorite = false)
                                         }
-                                        
+
                                         // Batch update all at once
                                         if (updates.isNotEmpty()) {
                                             mangaRepo.updateAll(updates)
                                         }
-                                        
+
                                         context.toast("Deleted ${updates.size} duplicate novels")
                                         isDeleting = false
                                         duplicateUrls = emptyList()
@@ -417,10 +461,10 @@ object SettingsAdvancedScreen : SearchableSettings {
             var isRemoving by remember { mutableStateOf(false) }
             var removedDuplicates by remember { mutableStateOf<List<Triple<String, String, String>>>(emptyList()) }
             var showRemovedList by remember { mutableStateOf(false) }
-            
+
             if (showRemovedList && removedDuplicates.isNotEmpty()) {
                 AlertDialog(
-                    onDismissRequest = { 
+                    onDismissRequest = {
                         showRemovedList = false
                         removedDuplicates = emptyList()
                     },
@@ -441,7 +485,7 @@ object SettingsAdvancedScreen : SearchableSettings {
                         }
                     },
                     confirmButton = {
-                        TextButton(onClick = { 
+                        TextButton(onClick = {
                             showRemovedList = false
                             removedDuplicates = emptyList()
                             showRemoveDuplicatesDialog = false
@@ -525,11 +569,11 @@ object SettingsAdvancedScreen : SearchableSettings {
             var isRemoving by remember { mutableStateOf(false) }
             var removedCount by remember { mutableStateOf(0) }
             var errorCount by remember { mutableStateOf(0) }
-            
+
             val pendingUrlCount = remember(pendingUrls) {
                 if (pendingUrls.isBlank()) 0 else pendingUrls.lines().filter { it.isNotBlank() }.size
             }
-            
+
             // File picker for URL list
             val filePickerLauncher = rememberLauncherForActivityResult(
                 contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
@@ -538,10 +582,10 @@ object SettingsAdvancedScreen : SearchableSettings {
                         try {
                             val inputStream = context.contentResolver.openInputStream(uri)
                             val content = inputStream?.bufferedReader()?.use { it.readText() } ?: return@let
-                            
+
                             // Add to pending queue instead of text field
                             pendingUrls = if (pendingUrls.isBlank()) content else "$pendingUrls\n$content"
-                            
+
                             val newCount = content.lines().filter { it.isNotBlank() }.size
                             context.toast("Added $newCount URLs to queue (Total: $pendingUrlCount)")
                         } catch (e: Exception) {
@@ -550,7 +594,7 @@ object SettingsAdvancedScreen : SearchableSettings {
                     }
                 },
             )
-            
+
             AlertDialog(
                 onDismissRequest = { if (!isRemoving) showBulkRemovalDialog = false },
                 title = { Text(text = "Bulk Remove by URL") },
@@ -558,7 +602,7 @@ object SettingsAdvancedScreen : SearchableSettings {
                     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                         Text(text = "Enter URLs to remove from library:")
                         Spacer(modifier = Modifier.height(8.dp))
-                        
+
                         // Text field for manual entry
                         androidx.compose.material3.OutlinedTextField(
                             value = urlText,
@@ -567,9 +611,9 @@ object SettingsAdvancedScreen : SearchableSettings {
                             placeholder = { Text("https://example.com/novel/123\nhttps://example.com/novel/456") },
                             enabled = !isRemoving,
                         )
-                        
+
                         Spacer(modifier = Modifier.height(8.dp))
-                        
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -589,7 +633,7 @@ object SettingsAdvancedScreen : SearchableSettings {
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text("Add to Queue")
                             }
-                            
+
                             // Load from file button
                             TextButton(
                                 onClick = { filePickerLauncher.launch(arrayOf("text/*", "*/*")) },
@@ -600,7 +644,7 @@ object SettingsAdvancedScreen : SearchableSettings {
                                 Text("Load File")
                             }
                         }
-                        
+
                         // Queue status
                         if (pendingUrlCount > 0) {
                             Spacer(modifier = Modifier.height(8.dp))
@@ -621,7 +665,7 @@ object SettingsAdvancedScreen : SearchableSettings {
                                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                                     )
                                     IconButton(
-                                        onClick = { 
+                                        onClick = {
                                             pendingUrls = ""
                                             removedCount = 0
                                             errorCount = 0
@@ -637,7 +681,7 @@ object SettingsAdvancedScreen : SearchableSettings {
                                 }
                             }
                         }
-                        
+
                         // Results
                         if (removedCount > 0 || errorCount > 0) {
                             Spacer(modifier = Modifier.height(8.dp))
@@ -662,48 +706,48 @@ object SettingsAdvancedScreen : SearchableSettings {
                                     val urls = pendingUrls.split("\n", ",", ";")
                                         .map { it.trim() }
                                         .filter { it.startsWith("http://") || it.startsWith("https://") }
-                                    
+
                                     if (urls.isEmpty()) {
                                         context.toast("No valid URLs to process")
                                         isRemoving = false
                                         return@launch
                                     }
-                                    
+
                                     val mangaRepo = Injekt.get<MangaRepository>()
-                                    
-                                    // Process in chunks to avoid loading all favorites repeatedly
+
+                                    // Use lightweight query (id + url only) to avoid OOM from loading full Manga objects
                                     val chunkSize = 50
+                                    val favorites = mangaRepo.getFavoriteIdAndUrl()
                                     for (urlChunk in urls.chunked(chunkSize)) {
                                         try {
-                                            val favorites = mangaRepo.getFavorites()
                                             val toUnfavorite = mutableSetOf<Long>()
-                                            
+
                                             for (url in urlChunk) {
                                                 try {
                                                     // Extract path from URL
                                                     val uri = java.net.URI(url)
                                                     val path = uri.path?.removePrefix("/")?.removeSuffix("/") ?: continue
-                                                    
+
                                                     // Find all favorite manga matching this URL pattern
-                                                    val matchingManga = favorites.filter { manga ->
+                                                    val matchingIds = favorites.filter { (_, mangaUrl) ->
                                                         val mangaPath = try {
-                                                            val mangaUri = java.net.URI(manga.url)
+                                                            val mangaUri = java.net.URI(mangaUrl)
                                                             mangaUri.path?.removePrefix("/")?.removeSuffix("/")
                                                         } catch (e: Exception) {
-                                                            manga.url.removePrefix("/").removeSuffix("/")
+                                                            mangaUrl.removePrefix("/").removeSuffix("/")
                                                         }
-                                                        
+
                                                         // Match if paths are similar (contains or equals)
                                                         mangaPath != null && (mangaPath == path || mangaPath.contains(path) || path.contains(mangaPath))
-                                                    }
-                                                    
-                                                    toUnfavorite.addAll(matchingManga.map { it.id })
+                                                    }.map { it.first }
+
+                                                    toUnfavorite.addAll(matchingIds)
                                                 } catch (e: Exception) {
                                                     logcat(LogPriority.ERROR, e) { "Error processing URL: $url" }
                                                     errorCount++
                                                 }
                                             }
-                                            
+
                                             // Unfavorite in batch
                                             if (toUnfavorite.isNotEmpty()) {
                                                 val updates = toUnfavorite.map { MangaUpdate(id = it, favorite = false) }
@@ -715,14 +759,14 @@ object SettingsAdvancedScreen : SearchableSettings {
                                             errorCount += urlChunk.size
                                         }
                                     }
-                                    
+
                                     withUIContext {
                                         context.toast(buildString {
                                             append("Removed $removedCount entries")
                                             if (errorCount > 0) append(" ($errorCount errors)")
                                         })
                                     }
-                                    
+
                                     // Clear queue after successful processing
                                     pendingUrls = ""
                                 } catch (e: Exception) {
@@ -780,7 +824,7 @@ object SettingsAdvancedScreen : SearchableSettings {
                                 val handler = Injekt.get<DatabaseHandler>() as? AndroidDatabaseHandler
                                     ?: throw Exception("DatabaseHandler is not AndroidDatabaseHandler")
                                 val stats = handler.getDetailedDatabaseStats()
-                                
+
                                 val totalSize = (stats["total_size_bytes"] as? Long) ?: 0L
                                 val freelistSize = (stats["freelist_size_bytes"] as? Long) ?: 0L
                                 @Suppress("UNCHECKED_CAST")
@@ -791,14 +835,14 @@ object SettingsAdvancedScreen : SearchableSettings {
                                 val indexSizes = (stats["index_sizes_bytes"] as? Map<String, Long>) ?: emptyMap()
                                 val avgChapterBytes = (stats["avg_chapter_text_bytes"] as? Double) ?: 0.0
                                 val avgDescBytes = (stats["avg_manga_description_bytes"] as? Double) ?: 0.0
-                                
+
                                 fun formatSize(bytes: Long): String = when {
                                     bytes >= 1024 * 1024 * 1024 -> "%.2f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
                                     bytes >= 1024 * 1024 -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
                                     bytes >= 1024 -> "%.2f KB".format(bytes / 1024.0)
                                     else -> "$bytes B"
                                 }
-                                
+
                                 val report = buildString {
                                     appendLine("=== Database Statistics ===")
                                     appendLine("Total size: ${formatSize(totalSize)}")
@@ -828,7 +872,7 @@ object SettingsAdvancedScreen : SearchableSettings {
                                     appendLine("--- Averages ---")
                                     appendLine("Avg chapter text: %.1f bytes".format(avgChapterBytes))
                                     appendLine("Avg manga description: %.1f bytes".format(avgDescBytes))
-                                    
+
                                     // Size estimation breakdown
                                     val chapterCount = tableCounts["chapters"] ?: 0L
                                     val mangaCount = tableCounts["mangas"] ?: 0L
@@ -839,18 +883,18 @@ object SettingsAdvancedScreen : SearchableSettings {
                                         val estChapterRowSize = 80 + avgChapterBytes
                                         val estChapterTableSize = (chapterCount * estChapterRowSize).toLong()
                                         appendLine("Chapters data: ~${formatSize(estChapterTableSize)}")
-                                        
+
                                         // 4 indexes on chapters table, each ~16-40 bytes per row
                                         val estChapterIndexSize = chapterCount * 100 // ~100 bytes per row for all indexes
                                         appendLine("Chapter indexes: ~${formatSize(estChapterIndexSize)}")
-                                        
+
                                         if (avgDescBytes > 0 && mangaCount > 0) {
                                             val estMangaSize = (mangaCount * (200 + avgDescBytes)).toLong()
                                             appendLine("Manga data: ~${formatSize(estMangaSize)}")
                                         }
                                     }
                                 }
-                                
+
                                 withUIContext {
                                     context.copyToClipboard("Database Stats", report)
                                     context.toast("Statistics copied to clipboard")
@@ -872,31 +916,31 @@ object SettingsAdvancedScreen : SearchableSettings {
                         scope.launch {
                             try {
                                 val handler = Injekt.get<tachiyomi.data.DatabaseHandler>()
-                                
+
                                 // Get stats before
                                 val statsBefore = handler.getDatabaseStats()
                                 val sizeBefore = statsBefore["total_size_bytes"] ?: 0L
-                                
+
                                 withUIContext { context.toast("Running ANALYZE...") }
                                 handler.analyze()
-                                
+
                                 withUIContext { context.toast("Running REINDEX...") }
                                 handler.reindex()
-                                
+
                                 withUIContext { context.toast("Running VACUUM (this may take a while)...") }
                                 handler.vacuum()
-                                
+
                                 // Get stats after
                                 val statsAfter = handler.getDatabaseStats()
                                 val sizeAfter = statsAfter["total_size_bytes"] ?: 0L
                                 val saved = sizeBefore - sizeAfter
-                                
+
                                 val savedStr = when {
                                     saved >= 1024 * 1024 -> "%.2f MB".format(saved / (1024.0 * 1024.0))
                                     saved >= 1024 -> "%.2f KB".format(saved / 1024.0)
                                     else -> "$saved bytes"
                                 }
-                                
+
                                 withUIContext {
                                     if (saved > 0) {
                                         context.toast("Database optimized! Saved $savedStr")
@@ -941,31 +985,31 @@ object SettingsAdvancedScreen : SearchableSettings {
                                     clearedSize += networkCacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
                                     networkCacheDir.deleteRecursively()
                                 }
-                                
+
                                 // Clear epub export temp files
                                 context.cacheDir.listFiles()?.filter { it.name.startsWith("epub_export_") }?.forEach {
                                     clearedSize += it.walkTopDown().filter { f -> f.isFile }.sumOf { f -> f.length() }
                                     it.deleteRecursively()
                                 }
-                                
+
                                 // Clear mass import temp files
                                 context.cacheDir.listFiles()?.filter { it.name.startsWith("mass_import_") }?.forEach {
                                     clearedSize += it.length()
                                     it.delete()
                                 }
-                                
+
                                 // Clear font temp files
                                 context.cacheDir.listFiles()?.filter { it.name.startsWith("font_") && it.extension == "ttf" }?.forEach {
                                     clearedSize += it.length()
                                     it.delete()
                                 }
-                                
+
                                 // Clear update error files
                                 context.cacheDir.listFiles()?.filter { it.name.contains("update_errors") }?.forEach {
                                     clearedSize += it.length()
                                     it.delete()
                                 }
-                                
+
                                 val sizeString = when {
                                     clearedSize >= 1024 * 1024 -> "%.2f MB".format(clearedSize / (1024.0 * 1024.0))
                                     clearedSize >= 1024 -> "%.2f KB".format(clearedSize / 1024.0)
@@ -999,6 +1043,11 @@ object SettingsAdvancedScreen : SearchableSettings {
                             }
                         }
                     },
+                ),
+                Preference.PreferenceItem.TextPreference(
+                    title = "Reset settings to default",
+                    subtitle = "Resets all app settings to their default values (library data is preserved)",
+                    onClick = { showResetSettingsDialog = true },
                 ),
             ),
         )
@@ -1135,16 +1184,7 @@ object SettingsAdvancedScreen : SearchableSettings {
                     title = stringResource(MR.strings.pref_disallow_non_ascii_filenames),
                     subtitle = stringResource(MR.strings.pref_disallow_non_ascii_filenames_details),
                 ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = libraryPreferences.autoRefreshLibrary(),
-                    title = "Auto-refresh library",
-                    subtitle = "Automatically refresh library when database changes. Disable for better performance on large libraries (requires manual refresh).",
-                ),
-                Preference.PreferenceItem.SwitchPreference(
-                    preference = libraryPreferences.verifyCacheOnStartup(),
-                    title = "Verify cache on startup",
-                    subtitle = "Check library cache integrity on app startup. Disable for faster startup (cache may become stale).",
-                ),
+
             ),
         )
     }

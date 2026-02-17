@@ -138,19 +138,18 @@ class SourcePreferencesFragment : PreferenceFragmentCompat() {
         val source = Injekt.get<SourceManager>().getOrStub(sourceId)
         val libraryPreferences: LibraryPreferences = Injekt.get()
         val sourceScreen = preferenceManager.createPreferenceScreen(requireContext())
-        
-        // Add built-in reverse chapter list preference
+
         val reverseChapterPref = SwitchPreferenceCompat(requireContext()).apply {
             key = "reverse_chapter_list_$sourceId"
             title = "Reverse chapter list"
             summary = "Reverse the order of chapters fetched from this source"
             isIconSpaceReserved = false
             isSingleLineTitle = false
-            
+
             // Initialize from preference
             val reversedSources = libraryPreferences.reversedChapterSources().get()
             isChecked = sourceId.toString() in reversedSources
-            
+
             setOnPreferenceChangeListener { _, newValue ->
                 val reversed = newValue as Boolean
                 val currentSet = libraryPreferences.reversedChapterSources().get()
@@ -159,7 +158,7 @@ class SourcePreferencesFragment : PreferenceFragmentCompat() {
                         currentSet + sourceId.toString()
                     } else {
                         currentSet - sourceId.toString()
-                    }
+                    },
                 )
                 true
             }

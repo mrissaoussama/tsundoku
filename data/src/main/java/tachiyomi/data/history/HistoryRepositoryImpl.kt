@@ -1,4 +1,4 @@
-package tachiyomi.data.history
+﻿package tachiyomi.data.history
 
 import kotlinx.coroutines.flow.Flow
 import logcat.LogPriority
@@ -8,22 +8,54 @@ import tachiyomi.domain.history.model.History
 import tachiyomi.domain.history.model.HistoryUpdate
 import tachiyomi.domain.history.model.HistoryWithRelations
 import tachiyomi.domain.history.repository.HistoryRepository
+import tachiyomi.domain.manga.model.MangaCover
+import java.util.Date
 
 class HistoryRepositoryImpl(
     private val handler: DatabaseHandler,
 ) : HistoryRepository {
 
+    /**
+     * Maps direct JOIN query columns to HistoryWithRelations.
+     */
+    private fun mapHistoryWithRelations(
+        id: Long,
+        mangaId: Long,
+        chapterId: Long,
+        title: String,
+        thumbnailUrl: String?,
+        source: Long,
+        favorite: Boolean,
+        coverLastModified: Long,
+        chapterNumber: Double,
+        readAt: Long,
+        readDuration: Long,
+    ): HistoryWithRelations = HistoryWithRelations(
+        id = id,
+        chapterId = chapterId,
+        mangaId = mangaId,
+        title = title,
+        chapterNumber = chapterNumber,
+        readAt = if (readAt > 0) Date(readAt) else null,
+        readDuration = readDuration,
+        coverData = MangaCover(
+            mangaId = mangaId,
+            sourceId = source,
+            isMangaFavorite = favorite,
+            url = thumbnailUrl,
+            lastModified = coverLastModified,
+        ),
+    )
+
     override fun getHistory(query: String): Flow<List<HistoryWithRelations>> {
         return handler.subscribeToList {
-            // Use history_cache table for faster queries
-            history_cacheQueries.getHistoryWithSearch(query, HistoryMapper::mapHistoryWithRelations)
+            historyQueries.getHistoryWithRelations(query, ::mapHistoryWithRelations)
         }
     }
 
     override suspend fun getLastHistory(): HistoryWithRelations? {
         return handler.awaitOneOrNull {
-            // Use history_cache table for faster queries
-            history_cacheQueries.getLatestHistoryCache(HistoryMapper::mapHistoryWithRelations)
+            historyQueries.getLatestHistory(::mapHistoryWithRelations)
         }
     }
 
@@ -39,8 +71,6 @@ class HistoryRepositoryImpl(
         try {
             handler.await {
                 historyQueries.resetHistoryById(historyId)
-                // Touch history_cache to notify SQLDelight listeners
-                history_cacheQueries.touchCache()
             }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
@@ -51,8 +81,6 @@ class HistoryRepositoryImpl(
         try {
             handler.await {
                 historyQueries.resetHistoryByMangaId(mangaId)
-                // Touch history_cache to notify SQLDelight listeners
-                history_cacheQueries.touchCache()
             }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
@@ -61,7 +89,9 @@ class HistoryRepositoryImpl(
 
     override suspend fun deleteAllHistory(): Boolean {
         return try {
-            handler.await { historyQueries.removeAllHistory() }
+            handler.await {
+                historyQueries.removeAllHistory()
+            }
             true
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
@@ -77,29 +107,9 @@ class HistoryRepositoryImpl(
                     historyUpdate.readAt,
                     historyUpdate.sessionReadDuration,
                 )
-                // Touch history_cache to notify SQLDelight listeners
-                // This is needed because the trigger that updates history_cache
-                // runs in SQLite and doesn't notify SQLDelight's query listeners
-                history_cacheQueries.touchCache()
             }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, throwable = e)
         }
-    }
-
-    override suspend fun refreshHistoryCache() {
-        logcat(LogPriority.INFO) { "HistoryRepositoryImpl.refreshHistoryCache: Refreshing entire history cache" }
-        val queryStart = System.currentTimeMillis()
-        handler.await(inTransaction = true) {
-            history_cacheQueries.refreshAll()
-        }
-        val queryDuration = System.currentTimeMillis() - queryStart
-        logcat(LogPriority.INFO) { "HistoryRepositoryImpl.refreshHistoryCache: Cache refresh completed in ${queryDuration}ms" }
-    }
-
-    override suspend fun checkHistoryCacheIntegrity(): Pair<Long, Long> {
-        val historyCount = handler.awaitOne { historyQueries.countDistinctManga() }
-        val cacheCount = handler.awaitOne { history_cacheQueries.countAll() }
-        return Pair(historyCount, cacheCount)
     }
 }

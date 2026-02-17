@@ -33,7 +33,7 @@ import tachiyomi.domain.chapter.service.ChapterRecognition
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.i18n.MR
 import tachiyomi.source.local.filter.OrderBy
-import tachiyomi.source.local.image.LocalCoverManager
+import tachiyomi.source.local.image.LocalNovelCoverManager
 import tachiyomi.source.local.io.Archive
 import tachiyomi.source.local.io.Format
 import tachiyomi.source.local.io.LocalNovelSourceFileSystem
@@ -50,7 +50,7 @@ import java.net.URL
 actual class LocalNovelSource(
     private val context: Context,
     private val fileSystem: LocalNovelSourceFileSystem,
-    private val coverManager: LocalCoverManager,
+    private val coverManager: LocalNovelCoverManager,
 ) : CatalogueSource, NovelSource, UnmeteredSource {
 
     private val json: Json by injectLazy()
