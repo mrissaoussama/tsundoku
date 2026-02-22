@@ -37,4 +37,4 @@ object TelemetryConfig {
 
 private val TSUNDOKU_PACKAGES = hashSetOf("app.tsundoku", "app.tsundoku.debug")
 private const val TSUNDOKU_CERTIFICATE_FINGERPRINT =
-    "9A:DD:65:5A:78:E9:6C:4E:C7:A5:3E:F8:9D:CC:B5:57:CB:5D:76:74:89:FA:C5:E7:85:D6:71:A5:A7:5D:4D:A2"
+    "CA:56:7A:E5:AA:C0:B4:9C:01:41:BF:CE:59:97:07:1E:1B:66:C3:17:54:B5:81:99:F0:A9:9B:45:42:8A:48:F1"

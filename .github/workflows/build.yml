@@ -55,12 +55,12 @@ jobs:
           path: app/build/reports/tests/testReleaseUnitTest
 
       - name: Decode keystore
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tsundoku-otaku/tsundoku'
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
 
       - name: Sign all release APKs
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tsundoku-otaku/tsundoku'
         run: |
           for apk in app/build/outputs/apk/release/*.apk; do
             echo "Signing $apk"
@@ -73,7 +73,7 @@ jobs:
           done
 
       - name: Upload signed APKs
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tsundoku-otaku/tsundoku'
         uses: actions/upload-artifact@v5
         with:
           name: signed-apks-${{ github.sha }}

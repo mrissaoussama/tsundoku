@@ -7,9 +7,9 @@
 # Tsundoku [App](#)
 
 ### Full-featured reader
-Discover and read manga, webtoons, comics, and more – easier than ever on your Android device.
+Discover and read novels and more – easier than ever on your Android device.
 
-[![Discord server](https://img.shields.io/discord/1195734228319617024.svg?label=&labelColor=6A7EC2&color=7389D8&logo=discord&logoColor=FFFFFF)](https://discord.gg/tsundoku)
+[![Discord server](https://img.shields.io/discord/835746409357246465.svg?label=&labelColor=6A7EC2&color=7389D8&logo=discord&logoColor=FFFFFF)](https://discord.gg/QdcWN4MD63)
 [![GitHub downloads](https://img.shields.io/github/downloads/tsundoku-otaku/tsundoku/total?label=downloads&labelColor=27303D&color=0D1117&logo=github&logoColor=FFFFFF&style=flat)](https://tsundoku.app/download)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/tsundoku-otaku/tsundoku/build.yml?labelColor=27303D)](https://github.com/tsundoku-otaku/tsundoku/actions/workflows/build_push.yml)
@@ -28,12 +28,14 @@ Discover and read manga, webtoons, comics, and more – easier than ever on your
 <div align="left">
 
 * Local reading of content.
-* A configurable reader with multiple viewers, reading directions and other settings.
+* A configurable reader with multiple viewers, font colors and themes, among other settings.
 * Tracker support: [MyAnimeList](https://myanimelist.net/), [AniList](https://anilist.co/), [Kitsu](https://kitsu.app/), [MangaUpdates](https://mangaupdates.com), [Shikimori](https://shikimori.one), and [Bangumi](https://bgm.tv/) support.
 * Categories to organize your library.
 * Light and dark themes.
 * Schedule updating your library for new chapters.
 * Create backups locally to read offline or to your desired cloud service.
+* Import lnreader backups
+* Use lnreader extensions
 * Plus much more...
 
 </div>
@@ -44,7 +46,7 @@ Discover and read manga, webtoons, comics, and more – easier than ever on your
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
-Before reporting a new issue, take a look at the [FAQ](https://tsundoku.app/docs/faq/general), the [changelog](https://tsundoku.app/changelogs/) and the already opened [issues](https://github.com/tsundoku-otaku/tsundoku/issues); if you got any questions, join our [Discord server](https://discord.gg/tsundoku).
+Before reporting a new issue, take a look at the [FAQ](https://tsundoku.app/docs/faq/general), the [changelog](https://tsundoku.app/changelogs/) and the already opened [issues](https://github.com/tsundoku-otaku/tsundoku/issues); if you got any questions, join our [Discord server](https://discord.gg/QdcWN4MD63).
 
 
 ### Repositories
