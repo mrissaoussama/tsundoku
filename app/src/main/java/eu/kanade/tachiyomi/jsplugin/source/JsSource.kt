@@ -249,7 +249,6 @@ class JsSource(
                 if (done) break
                 attempts++
                 // Give async functions time to execute their Kotlin coroutines
-                // This is necessary because asyncFunction runs actual network requests
                 kotlinx.coroutines.delay(50)
                 // Also process JS microtasks
                 instance.execute("null")
@@ -517,6 +516,12 @@ class JsSource(
                     chapter.chapter_number = (index + 1).toFloat()
                 }
             }
+
+            // LNReader plugins return chapters newest-first; reverse to oldest-first
+            // so sourceOrder aligns with chapter_number (chapter 1 = index 0).
+            // The per-source "Reverse chapter list" toggle in SyncChaptersWithSource
+            // can override this if needed.
+            chapters.reverse()
 
             // Cache the result
             chaptersCache[manga.url] = chapters to now

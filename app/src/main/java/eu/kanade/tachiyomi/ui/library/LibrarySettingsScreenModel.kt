@@ -38,6 +38,7 @@ data class ExtensionInfo(
     val sourceId: Long,
     val sourceName: String,
     val isStub: Boolean = false,
+    val isNovel: Boolean = false,
 )
 
 class LibrarySettingsScreenModel(
@@ -59,17 +60,12 @@ class LibrarySettingsScreenModel(
             initialValue = trackerManager.loggedInTrackers(),
         )
 
-    // Cached extension list - NO automatic database subscription
-    // Data is loaded only when refreshExtensions() is called
     private val _extensionsFlow = MutableStateFlow<List<ExtensionInfo>>(emptyList())
     val extensionsFlow = _extensionsFlow.asStateFlow()
 
-    // Cached tags with counts - NO automatic database subscription
-    // Data is loaded only when refreshTags() is called
     private val _tagsFlow = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
     val tagsFlow = _tagsFlow.asStateFlow()
 
-    // Cached count of manga with no tags
     private val _noTagsCountFlow = MutableStateFlow(0)
     val noTagsCountFlow = _noTagsCountFlow.asStateFlow()
 
@@ -92,6 +88,12 @@ class LibrarySettingsScreenModel(
     // Flags to track if we've attempted to load from disk cache
     private val _extensionsLoaded = AtomicBoolean(false)
     private val _tagsLoaded = AtomicBoolean(false)
+
+    init {
+        // Auto-load extensions on initialization to fix first-time loading issue
+        // This ensures data is ready when the UI is displayed
+        refreshExtensions()
+    }
 
     fun toggleFilter(preference: (LibraryPreferences) -> Preference<TriState>) {
         preference(libraryPreferences).getAndSet {
@@ -220,8 +222,6 @@ class LibrarySettingsScreenModel(
                     }
                 }
 
-                // If no cache or forced refresh, load from DB using ultra-lightweight query
-                // This only fetches source IDs, avoiding the expensive libraryView JOIN
                 val sourceIds = getLibraryManga.awaitSourceIds()
                 val extensions = sourceIds.mapNotNull { sourceId ->
                     val source = sourceManager.getOrStub(sourceId)
@@ -235,7 +235,7 @@ class LibrarySettingsScreenModel(
                     if (shouldInclude) {
                         // Add (JS) suffix for JS plugin sources
                         val displayName = if (source is JsSource) "${source.name} (JS)" else source.name
-                        ExtensionInfo(sourceId, displayName, isStub)
+                        ExtensionInfo(sourceId, displayName, isStub, isNovel)
                     } else null
                 }.sortedWith(
                     compareBy<ExtensionInfo> { it.sourceId != 0L && it.sourceId != 1L }
