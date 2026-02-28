@@ -30,7 +30,6 @@ import eu.kanade.tachiyomi.data.translation.TranslationService
 import eu.kanade.tachiyomi.source.isNovelSource
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
-import tachiyomi.domain.source.model.StubSource
 import eu.kanade.tachiyomi.util.chapter.getNextUnread
 import eu.kanade.tachiyomi.util.removeCovers
 import kotlinx.collections.immutable.ImmutableList
@@ -79,6 +78,7 @@ import tachiyomi.domain.manga.interactor.GetLibraryManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.manga.model.applyFilter
+import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.track.interactor.GetTracksPerManga
 import tachiyomi.domain.track.model.Track
@@ -1098,8 +1098,8 @@ class LibraryScreenModel(
                             }
                         }
 
-val source = sourceManager.getOrStub(manga.source)
-                          if (source is StubSource) {
+                        val source = sourceManager.getOrStub(manga.source)
+                        if (source is StubSource) {
                             logcat(LogPriority.WARN) { "No source for ${manga.title}" }
                             return@async false
                         }

@@ -46,7 +46,7 @@ fun BrowseSourceToolbar(
     searchQuery: String?,
     onSearchQueryChange: (String?) -> Unit,
     source: Source?,
-    displayMode: LibraryDisplayMode,
+    displayMode: LibraryDisplayMode?,
     onDisplayModeChange: (LibraryDisplayMode) -> Unit,
     navigateUp: () -> Unit,
     onWebViewClick: () -> Unit,
@@ -82,7 +82,7 @@ fun BrowseSourceToolbar(
                 ) {
                     Text(
                         text = "P.$currentPage",
-                        style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelMedium,
                     )
                 }
             }
@@ -134,7 +134,7 @@ fun BrowseSourceToolbar(
             ) {
                 RadioMenuItem(
                     text = { Text(text = stringResource(MR.strings.action_display_comfortable_grid)) },
-                    isChecked = displayMode == LibraryDisplayMode.ComfortableGrid,
+                    isChecked = displayMode == LibraryDisplayMode.ComfortableGrid || displayMode == null,
                 ) {
                     selectingDisplayMode = false
                     onDisplayModeChange(LibraryDisplayMode.ComfortableGrid)

@@ -11,7 +11,6 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -70,43 +69,25 @@ fun HistoryItem(
                 style = textStyle,
             )
             val readAt = remember { history.readAt?.toTimestampString() ?: "" }
+            val progress = history.lastPageRead
+            val progressSuffix = when {
+                history.chapterRead -> " - 100%"
+                progress > 0 -> if (history.isNovel) " - $progress%" else " - ${stringResource(MR.strings.chapter_progress, progress + 1)}"
+                else -> ""
+            }
             Text(
                 text = if (history.chapterNumber > -1) {
                     stringResource(
                         MR.strings.recent_manga_time,
                         formatChapterNumber(history.chapterNumber),
                         readAt,
-                    )
+                    ) + progressSuffix
                 } else {
-                    readAt
+                    readAt + progressSuffix
                 },
                 modifier = Modifier.padding(top = 4.dp),
                 style = textStyle,
             )
-            val progress = history.lastPageRead
-            when {
-                history.chapterRead -> {
-                    Text(
-                        text = stringResource(MR.strings.completed),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
-                progress > 0 -> {
-                    val progressText = if (history.isNovel) {
-                        "$progress%"
-                    } else {
-                        stringResource(MR.strings.chapter_progress, progress + 1)
-                    }
-                    Text(
-                        text = progressText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
-            }
         }
 
         if (!history.coverData.isMangaFavorite) {

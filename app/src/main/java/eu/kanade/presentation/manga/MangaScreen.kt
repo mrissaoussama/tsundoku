@@ -367,9 +367,9 @@ private fun MangaScreenSmallImpl(
                 onClickScrollToLastRead = {
                     val lastReadIndex = listItem.indexOfFirst { it is ChapterList.Item && it.chapter.read }
                     if (lastReadIndex != -1) {
-                        scrollScope.launch { 
+                        scrollScope.launch {
                             val halfHeight = chapterListState.layoutInfo.viewportSize.height / 2
-                            chapterListState.animateScrollToItem(lastReadIndex + 4, scrollOffset = -halfHeight) 
+                            chapterListState.animateScrollToItem(lastReadIndex + 4, scrollOffset = -halfHeight)
                         }
                     }
                 },
@@ -654,9 +654,9 @@ fun MangaScreenLargeImpl(
                 onClickScrollToLastRead = {
                     val lastReadIndex = listItem.indexOfFirst { it is ChapterList.Item && it.chapter.read }
                     if (lastReadIndex != -1) {
-                        scrollScope.launch { 
+                        scrollScope.launch {
                             val halfHeight = chapterListState.layoutInfo.viewportSize.height / 2
-                            chapterListState.animateScrollToItem(lastReadIndex + 1, scrollOffset = -halfHeight) 
+                            chapterListState.animateScrollToItem(lastReadIndex + 1, scrollOffset = -halfHeight)
                         }
                     }
                 },

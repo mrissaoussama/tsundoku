@@ -121,7 +121,7 @@ private val textAlignments = listOf(
 )
 
 private val renderingModes = listOf(
-    "Default (Custom Parser)" to "default",
+    "Default (TextView)" to "default",
     "WebView" to "webview",
 )
 
@@ -275,7 +275,7 @@ internal fun ColumnScope.NovelReadingTab(screenModel: ReaderSettingsScreenModel,
         }
     }
 
-    androidx.compose.material3.HorizontalDivider()
+    HorizontalDivider()
 
     // Auto-split paragraphs
     CheckboxItem(
@@ -517,10 +517,12 @@ internal fun ColumnScope.NovelControlsTab(screenModel: ReaderSettingsScreenModel
     )
 
     // Text Selection (WebView reader only)
-    CheckboxItem(
-        label = stringResource(MR.strings.pref_novel_text_selectable),
-        pref = screenModel.preferences.novelTextSelectable(),
-    )
+    if (renderingMode == "webview") {
+        CheckboxItem(
+            label = stringResource(MR.strings.pref_novel_text_selectable),
+            pref = screenModel.preferences.novelTextSelectable(),
+        )
+    }
 
     // Hide Chapter Title in Content
     CheckboxItem(
@@ -590,7 +592,7 @@ internal fun ColumnScope.NovelControlsTab(screenModel: ReaderSettingsScreenModel
         pref = screenModel.preferences.novelBlockMedia(),
     )
 
-    // Show Raw HTML (Custom Parser only) - for debugging
+    // Show Raw HTML (TextView only) - for debugging
     if (renderingMode == "default") {
         CheckboxItem(
             label = stringResource(MR.strings.pref_novel_show_raw_html),
@@ -1260,7 +1262,6 @@ private fun ColumnScope.TtsSettingsSection(screenModel: ReaderSettingsScreenMode
     val ttsSpeed by screenModel.preferences.novelTtsSpeed().collectAsState()
     val ttsPitch by screenModel.preferences.novelTtsPitch().collectAsState()
     val ttsVoice by screenModel.preferences.novelTtsVoice().collectAsState()
-    val ttsAutoNextChapter by screenModel.preferences.novelTtsAutoNextChapter().collectAsState()
 
     // Load available voices using TTS
     val availableVoices = remember { mutableStateListOf<Pair<String, String>>() }

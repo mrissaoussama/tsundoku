@@ -558,7 +558,7 @@ class ReaderActivity : BaseActivity() {
 
             // Format chapter title based on preference
             val chapterTitleDisplay by readerPreferences.novelChapterTitleDisplay().collectAsState()
-            val formattedChapterTitle = remember(state.currentChapter, chapterTitleDisplay) {
+            val formattedChapterTitle = remember(state.currentChapter, state.novelVisibleChapter, chapterTitleDisplay) {
                 val chapter = state.novelVisibleChapter ?: state.currentChapter?.chapter
                 if (chapter == null) {
                     null

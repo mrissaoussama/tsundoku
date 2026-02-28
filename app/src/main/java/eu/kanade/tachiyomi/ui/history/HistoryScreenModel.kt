@@ -290,7 +290,7 @@ class HistoryScreenModel(
         val limit: Long = HISTORY_PAGE_SIZE,
         val list: List<HistoryUiModel>? = null,
         val filter: HistoryFilter = HistoryFilter.ALL,
-        val groupByNovel: Boolean = false,
+        val groupByNovel: Boolean = true,
         val dialog: Dialog? = null,
     )
 

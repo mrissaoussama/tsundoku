@@ -192,10 +192,10 @@ class ReaderPreferences(
     // Margin preferences (in dp)
     fun novelMarginLeft() = preferenceStore.getInt("pref_novel_margin_left", 16)
     fun novelMarginRight() = preferenceStore.getInt("pref_novel_margin_right", 16)
-    fun novelMarginTop() = preferenceStore.getInt("pref_novel_margin_top", 16)
+    fun novelMarginTop() = preferenceStore.getInt("pref_novel_margin_top", 50)
     fun novelMarginBottom() = preferenceStore.getInt("pref_novel_margin_bottom", 16)
 
-    // Rendering mode: "default" = custom parser, "webview" = WebView rendering
+    // Rendering mode: "default" = TextView, "webview" = WebView rendering
     fun novelRenderingMode() = preferenceStore.getString("pref_novel_rendering_mode", "default")
 
     // Custom CSS/JS stored as JSON array of {title, code} objects
@@ -253,7 +253,7 @@ class ReaderPreferences(
     fun novelParagraphSpacing() = preferenceStore.getFloat("pref_novel_paragraph_spacing", 0.5f)
 
     // Swipe navigation - swipe left/right to change chapters
-    fun novelSwipeNavigation() = preferenceStore.getBoolean("pref_novel_swipe_navigation", true)
+    fun novelSwipeNavigation() = preferenceStore.getBoolean("pref_novel_swipe_navigation", false)
 
     // Chapter title display format: 0 = name only, 1 = number only, 2 = both (name + number)
     fun novelChapterTitleDisplay() = preferenceStore.getInt("pref_novel_chapter_title_display", 2)

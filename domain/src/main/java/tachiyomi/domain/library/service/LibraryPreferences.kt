@@ -162,13 +162,13 @@ class LibraryPreferences(
 
     // region History
 
-    fun historyGroupByNovel() = preferenceStore.getBoolean("history_group_by_novel", false)
+    fun historyGroupByNovel() = preferenceStore.getBoolean("history_group_by_novel", true)
 
     // endregion
 
     // region Updates
 
-    fun updatesGroupByNovel() = preferenceStore.getBoolean("updates_group_by_novel", false)
+    fun updatesGroupByNovel() = preferenceStore.getBoolean("updates_group_by_novel", true)
 
     // endregion
 
