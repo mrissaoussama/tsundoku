@@ -13,7 +13,11 @@ class GetHistory(
         return repository.getHistoryByMangaId(mangaId)
     }
 
-    fun subscribe(query: String): Flow<List<HistoryWithRelations>> {
-        return repository.getHistory(query)
+    fun subscribe(query: String, limit: Long = Long.MAX_VALUE): Flow<List<HistoryWithRelations>> {
+        return repository.getHistory(query, limit)
+    }
+
+    fun subscribeGrouped(query: String, limit: Long = Long.MAX_VALUE): Flow<List<HistoryWithRelations>> {
+        return repository.getHistoryGrouped(query, limit)
     }
 }

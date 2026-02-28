@@ -1,6 +1,9 @@
 package eu.kanade.presentation.manga.components
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.FlipToBack
@@ -48,6 +51,9 @@ fun MangaToolbar(
     onClickTranslate: (() -> Unit)? = null,
     onClickTranslateDownloaded: (() -> Unit)? = null,
     onClickExportEpub: (() -> Unit)? = null,
+    onClickScrollToTop: (() -> Unit)? = null,
+    onClickScrollToLastRead: (() -> Unit)? = null,
+    onClickScrollToBottom: (() -> Unit)? = null,
 
     // For action mode
     actionModeCounter: Int,
@@ -113,6 +119,34 @@ fun MangaToolbar(
                             ),
                         )
                     }
+                    if (onClickScrollToTop != null) {
+                        add(
+                            AppBar.Action(
+                                title = stringResource(MR.strings.action_scroll_to_top),
+                                icon = Icons.Outlined.ArrowUpward,
+                                onClick = onClickScrollToTop,
+                            ),
+                        )
+                    }
+                    if (onClickScrollToLastRead != null) {
+                        add(
+                            AppBar.Action(
+                                title = stringResource(MR.strings.last_read_chapter),
+                                icon = Icons.Outlined.Bookmark,
+                                onClick = onClickScrollToLastRead,
+                            ),
+                        )
+                    }
+                    if (onClickScrollToBottom != null) {
+                        add(
+                            AppBar.Action(
+                                title = stringResource(MR.strings.action_scroll_to_bottom),
+                                icon = Icons.Outlined.ArrowDownward,
+                                onClick = onClickScrollToBottom,
+                            ),
+                        )
+                    }
+
                     add(
                         AppBar.Action(
                             title = stringResource(MR.strings.action_filter),

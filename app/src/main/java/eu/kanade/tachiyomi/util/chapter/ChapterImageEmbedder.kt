@@ -178,7 +178,9 @@ class ChapterImageEmbedder(
                 val maxSizeKb = novelDownloadPreferences.maxImageSizeKb().get()
                 val compressionQuality = novelDownloadPreferences.imageCompressionQuality().get()
 
-                val finalBytes = if (maxSizeKb > 0 && imageBytes.size > maxSizeKb * 1024 && mimeType != "image/svg+xml") {
+                val finalBytes = if (maxSizeKb > 0 && imageBytes.size > maxSizeKb * 1024 &&
+                    mimeType != "image/svg+xml"
+                ) {
                     compressImage(imageBytes, compressionQuality, maxSizeKb)
                 } else {
                     imageBytes

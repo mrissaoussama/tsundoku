@@ -64,6 +64,7 @@ import eu.kanade.tachiyomi.source.getNameForMangaInfo
 import eu.kanade.tachiyomi.ui.manga.ChapterList
 import eu.kanade.tachiyomi.ui.manga.MangaScreenModel
 import eu.kanade.tachiyomi.util.system.copyToClipboard
+import kotlinx.coroutines.launch
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.chapter.service.missingChaptersCount
 import tachiyomi.domain.library.service.LibraryPreferences
@@ -305,8 +306,6 @@ private fun MangaScreenSmallImpl(
     onAllChapterSelected: (Boolean) -> Unit,
     onInvertSelection: () -> Unit,
 ) {
-    val chapterListState = rememberLazyListState()
-
     val (chapters, listItem, isAnySelected) = remember(state) {
         Triple(
             first = state.processedChapters,
@@ -315,13 +314,16 @@ private fun MangaScreenSmallImpl(
         )
     }
 
+    val chapterListState = rememberLazyListState()
+    val scrollScope = rememberCoroutineScope()
+
     BackHandler(enabled = isAnySelected) {
         onAllChapterSelected(false)
     }
 
     Scaffold(
         topBar = {
-            val selectedChapterCount: Int = remember(chapters) {
+            val selectedChapterCount = remember(chapters) {
                 chapters.count { it.selected }
             }
             val isFirstItemVisible by remember {
@@ -359,6 +361,21 @@ private fun MangaScreenSmallImpl(
                 onClickTranslate = onTranslateClicked,
                 onClickTranslateDownloaded = onTranslateDownloadedClicked,
                 onClickExportEpub = onExportEpubClicked,
+                onClickScrollToTop = {
+                    scrollScope.launch { chapterListState.animateScrollToItem(0) }
+                },
+                onClickScrollToLastRead = {
+                    val lastReadIndex = listItem.indexOfFirst { it is ChapterList.Item && it.chapter.read }
+                    if (lastReadIndex != -1) {
+                        scrollScope.launch { 
+                            val halfHeight = chapterListState.layoutInfo.viewportSize.height / 2
+                            chapterListState.animateScrollToItem(lastReadIndex + 4, scrollOffset = -halfHeight) 
+                        }
+                    }
+                },
+                onClickScrollToBottom = {
+                    scrollScope.launch { chapterListState.animateScrollToItem(listItem.size + 3) }
+                },
                 actionModeCounter = selectedChapterCount,
                 onCancelActionMode = { onAllChapterSelected(false) },
                 onSelectAll = { onAllChapterSelected(true) },
@@ -598,6 +615,7 @@ fun MangaScreenLargeImpl(
     var topBarHeight by remember { mutableIntStateOf(0) }
 
     val chapterListState = rememberLazyListState()
+    val scrollScope = rememberCoroutineScope()
 
     BackHandler(enabled = isAnySelected) {
         onAllChapterSelected(false)
@@ -630,6 +648,21 @@ fun MangaScreenLargeImpl(
                 onClickTranslate = onTranslateClicked,
                 onClickTranslateDownloaded = onTranslateDownloadedClicked,
                 onClickExportEpub = onExportEpubClicked,
+                onClickScrollToTop = {
+                    scrollScope.launch { chapterListState.animateScrollToItem(0) }
+                },
+                onClickScrollToLastRead = {
+                    val lastReadIndex = listItem.indexOfFirst { it is ChapterList.Item && it.chapter.read }
+                    if (lastReadIndex != -1) {
+                        scrollScope.launch { 
+                            val halfHeight = chapterListState.layoutInfo.viewportSize.height / 2
+                            chapterListState.animateScrollToItem(lastReadIndex + 1, scrollOffset = -halfHeight) 
+                        }
+                    }
+                },
+                onClickScrollToBottom = {
+                    scrollScope.launch { chapterListState.animateScrollToItem(listItem.size) }
+                },
                 onCancelActionMode = { onAllChapterSelected(false) },
                 actionModeCounter = selectedChapterCount,
                 onSelectAll = { onAllChapterSelected(true) },

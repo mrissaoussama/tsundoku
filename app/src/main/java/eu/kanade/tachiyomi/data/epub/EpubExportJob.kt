@@ -10,19 +10,21 @@ import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.data.notification.Notifications
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.source.isNovelSource
+import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.util.system.cancelNotification
 import eu.kanade.tachiyomi.util.system.notificationBuilder
 import eu.kanade.tachiyomi.util.system.notify
 import eu.kanade.tachiyomi.util.system.setForegroundSafely
 import eu.kanade.tachiyomi.util.system.workManager
-import eu.kanade.domain.manga.model.toSManga
 import kotlinx.coroutines.CancellationException
 import logcat.LogPriority
+import mihon.core.archive.ArchiveReader
 import mihon.core.archive.EpubWriter
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
@@ -38,8 +40,6 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
-import mihon.core.archive.ArchiveReader
-import eu.kanade.tachiyomi.source.model.SManga
 
 class EpubExportJob(private val context: Context, workerParams: WorkerParameters) :
     CoroutineWorker(context, workerParams) {
@@ -406,7 +406,6 @@ class EpubExportJob(private val context: Context, workerParams: WorkerParameters
 
                     logcat(LogPriority.INFO) { "Exported ${manga.title}: ${epubChapters.size} chapters" }
                     successCount++
-
                 } catch (e: Exception) {
                     logcat(LogPriority.ERROR, e) { "Failed to export ${manga.title}" }
                     skippedCount++
@@ -458,7 +457,6 @@ class EpubExportJob(private val context: Context, workerParams: WorkerParameters
             }
 
             showCompleteNotification(successCount, skippedCount)
-
         } finally {
             // Cleanup
             tempDir.deleteRecursively()

@@ -118,9 +118,9 @@ class JsPluginsScreenModel(
         return state.value.availablePlugins
             .filter { plugin ->
                 query == null ||
-                plugin.name.lowercase().contains(query) ||
-                plugin.site.lowercase().contains(query) ||
-                plugin.lang.lowercase().contains(query)
+                    plugin.name.lowercase().contains(query) ||
+                    plugin.site.lowercase().contains(query) ||
+                    plugin.lang.lowercase().contains(query)
             }
             .map { plugin ->
                 JsPluginItem(
@@ -129,12 +129,14 @@ class JsPluginsScreenModel(
                     hasUpdate = installed[plugin.id]?.let { it.plugin.version != plugin.version } ?: false,
                 )
             }
-            .sortedWith(compareBy(
-                { it.installed == null }, // Installed first
-                { !it.hasUpdate }, // Updates first
-                { it.plugin.lang },
-                { it.plugin.name }
-            ))
+            .sortedWith(
+                compareBy(
+                    { it.installed == null }, // Installed first
+                    { !it.hasUpdate }, // Updates first
+                    { it.plugin.lang },
+                    { it.plugin.name },
+                ),
+            )
     }
 
     /**

@@ -30,6 +30,9 @@ object HistoryMapper {
         chapterNumber: Double,
         readAt: Date?,
         readDuration: Long,
+        chapterRead: Boolean,
+        lastPageRead: Long,
+        isNovel: Boolean,
     ): HistoryWithRelations = HistoryWithRelations(
         id = historyId,
         chapterId = chapterId,
@@ -38,6 +41,9 @@ object HistoryMapper {
         chapterNumber = chapterNumber,
         readAt = readAt,
         readDuration = readDuration,
+        chapterRead = chapterRead,
+        lastPageRead = lastPageRead,
+        isNovel = isNovel,
         coverData = MangaCover(
             mangaId = mangaId,
             sourceId = sourceId,

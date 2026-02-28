@@ -13,8 +13,8 @@ import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.repository.SourcePagingSource
 import tachiyomi.domain.source.repository.SourceRepository
 import tachiyomi.domain.source.service.SourceManager
-import tachiyomi.domain.source.model.Source as DomainSource
 import kotlin.time.Duration.Companion.seconds
+import tachiyomi.domain.source.model.Source as DomainSource
 
 class SourceRepositoryImpl(
     private val sourceManager: SourceManager,

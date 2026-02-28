@@ -22,7 +22,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
-import eu.kanade.tachiyomi.source.isNovelSource
 import tachiyomi.domain.category.interactor.SetMangaCategories
 import tachiyomi.domain.download.service.NovelDownloadPreferences
 import tachiyomi.domain.library.model.LibraryManga
@@ -588,8 +587,8 @@ class MassImport(
     fun parseUrls(text: String): List<String> {
         // Pre-process: add line break before http:// or https:// to split concatenated URLs
         val preprocessed = text
-            .replace(Regex("(?<=[^\\s])(?=https?://)"), "\n")  // Add newline before http(s):// if not preceded by whitespace
-            .replace(Regex("(?<!https?:)//+"), "/")  // Replace // with / except in protocol (http://, https://)
+            .replace(Regex("(?<=[^\\s])(?=https?://)"), "\n") // Add newline before http(s):// if not preceded by whitespace
+            .replace(Regex("(?<!https?:)//+"), "/") // Replace // with / except in protocol (http://, https://)
 
         return preprocessed
             .split("\n", ",", ";", " ")

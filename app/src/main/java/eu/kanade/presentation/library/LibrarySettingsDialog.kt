@@ -92,30 +92,30 @@ fun LibrarySettingsDialog(
                 TagsPage(screenModel = screenModel)
             }
         } else {
-        Column(
-            modifier = Modifier
-                .padding(vertical = TabbedDialogPaddings.Vertical)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            when (page) {
-                0 -> FilterPage(
-                    screenModel = screenModel,
-                )
-                1 -> SortPage(
-                    category = category,
-                    screenModel = screenModel,
-                )
-                2 -> DisplayPage(
-                    screenModel = screenModel,
-                )
-                3 -> TagsPage(
-                    screenModel = screenModel,
-                )
-                4 -> ExtensionsPage(
-                    screenModel = screenModel,
-                )
+            Column(
+                modifier = Modifier
+                    .padding(vertical = TabbedDialogPaddings.Vertical)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                when (page) {
+                    0 -> FilterPage(
+                        screenModel = screenModel,
+                    )
+                    1 -> SortPage(
+                        category = category,
+                        screenModel = screenModel,
+                    )
+                    2 -> DisplayPage(
+                        screenModel = screenModel,
+                    )
+                    3 -> TagsPage(
+                        screenModel = screenModel,
+                    )
+                    4 -> ExtensionsPage(
+                        screenModel = screenModel,
+                    )
+                }
             }
-        }
         }
     }
 }
@@ -584,7 +584,9 @@ private fun ColumnScope.TagsPage(
                     Icon(Icons.Default.Clear, contentDescription = "Clear search")
                 }
             }
-        } else null,
+        } else {
+            null
+        },
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(
@@ -711,7 +713,7 @@ private fun ColumnScope.ExtensionsPage(
     // Refresh button
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.End
+        horizontalArrangement = Arrangement.End,
     ) {
         TextButton(onClick = { screenModel.refreshExtensions(forceRefresh = true) }) {
             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
@@ -792,8 +794,8 @@ private fun ColumnScope.ExtensionsPage(
         } else {
             emptyList()
         }
-        val showSeparator = screenModel.type == eu.kanade.tachiyomi.ui.library.LibraryScreenModel.LibraryType.All && 
-                             mangaSources.isNotEmpty() && novelSources.isNotEmpty()
+        val showSeparator = screenModel.type == eu.kanade.tachiyomi.ui.library.LibraryScreenModel.LibraryType.All &&
+            mangaSources.isNotEmpty() && novelSources.isNotEmpty()
 
         val sourcesToShow = if (screenModel.type == eu.kanade.tachiyomi.ui.library.LibraryScreenModel.LibraryType.All) {
             mangaSources + novelSources

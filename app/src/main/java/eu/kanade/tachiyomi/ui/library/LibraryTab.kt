@@ -31,6 +31,7 @@ import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.library.DeleteLibraryMangaDialog
 import eu.kanade.presentation.library.LibrarySettingsDialog
 import eu.kanade.presentation.library.MarkReadConfirmationDialog
+import eu.kanade.presentation.library.UpdateSelectedDialog
 import eu.kanade.presentation.library.components.LibraryContent
 import eu.kanade.presentation.library.components.LibraryToolbar
 import eu.kanade.presentation.library.components.MassImportDialog
@@ -165,6 +166,7 @@ data object LibraryTab : Tab {
                     onDownloadClicked = screenModel::performDownloadAction
                         .takeIf { state.selectedManga.fastAll { !it.isLocal() } },
                     onDeleteClicked = screenModel::openDeleteMangaDialog,
+                    onUpdateClicked = screenModel::openUpdateSelectedDialog,
                     onMigrateClicked = {
                         val selection = state.selection
                         screenModel.clearSelection()
@@ -267,6 +269,19 @@ data object LibraryTab : Tab {
                     onConfirm = { include, exclude ->
                         screenModel.clearSelection()
                         screenModel.setMangaCategories(dialog.manga, include, exclude)
+                    },
+                )
+            }
+            is LibraryScreenModel.Dialog.UpdateSelected -> {
+                UpdateSelectedDialog(
+                    onDismissRequest = onDismissRequest,
+                    onConfirm = { fetchChapters, fetchDetails, ignoreSkipRecentlyUpdated ->
+                        screenModel.updateSelected(
+                            dialog.manga,
+                            fetchChapters,
+                            fetchDetails,
+                            ignoreSkipRecentlyUpdated,
+                        )
                     },
                 )
             }

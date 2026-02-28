@@ -30,6 +30,9 @@ class HistoryRepositoryImpl(
         chapterNumber: Double,
         readAt: Long,
         readDuration: Long,
+        chapterRead: Boolean,
+        lastPageRead: Long,
+        isNovel: Boolean,
     ): HistoryWithRelations = HistoryWithRelations(
         id = id,
         chapterId = chapterId,
@@ -38,6 +41,9 @@ class HistoryRepositoryImpl(
         chapterNumber = chapterNumber,
         readAt = if (readAt > 0) Date(readAt) else null,
         readDuration = readDuration,
+        chapterRead = chapterRead,
+        lastPageRead = lastPageRead,
+        isNovel = isNovel,
         coverData = MangaCover(
             mangaId = mangaId,
             sourceId = source,
@@ -47,9 +53,15 @@ class HistoryRepositoryImpl(
         ),
     )
 
-    override fun getHistory(query: String): Flow<List<HistoryWithRelations>> {
+    override fun getHistory(query: String, limit: Long): Flow<List<HistoryWithRelations>> {
         return handler.subscribeToList {
-            historyQueries.getHistoryWithRelations(query, ::mapHistoryWithRelations)
+            historyQueries.getHistoryWithRelations(query, limit, ::mapHistoryWithRelations)
+        }
+    }
+
+    override fun getHistoryGrouped(query: String, limit: Long): Flow<List<HistoryWithRelations>> {
+        return handler.subscribeToList {
+            historyQueries.getHistoryWithRelationsGrouped(query, limit, ::mapHistoryWithRelations)
         }
     }
 

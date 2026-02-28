@@ -53,7 +53,6 @@ class ExtensionsScreenModel(
             }
         }
 
-
         screenModelScope.launchIO {
             combine(
                 state.map { it.searchQuery }

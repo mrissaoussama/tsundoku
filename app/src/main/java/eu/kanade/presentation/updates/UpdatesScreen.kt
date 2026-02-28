@@ -73,7 +73,6 @@ fun UpdateScreen(
     hasActiveFilters: Boolean,
     onToggleGroupByNovel: () -> Unit = {},
     onClickNovelGroup: (Long) -> Unit = {},
-    onClearUpdatesCacheClicked: () -> Unit = {},
 ) {
     BackHandler(enabled = state.selectionMode) {
         onSelectAll(false)
@@ -85,7 +84,6 @@ fun UpdateScreen(
                 onCalendarClicked = { onCalendarClicked() },
                 onUpdateLibrary = { onUpdateLibrary() },
                 onToggleGroupByNovel = onToggleGroupByNovel,
-                onClearUpdatesCacheClicked = onClearUpdatesCacheClicked,
                 groupByNovel = state.groupByNovel,
                 onFilterClicked = { onFilterClicked() },
                 hasFilters = hasActiveFilters,
@@ -154,11 +152,6 @@ fun UpdateScreen(
                                     onClick = { onFilterSelected(UpdatesFilter.NOVELS) },
                                     label = { Text(stringResource(MR.strings.label_novels)) },
                                 )
-                                FilterChip(
-                                    selected = state.groupByNovel,
-                                    onClick = onToggleGroupByNovel,
-                                    label = { Text("Group by novel") },
-                                )
                             }
                         }
 
@@ -209,7 +202,6 @@ private fun UpdatesAppBar(
     onCalendarClicked: () -> Unit,
     onUpdateLibrary: () -> Unit,
     onToggleGroupByNovel: () -> Unit,
-    onClearUpdatesCacheClicked: () -> Unit,
     groupByNovel: Boolean,
     onFilterClicked: () -> Unit,
     hasFilters: Boolean,
@@ -247,10 +239,6 @@ private fun UpdatesAppBar(
                         title = stringResource(MR.strings.action_update_library),
                         icon = Icons.Outlined.Refresh,
                         onClick = onUpdateLibrary,
-                    ),
-                    AppBar.OverflowAction(
-                        title = "Clear Updates Cache",
-                        onClick = onClearUpdatesCacheClicked,
                     ),
                 ),
             )

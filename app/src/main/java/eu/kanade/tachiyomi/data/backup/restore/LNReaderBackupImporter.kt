@@ -181,16 +181,21 @@ class LNReaderBackupImporter(
                                 isNovel = true,
                             )
                             pluginIdToSourceId[pluginId] = stubSourceId
-                            logcat(LogPriority.INFO) { "LNReaderImport: Created stub source for missing plugin '$pluginId' with ID $stubSourceId" }
+                            logcat(LogPriority.INFO) {
+                                "LNReaderImport: Created stub source for missing plugin '$pluginId' with ID $stubSourceId"
+                            }
                         } catch (e: Exception) {
-                            logcat(LogPriority.ERROR, e) { "LNReaderImport: Failed to create stub source for '$pluginId'" }
+                            logcat(LogPriority.ERROR, e) {
+                                "LNReaderImport: Failed to create stub source for '$pluginId'"
+                            }
                             errors.add(Date() to "Failed to create stub source for '$pluginId': ${e.message}")
                         }
                     }
                 } else {
                     logcat(LogPriority.WARN) { "LNReaderImport: Missing plugins: ${missingPlugins.joinToString()}" }
                     errors.add(
-                        Date() to "Missing plugins (install these extensions first or enable 'Restore with missing plugins'): ${missingPlugins.joinToString()}",
+                        Date() to
+                            "Missing plugins (install these extensions first or enable 'Restore with missing plugins'): ${missingPlugins.joinToString()}",
                     )
                 }
             }
@@ -217,7 +222,10 @@ class LNReaderBackupImporter(
                             }
                             if (sourceId == null) {
                                 skippedCount++
-                                errors.add(Date() to "${novel.name}: Unknown plugin '${novel.pluginId}' - skipping (enable 'Restore with missing plugins' to import as stub)")
+                                errors.add(
+                                    Date() to
+                                        "${novel.name}: Unknown plugin '${novel.pluginId}' - skipping (enable 'Restore with missing plugins' to import as stub)",
+                                )
                                 return@forEachIndexed
                             }
 

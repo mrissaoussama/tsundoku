@@ -27,88 +27,89 @@ class CustomSourceCreationTests {
     companion object {
         @JvmStatic
         fun searchUrlTestCases(): Stream<Arguments> = Stream.of(
-                // WordPress ?s= pattern
-                Arguments.of(
-                    "WordPress ?s= pattern",
-                    "https://example.com/?s=test+novel",
-                    "https://example.com",
-                    "{query}",
-                    "test novel"
-                ),
-                // WordPress ?s= with page
-                Arguments.of(
-                    "WordPress ?s= with page",
-                    "https://example.com/?s=test&page=2",
-                    "https://example.com",
-                    "{query}",
-                    "test"
-                ),
-                // ?q= pattern (common)
-                Arguments.of(
-                    "?q= pattern",
-                    "https://example.com/search?q=dragon",
-                    "https://example.com",
-                    "{query}",
-                    "dragon"
-                ),
-                // ?query= pattern
-                Arguments.of(
-                    "?query= pattern",
-                    "https://novelsite.com/browse?query=isekai",
-                    "https://novelsite.com",
-                    "{query}",
-                    "isekai"
-                ),
-                // ?keyword= pattern
-                Arguments.of(
-                    "?keyword= pattern",
-                    "https://readnovel.com/search?keyword=reincarnation",
-                    "https://readnovel.com",
-                    "{query}",
-                    "reincarnation"
-                ),
-                // Path-based /search/keyword
-                Arguments.of(
-                    "Path-based /search/",
-                    "https://novelbin.com/search/martial",
-                    "https://novelbin.com",
-                    "{query}",
-                    "martial"
-                ),
-                // Path-based /s/keyword
-                Arguments.of(
-                    "Path-based /s/",
-                    "https://site.com/s/cultivation",
-                    "https://site.com",
-                    "{query}",
-                    "cultivation"
-                ),
-                // URL encoded keyword
-                Arguments.of(
-                    "URL encoded keyword",
-                    "https://example.com/?s=light%20novel",
-                    "https://example.com",
-                    "{query}",
-                    "light novel"
-                ),
-                // No search pattern (homepage)
-                Arguments.of(
-                    "No pattern (homepage)",
-                    "https://example.com/",
-                    "https://example.com",
-                    null,
-                    null
-                ),
-                // No search pattern (novel page)
-                Arguments.of(
-                    "No pattern (novel page)",
-                    "https://example.com/novel/my-novel-title",
-                    "https://example.com",
-                    null,
-                    null
-                ),
-            )
+            // WordPress ?s= pattern
+            Arguments.of(
+                "WordPress ?s= pattern",
+                "https://example.com/?s=test+novel",
+                "https://example.com",
+                "{query}",
+                "test novel",
+            ),
+            // WordPress ?s= with page
+            Arguments.of(
+                "WordPress ?s= with page",
+                "https://example.com/?s=test&page=2",
+                "https://example.com",
+                "{query}",
+                "test",
+            ),
+            // ?q= pattern (common)
+            Arguments.of(
+                "?q= pattern",
+                "https://example.com/search?q=dragon",
+                "https://example.com",
+                "{query}",
+                "dragon",
+            ),
+            // ?query= pattern
+            Arguments.of(
+                "?query= pattern",
+                "https://novelsite.com/browse?query=isekai",
+                "https://novelsite.com",
+                "{query}",
+                "isekai",
+            ),
+            // ?keyword= pattern
+            Arguments.of(
+                "?keyword= pattern",
+                "https://readnovel.com/search?keyword=reincarnation",
+                "https://readnovel.com",
+                "{query}",
+                "reincarnation",
+            ),
+            // Path-based /search/keyword
+            Arguments.of(
+                "Path-based /search/",
+                "https://novelbin.com/search/martial",
+                "https://novelbin.com",
+                "{query}",
+                "martial",
+            ),
+            // Path-based /s/keyword
+            Arguments.of(
+                "Path-based /s/",
+                "https://site.com/s/cultivation",
+                "https://site.com",
+                "{query}",
+                "cultivation",
+            ),
+            // URL encoded keyword
+            Arguments.of(
+                "URL encoded keyword",
+                "https://example.com/?s=light%20novel",
+                "https://example.com",
+                "{query}",
+                "light novel",
+            ),
+            // No search pattern (homepage)
+            Arguments.of(
+                "No pattern (homepage)",
+                "https://example.com/",
+                "https://example.com",
+                null,
+                null,
+            ),
+            // No search pattern (novel page)
+            Arguments.of(
+                "No pattern (novel page)",
+                "https://example.com/novel/my-novel-title",
+                "https://example.com",
+                null,
+                null,
+            ),
+        )
     }
+
     @Nested
     @DisplayName("Site Framework Detection Tests")
     inner class SiteFrameworkDetectionTests {
@@ -231,13 +232,13 @@ class CustomSourceCreationTests {
         fun `should return suggestions for TRENDING step with Madara framework`() {
             val suggestions = SitePatternLibrary.getSuggestedSelectors(
                 SitePatternLibrary.SiteFramework.MADARA,
-                eu.kanade.tachiyomi.ui.customsource.SelectorWizardStep.TRENDING
+                eu.kanade.tachiyomi.ui.customsource.SelectorWizardStep.TRENDING,
             )
 
             assertTrue(suggestions.isNotEmpty(), "Should have suggestions for TRENDING step")
             assertTrue(
                 suggestions.any { it.selector.contains("page-item-detail") },
-                "Should include Madara-specific selector"
+                "Should include Madara-specific selector",
             )
         }
 
@@ -245,18 +246,18 @@ class CustomSourceCreationTests {
         fun `should return cover, title, link suggestions for NOVEL_CARD step`() {
             val suggestions = SitePatternLibrary.getSuggestedSelectors(
                 SitePatternLibrary.SiteFramework.MADARA,
-                eu.kanade.tachiyomi.ui.customsource.SelectorWizardStep.NOVEL_CARD
+                eu.kanade.tachiyomi.ui.customsource.SelectorWizardStep.NOVEL_CARD,
             )
 
             assertTrue(suggestions.isNotEmpty(), "Should have suggestions for NOVEL_CARD step")
             // Should include cover, title, and link selectors
             assertTrue(
                 suggestions.any { it.name.contains("Cover", ignoreCase = true) },
-                "Should include cover selectors"
+                "Should include cover selectors",
             )
             assertTrue(
                 suggestions.any { it.name.contains("Title", ignoreCase = true) },
-                "Should include title selectors"
+                "Should include title selectors",
             )
         }
 
@@ -264,13 +265,13 @@ class CustomSourceCreationTests {
         fun `should return chapter content suggestions`() {
             val suggestions = SitePatternLibrary.getSuggestedSelectors(
                 SitePatternLibrary.SiteFramework.READNOVELFULL,
-                eu.kanade.tachiyomi.ui.customsource.SelectorWizardStep.CHAPTER_CONTENT
+                eu.kanade.tachiyomi.ui.customsource.SelectorWizardStep.CHAPTER_CONTENT,
             )
 
             assertTrue(suggestions.isNotEmpty(), "Should have suggestions for CHAPTER_CONTENT step")
             assertTrue(
                 suggestions.any { it.selector.contains("chr-content") || it.selector.contains("chapter-content") },
-                "Should include ReadNovelFull chapter content selector"
+                "Should include ReadNovelFull chapter content selector",
             )
         }
 
@@ -278,7 +279,7 @@ class CustomSourceCreationTests {
         fun `should prioritize selectors by priority value`() {
             val suggestions = SitePatternLibrary.getSuggestedSelectors(
                 SitePatternLibrary.SiteFramework.MADARA,
-                eu.kanade.tachiyomi.ui.customsource.SelectorWizardStep.TRENDING
+                eu.kanade.tachiyomi.ui.customsource.SelectorWizardStep.TRENDING,
             )
 
             // Should be sorted by priority descending
@@ -293,11 +294,11 @@ class CustomSourceCreationTests {
             assertTrue(frameworks.isNotEmpty(), "Should have available frameworks")
             assertFalse(
                 frameworks.contains(SitePatternLibrary.SiteFramework.CUSTOM),
-                "Should not include CUSTOM framework"
+                "Should not include CUSTOM framework",
             )
             assertTrue(
                 frameworks.contains(SitePatternLibrary.SiteFramework.MADARA),
-                "Should include MADARA framework"
+                "Should include MADARA framework",
             )
         }
 
@@ -305,7 +306,7 @@ class CustomSourceCreationTests {
         fun `should return empty list for COMPLETE step`() {
             val suggestions = SitePatternLibrary.getSuggestedSelectors(
                 SitePatternLibrary.SiteFramework.MADARA,
-                eu.kanade.tachiyomi.ui.customsource.SelectorWizardStep.COMPLETE
+                eu.kanade.tachiyomi.ui.customsource.SelectorWizardStep.COMPLETE,
             )
 
             assertTrue(suggestions.isEmpty(), "COMPLETE step should have no suggestions")
@@ -352,7 +353,7 @@ class CustomSourceCreationTests {
                 // ReadNovelFull specific
                 assertTrue(
                     it.chapterContent.any { selector -> selector.selector.contains("chr-content") },
-                    "Should have chr-content selector"
+                    "Should have chr-content selector",
                 )
             }
         }

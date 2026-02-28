@@ -57,6 +57,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     private var loadingIndicator: ReaderProgressIndicator? = null
     private val preferences: ReaderPreferences by injectLazy()
     private val translationPreferences: TranslationPreferences by injectLazy()
+    private val libraryPreferences: tachiyomi.domain.library.service.LibraryPreferences by injectLazy()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var loadJob: Job? = null
@@ -695,7 +696,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             }
 
             // If chapter is marked as read, start from top (0%) to avoid infinite scroll issues
-            if (!isRead && savedProgress > 0 && savedProgress <= 100) {
+            val shouldRestore = if (!isRead) {
+                savedProgress > 0 && savedProgress <= 100
+            } else {
+                libraryPreferences.novelReadProgress100().get() && savedProgress > 0 && savedProgress <= 100
+            }
+            if (shouldRestore) {
                 val progress = savedProgress / 100f
                 lastSavedProgress = progress
 
@@ -902,6 +908,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 hideLoadingIndicator()
             }
             displayContent(chapters.currChapter, page, isInfiniteScrollAppend || isPrepend, isPrepend)
+            // Trigger download of next chapters (needed for non-infinite-scroll mode)
+            if (!isInfiniteScrollAppend && !isPrepend) {
+                activity.viewModel.setNovelVisibleChapter(page.chapter.chapter)
+            }
             return
         }
 
@@ -939,6 +949,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                         }
                         // Infinite scroll is seamless - no loading indicators to hide
                         displayContent(chapters.currChapter, page, isInfiniteScrollAppend || isPrepend, isPrepend)
+                        // Trigger download of next chapters (needed for non-infinite-scroll mode)
+                        if (!isInfiniteScrollAppend && !isPrepend) {
+                            activity.viewModel.setNovelVisibleChapter(page.chapter.chapter)
+                        }
                     }
                     is Page.State.Error -> {
                         // Only hide loading for manual navigation

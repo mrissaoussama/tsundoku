@@ -105,42 +105,11 @@ class NovelExtensionsScreenModel(
 
                 buildMap {
 
-                // Build extensions from available plugins
-                val jsExtensions = jsAvailable.map { plugin ->
-                    val installed = jsInstalled.find { it.plugin.id == plugin.id }
-                    val verCode = plugin.version.replace(".", "").toLongOrNull() ?: 0L
-                    val instVerCode = installed?.plugin?.version?.replace(".", "")?.toLongOrNull() ?: 0L
-                    Extension.JsPlugin(
-                        name = plugin.name,
-                        pkgName = plugin.pkgName(),
-                        versionName = plugin.version,
-                        versionCode = verCode,
-                        libVersion = 0.0,
-                        lang = plugin.lang,
-                        isNsfw = false,
-                        isNovel = true,
-                        sources = listOf(
-                            Extension.Available.Source(
-                                id = plugin.sourceId(),
-                                lang = plugin.lang,
-                                name = plugin.name,
-                                baseUrl = plugin.site,
-                            ),
-                        ),
-                        iconUrl = plugin.iconUrl,
-                        repoUrl = plugin.repositoryUrl ?: "",
-                        isInstalled = installed != null,
-                        hasUpdate = installed != null && verCode > instVerCode,
-                    )
-                }
-
-                // Add installed plugins that aren't in available list (e.g., repo removed)
-                val availableIds = jsAvailable.map { it.id }.toSet()
-                val installedOnlyExtensions = jsInstalled
-                    .filter { it.plugin.id !in availableIds }
-                    .map { installed ->
-                        val plugin = installed.plugin
+                    // Build extensions from available plugins
+                    val jsExtensions = jsAvailable.map { plugin ->
+                        val installed = jsInstalled.find { it.plugin.id == plugin.id }
                         val verCode = plugin.version.replace(".", "").toLongOrNull() ?: 0L
+                        val instVerCode = installed?.plugin?.version?.replace(".", "")?.toLongOrNull() ?: 0L
                         Extension.JsPlugin(
                             name = plugin.name,
                             pkgName = plugin.pkgName(),
@@ -159,50 +128,81 @@ class NovelExtensionsScreenModel(
                                 ),
                             ),
                             iconUrl = plugin.iconUrl,
-                            repoUrl = installed.repositoryUrl,
-                            isInstalled = true,
-                            hasUpdate = false,
+                            repoUrl = plugin.repositoryUrl ?: "",
+                            isInstalled = installed != null,
+                            hasUpdate = installed != null && verCode > instVerCode,
                         )
                     }
 
-                val allJsExtensions = jsExtensions + installedOnlyExtensions
-                val jsUpdates = allJsExtensions.filter { it.hasUpdate }
-                val jsInstalledExt = allJsExtensions.filter { it.isInstalled && !it.hasUpdate }
-                val jsAvailableExt = allJsExtensions.filter { !it.isInstalled }
+                    // Add installed plugins that aren't in available list (e.g., repo removed)
+                    val availableIds = jsAvailable.map { it.id }.toSet()
+                    val installedOnlyExtensions = jsInstalled
+                        .filter { it.plugin.id !in availableIds }
+                        .map { installed ->
+                            val plugin = installed.plugin
+                            val verCode = plugin.version.replace(".", "").toLongOrNull() ?: 0L
+                            Extension.JsPlugin(
+                                name = plugin.name,
+                                pkgName = plugin.pkgName(),
+                                versionName = plugin.version,
+                                versionCode = verCode,
+                                libVersion = 0.0,
+                                lang = plugin.lang,
+                                isNsfw = false,
+                                isNovel = true,
+                                sources = listOf(
+                                    Extension.Available.Source(
+                                        id = plugin.sourceId(),
+                                        lang = plugin.lang,
+                                        name = plugin.name,
+                                        baseUrl = plugin.site,
+                                    ),
+                                ),
+                                iconUrl = plugin.iconUrl,
+                                repoUrl = installed.repositoryUrl,
+                                isInstalled = true,
+                                hasUpdate = false,
+                            )
+                        }
 
-                val updates = (_updates.filter { it.isNovel } + jsUpdates)
-                    .filter(queryFilter(searchQuery)).map(extensionMapper(downloads))
-                if (updates.isNotEmpty()) {
-                    put(ExtensionUiModel.Header.Resource(MR.strings.ext_updates_pending), updates)
-                }
+                    val allJsExtensions = jsExtensions + installedOnlyExtensions
+                    val jsUpdates = allJsExtensions.filter { it.hasUpdate }
+                    val jsInstalledExt = allJsExtensions.filter { it.isInstalled && !it.hasUpdate }
+                    val jsAvailableExt = allJsExtensions.filter { !it.isInstalled }
 
-                val installed = (
-                    _installed.filter {
-                        it.isNovel
-                    } + jsInstalledExt
-                    ).filter(queryFilter(searchQuery)).map(extensionMapper(downloads))
-                val untrusted = _untrusted.filter {
-                    it.isNovel
-                }.filter(queryFilter(searchQuery)).map(extensionMapper(downloads))
-                if (installed.isNotEmpty() || untrusted.isNotEmpty()) {
-                    put(ExtensionUiModel.Header.Resource(MR.strings.ext_installed), installed + untrusted)
-                }
-
-                val languagesWithExtensions = (
-                    _available
-                        .filter { it.isNovel } + jsAvailableExt
-                    )
-                    .filter(queryFilter(searchQuery))
-                    .groupBy { it.lang }
-                    .toSortedMap(LocaleHelper.comparator)
-                    .map { (lang, extensions) ->
-                        ExtensionUiModel.Header.Text(LocaleHelper.getSourceDisplayName(lang, context)) to
-                            extensions.map(extensionMapper(downloads))
+                    val updates = (_updates.filter { it.isNovel } + jsUpdates)
+                        .filter(queryFilter(searchQuery)).map(extensionMapper(downloads))
+                    if (updates.isNotEmpty()) {
+                        put(ExtensionUiModel.Header.Resource(MR.strings.ext_updates_pending), updates)
                     }
 
-                if (languagesWithExtensions.isNotEmpty()) {
-                    putAll(languagesWithExtensions)
-                }
+                    val installed = (
+                        _installed.filter {
+                            it.isNovel
+                        } + jsInstalledExt
+                        ).filter(queryFilter(searchQuery)).map(extensionMapper(downloads))
+                    val untrusted = _untrusted.filter {
+                        it.isNovel
+                    }.filter(queryFilter(searchQuery)).map(extensionMapper(downloads))
+                    if (installed.isNotEmpty() || untrusted.isNotEmpty()) {
+                        put(ExtensionUiModel.Header.Resource(MR.strings.ext_installed), installed + untrusted)
+                    }
+
+                    val languagesWithExtensions = (
+                        _available
+                            .filter { it.isNovel } + jsAvailableExt
+                        )
+                        .filter(queryFilter(searchQuery))
+                        .groupBy { it.lang }
+                        .toSortedMap(LocaleHelper.comparator)
+                        .map { (lang, extensions) ->
+                            ExtensionUiModel.Header.Text(LocaleHelper.getSourceDisplayName(lang, context)) to
+                                extensions.map(extensionMapper(downloads))
+                        }
+
+                    if (languagesWithExtensions.isNotEmpty()) {
+                        putAll(languagesWithExtensions)
+                    }
                 }
             }
                 .collectLatest {

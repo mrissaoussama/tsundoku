@@ -8,11 +8,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.tooling.preview.PreviewParameter
@@ -49,6 +52,7 @@ fun HistoryScreen(
     onDialogChange: (HistoryScreenModel.Dialog?) -> Unit,
     onFilterSelected: (HistoryFilter) -> Unit,
     onGroupByNovelChanged: (Boolean) -> Unit,
+    onLoadNextPage: () -> Unit,
 ) {
     Scaffold(
         topBar = { scrollBehavior ->
@@ -59,6 +63,11 @@ fun HistoryScreen(
                 actions = {
                     AppBarActions(
                         persistentListOf(
+                            AppBar.Action(
+                                title = if (state.groupByNovel) "List View" else "Last only",
+                                icon = if (state.groupByNovel) Icons.Outlined.ViewList else Icons.Outlined.GridView,
+                                onClick = { onGroupByNovelChanged(!state.groupByNovel) },
+                            ),
                             AppBar.Action(
                                 title = stringResource(MR.strings.pref_clear_history),
                                 icon = Icons.Outlined.DeleteSweep,
@@ -99,11 +108,6 @@ fun HistoryScreen(
                     onClick = { onFilterSelected(HistoryFilter.NOVELS) },
                     label = { Text(stringResource(MR.strings.label_novels)) },
                 )
-                FilterChip(
-                    selected = state.groupByNovel,
-                    onClick = { onGroupByNovelChanged(!state.groupByNovel) },
-                    label = { Text("Last only") },
-                )
             }
 
             state.list.let {
@@ -125,6 +129,7 @@ fun HistoryScreen(
                         onClickResume = { history -> onClickResume(history.mangaId, history.chapterId) },
                         onClickDelete = { item -> onDialogChange(HistoryScreenModel.Dialog.Delete(item)) },
                         onClickFavorite = { history -> onClickFavorite(history.mangaId) },
+                        onLoadNextPage = onLoadNextPage,
                     )
                 }
             }
@@ -139,6 +144,7 @@ private fun HistoryScreenContent(
     onClickResume: (HistoryWithRelations) -> Unit,
     onClickDelete: (HistoryWithRelations) -> Unit,
     onClickFavorite: (HistoryWithRelations) -> Unit,
+    onLoadNextPage: () -> Unit,
 ) {
     FastScrollLazyColumn {
         items(
@@ -171,6 +177,11 @@ private fun HistoryScreenContent(
                 }
             }
         }
+        item(key = "history-load-more") {
+            LaunchedEffect(Unit) {
+                onLoadNextPage()
+            }
+        }
     }
 }
 
@@ -196,6 +207,7 @@ internal fun HistoryScreenPreviews(
             onClickFavorite = {},
             onFilterSelected = {},
             onGroupByNovelChanged = {},
+            onLoadNextPage = {},
         )
     }
 }

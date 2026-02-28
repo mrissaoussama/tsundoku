@@ -46,6 +46,7 @@ class JSLibraryProvider(
     private val prefs: SharedPreferences by lazy {
         context.getSharedPreferences("jsplugin_storage_$pluginId", Context.MODE_PRIVATE)
     }
+
     // In-memory cache backed by SharedPreferences
     private val storage = ConcurrentHashMap<String, String>()
 
@@ -123,7 +124,7 @@ class JSLibraryProvider(
         val url: String,
         val text: String,
         val headers: Map<String, String>,
-        val error: String? = null
+        val error: String? = null,
     )
 
     private suspend fun doFetch(url: String, init: Map<String, Any?>?): FetchResponse {
@@ -182,7 +183,7 @@ class JSLibraryProvider(
                     url = url,
                     text = "",
                     headers = emptyMap(),
-                    error = e.message ?: "Unknown error"
+                    error = e.message ?: "Unknown error",
                 )
             }
         }
@@ -482,7 +483,9 @@ class JSLibraryProvider(
                     } else {
                         first.html()
                     }
-                } else ""
+                } else {
+                    ""
+                }
             }
             else -> ""
         }
@@ -687,7 +690,9 @@ class JSLibraryProvider(
             val newHandle = ++handleCounter
             elementCache[newHandle] = result
             newHandle
-        } else -1
+        } else {
+            -1
+        }
     }
 
     private fun cheerioFirst(handle: Int): Int = cheerioEq(handle, 0)
@@ -708,7 +713,9 @@ class JSLibraryProvider(
             val newHandle = ++handleCounter
             elementCache[newHandle] = parent
             newHandle
-        } else -1
+        } else {
+            -1
+        }
     }
 
     private fun cheerioChildren(handle: Int, selector: String): Int {
@@ -717,8 +724,11 @@ class JSLibraryProvider(
             is Element -> if (selector.isEmpty()) el.children() else el.children().select(selector)
             is Elements -> Elements().also { results ->
                 el.forEach { e ->
-                    if (selector.isEmpty()) results.addAll(e.children())
-                    else results.addAll(e.children().select(selector))
+                    if (selector.isEmpty()) {
+                        results.addAll(e.children())
+                    } else {
+                        results.addAll(e.children().select(selector))
+                    }
                 }
             }
             else -> Elements()
@@ -739,7 +749,9 @@ class JSLibraryProvider(
             val newHandle = ++handleCounter
             elementCache[newHandle] = next
             newHandle
-        } else -1
+        } else {
+            -1
+        }
     }
 
     private fun cheerioPrev(handle: Int): Int {
@@ -753,7 +765,9 @@ class JSLibraryProvider(
             val newHandle = ++handleCounter
             elementCache[newHandle] = prev
             newHandle
-        } else -1
+        } else {
+            -1
+        }
     }
 
     private fun cheerioHasClass(handle: Int, className: String): Boolean = when (val el = elementCache[handle]) {

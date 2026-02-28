@@ -30,12 +30,12 @@ import androidx.core.widget.NestedScrollView
 import coil3.asDrawable
 import coil3.imageLoader
 import coil3.request.ImageRequest
+import eu.kanade.presentation.reader.settings.RegexReplacement
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
-import eu.kanade.presentation.reader.settings.RegexReplacement
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.viewer.Viewer
 import kotlinx.coroutines.CancellationException
@@ -155,8 +155,11 @@ private class CoilImageGetter(
                         val drawable = android.graphics.drawable.BitmapDrawable(activity.resources, bitmap)
                         val contentWidth = textView.width - textView.paddingLeft - textView.paddingRight
                         // Fallback to display width when view not yet laid out (first render)
-                        val maxWidth = if (contentWidth > 0) contentWidth else
+                        val maxWidth = if (contentWidth > 0) {
+                            contentWidth
+                        } else {
                             activity.resources.displayMetrics.widthPixels
+                        }
                         val imgWidth = drawable.intrinsicWidth
                         val imgHeight = drawable.intrinsicHeight
                         if (imgWidth > 0 && imgHeight > 0) {
@@ -196,8 +199,11 @@ private class CoilImageGetter(
 
                 // Scale image to fill TextView width (or display width before first layout)
                 val contentWidth = textView.width - textView.paddingLeft - textView.paddingRight
-                val maxWidth = if (contentWidth > 0) contentWidth else
+                val maxWidth = if (contentWidth > 0) {
+                    contentWidth
+                } else {
                     activity.resources.displayMetrics.widthPixels
+                }
                 val imgWidth = drawable.intrinsicWidth
                 val imgHeight = drawable.intrinsicHeight
 
@@ -272,6 +278,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     private lateinit var contentContainer: LinearLayout
     private var bottomLoadingIndicator: ProgressBar? = null
     private val preferences: ReaderPreferences by injectLazy()
+    private val libraryPreferences: tachiyomi.domain.library.service.LibraryPreferences by injectLazy()
     private var tts: TextToSpeech? = null
     private var isAutoScrolling = false
     private var autoScrollJob: Job? = null
@@ -313,7 +320,9 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     //   2. cleanupDistantChapters() adjusts scrollY and fires a scroll event with stale
     //      layout coordinates, causing a ~50% reading.
     private var chapterEntryTime = 0L
-    private companion object { const val CHAPTER_ENTRY_GRACE_MS = 800L }
+    private companion object {
+        const val CHAPTER_ENTRY_GRACE_MS = 800L
+    }
 
     private val gestureDetector = GestureDetector(
         activity,
@@ -599,10 +608,10 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     private fun loadNextChapterIfAvailable() {
         val anchor = loadedChapters.getOrNull(currentChapterIndex)?.chapter
             ?: currentChapters?.currChapter ?: run {
-                logcat(LogPriority.ERROR) { "NovelViewer: loadNext failed, no anchor (loadedCount=${loadedChapters.size})" }
-                showInlineError("No anchor chapter for infinite scroll", isPrepend = false)
-                return
-            }
+            logcat(LogPriority.ERROR) { "NovelViewer: loadNext failed, no anchor (loadedCount=${loadedChapters.size})" }
+            showInlineError("No anchor chapter for infinite scroll", isPrepend = false)
+            return
+        }
 
         if (isLoadingNext) {
             logcat(LogPriority.DEBUG) { "NovelViewer: loadNext ignored, already loading" }
@@ -931,6 +940,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     private var isTtsAutoPlay = false // Track if TTS should auto-continue to next chapter
     private var ttsPaused = false
     private var ttsChunks: List<String> = emptyList()
+
     @Volatile private var ttsCurrentChunkIndex = 0
 
     override fun onInit(status: Int) {
@@ -1048,8 +1058,11 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
 
         ttsChunks = if (paragraphs.size > 1) {
             paragraphs.flatMap { para ->
-                if (para.length <= maxLength) listOf(para)
-                else splitTextForTts(para, maxLength)
+                if (para.length <= maxLength) {
+                    listOf(para)
+                } else {
+                    splitTextForTts(para, maxLength)
+                }
             }
         } else if (text.length <= maxLength) {
             listOf(text)
@@ -1126,7 +1139,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                     startTts() // Retry now that it's initialized
                 } else {
                     activity.runOnUiThread {
-                       logcat(LogPriority.DEBUG) {"TTS not available. Please check your TTS settings."}
+                        logcat(LogPriority.DEBUG) { "TTS not available. Please check your TTS settings." }
                     }
                 }
             }
@@ -1284,6 +1297,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             hideLoadingIndicator()
             displayChapter(chapters.currChapter, page)
             restoreProgress(page)
+            // Trigger download of next chapters (needed for non-infinite-scroll mode)
+            activity.viewModel.setNovelVisibleChapter(page.chapter.chapter)
             return
         }
 
@@ -1305,6 +1320,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                         hideLoadingIndicator()
                         displayChapter(chapters.currChapter, page)
                         restoreProgress(page)
+                        // Trigger download of next chapters (needed for non-infinite-scroll mode)
+                        activity.viewModel.setNovelVisibleChapter(page.chapter.chapter)
                     }
                     is Page.State.Error -> {
                         hideLoadingIndicator()
@@ -1535,7 +1552,12 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         }
 
         // If chapter is marked as read, start from top (0%) to avoid infinite scroll issues
-        if (!isRead && savedProgress > 0 && savedProgress <= 100) {
+        val shouldRestore = if (!isRead) {
+            savedProgress > 0 && savedProgress <= 100
+        } else {
+            libraryPreferences.novelReadProgress100().get() && savedProgress > 0 && savedProgress <= 100
+        }
+        if (shouldRestore) {
             val progress = savedProgress / 100f
             // Set lastSavedProgress BEFORE posting to prevent race condition with scroll listener
             lastSavedProgress = progress
@@ -1862,8 +1884,6 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         }
         return result
     }
-
-
 
     /**
      * Dismiss any active text selection (action mode / handles) without toggling

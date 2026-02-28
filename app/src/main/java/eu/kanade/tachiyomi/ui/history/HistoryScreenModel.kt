@@ -70,33 +70,37 @@ class HistoryScreenModel(
     private val _events: Channel<Event> = Channel(Channel.UNLIMITED)
     val events: Flow<Event> = _events.receiveAsFlow()
 
+    data class ObserveParams(
+        val query: String?,
+        val filter: HistoryFilter,
+        val groupByNovel: Boolean,
+        val limit: Long,
+    )
+
     init {
         screenModelScope.launch {
-            state.map { Triple(it.searchQuery, it.filter, it.groupByNovel) }
+            state.map { ObserveParams(it.searchQuery, it.filter, it.groupByNovel, it.limit) }
                 .distinctUntilChanged()
-                .flatMapLatest { (query, filter, groupByNovel) ->
-                    getHistory.subscribe(query ?: "")
+                .flatMapLatest { params ->
+                    val historyFlow = if (params.groupByNovel) {
+                        getHistory.subscribeGrouped(params.query ?: "", params.limit)
+                    } else {
+                        getHistory.subscribe(params.query ?: "", params.limit)
+                    }
+                    historyFlow
                         .distinctUntilChanged()
                         .catch { error ->
                             logcat(LogPriority.ERROR, error)
                             _events.send(Event.InternalError)
                         }
                         .map { histories ->
-                            val filtered = histories.filterBy(filter)
-                            val grouped = if (groupByNovel) filtered.groupByNovel() else filtered
-                            grouped.toHistoryUiModels()
+                            val filtered = histories.filterBy(params.filter)
+                            filtered.toHistoryUiModels()
                         }
                         .flowOn(Dispatchers.IO)
                 }
                 .collect { newList -> mutableState.update { it.copy(list = newList) } }
         }
-    }
-
-    private fun List<HistoryWithRelations>.groupByNovel(): List<HistoryWithRelations> {
-        // Group by manga and keep only the latest entry for each
-        return groupBy { it.mangaId }
-            .map { (_, histories) -> histories.maxByOrNull { it.readAt?.time ?: 0L }!! }
-            .sortedByDescending { it.readAt?.time }
     }
 
     private fun List<HistoryWithRelations>.filterBy(filter: HistoryFilter): List<HistoryWithRelations> {
@@ -160,15 +164,15 @@ class HistoryScreenModel(
     }
 
     fun updateSearchQuery(query: String?) {
-        mutableState.update { it.copy(searchQuery = query) }
+        mutableState.update { it.copy(searchQuery = query, limit = HISTORY_PAGE_SIZE) }
     }
 
     fun setFilter(filter: HistoryFilter) {
-        mutableState.update { it.copy(filter = filter) }
+        mutableState.update { it.copy(filter = filter, limit = HISTORY_PAGE_SIZE) }
     }
 
     fun setGroupByNovel(groupByNovel: Boolean) {
-        mutableState.update { it.copy(groupByNovel = groupByNovel) }
+        mutableState.update { it.copy(groupByNovel = groupByNovel, limit = HISTORY_PAGE_SIZE) }
         libraryPreferences.historyGroupByNovel().set(groupByNovel)
     }
 
@@ -276,9 +280,14 @@ class HistoryScreenModel(
         }
     }
 
+    fun loadNextPage() {
+        mutableState.update { it.copy(limit = it.limit + HISTORY_PAGE_SIZE) }
+    }
+
     @Immutable
     data class State(
         val searchQuery: String? = null,
+        val limit: Long = HISTORY_PAGE_SIZE,
         val list: List<HistoryUiModel>? = null,
         val filter: HistoryFilter = HistoryFilter.ALL,
         val groupByNovel: Boolean = false,
@@ -300,5 +309,9 @@ class HistoryScreenModel(
         data class OpenChapter(val chapter: Chapter?) : Event
         data object InternalError : Event
         data object HistoryCleared : Event
+    }
+
+    companion object {
+        private const val HISTORY_PAGE_SIZE = 25L
     }
 }

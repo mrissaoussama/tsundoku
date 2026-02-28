@@ -1,9 +1,12 @@
 package eu.kanade.tachiyomi.ui.library.duplicate
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,6 +34,7 @@ import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -81,11 +85,6 @@ import eu.kanade.tachiyomi.source.getNameForMangaInfo
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import kotlinx.coroutines.launch
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.material.icons.outlined.FilterList
-import tachiyomi.domain.category.model.Category as CategoryModel
 import tachiyomi.domain.manga.interactor.DuplicateMatchMode
 import tachiyomi.domain.manga.model.MangaWithChapterCount
 import tachiyomi.domain.source.service.SourceManager
@@ -95,6 +94,7 @@ import tachiyomi.presentation.core.screens.EmptyScreen
 import tachiyomi.presentation.core.screens.LoadingScreen
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import tachiyomi.domain.category.model.Category as CategoryModel
 
 class DuplicateDetectionScreen : Screen {
 
@@ -285,7 +285,9 @@ class DuplicateDetectionScreen : Screen {
                         label = { Text("Exact") },
                         leadingIcon = if (state.matchMode == DuplicateMatchMode.EXACT) {
                             { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                        } else null,
+                        } else {
+                            null
+                        },
                     )
                     FilterChip(
                         selected = state.matchMode == DuplicateMatchMode.CONTAINS,
@@ -293,7 +295,9 @@ class DuplicateDetectionScreen : Screen {
                         label = { Text("Contains") },
                         leadingIcon = if (state.matchMode == DuplicateMatchMode.CONTAINS) {
                             { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                        } else null,
+                        } else {
+                            null
+                        },
                     )
                     FilterChip(
                         selected = state.matchMode == DuplicateMatchMode.URL,
@@ -301,7 +305,9 @@ class DuplicateDetectionScreen : Screen {
                         label = { Text("Same URL") },
                         leadingIcon = if (state.matchMode == DuplicateMatchMode.URL) {
                             { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                        } else null,
+                        } else {
+                            null
+                        },
                     )
                 }
 
@@ -334,197 +340,215 @@ class DuplicateDetectionScreen : Screen {
                 @OptIn(ExperimentalLayoutApi::class)
                 AnimatedVisibility(visible = filtersExpanded) {
                     Column {
-
-                // Content type selector (Manga/Novel/Both)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        "Type:",
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.align(Alignment.CenterVertically),
-                    )
-                    FilterChip(
-                        selected = state.contentType == DuplicateDetectionScreenModel.ContentType.ALL,
-                        onClick = { screenModel.setContentType(DuplicateDetectionScreenModel.ContentType.ALL) },
-                        label = { Text("All") },
-                        leadingIcon = if (state.contentType == DuplicateDetectionScreenModel.ContentType.ALL) {
-                            { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                        } else null,
-                    )
-                    FilterChip(
-                        selected = state.contentType == DuplicateDetectionScreenModel.ContentType.MANGA,
-                        onClick = { screenModel.setContentType(DuplicateDetectionScreenModel.ContentType.MANGA) },
-                        label = { Text("Manga") },
-                        leadingIcon = if (state.contentType == DuplicateDetectionScreenModel.ContentType.MANGA) {
-                            { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                        } else null,
-                    )
-                    FilterChip(
-                        selected = state.contentType == DuplicateDetectionScreenModel.ContentType.NOVEL,
-                        onClick = { screenModel.setContentType(DuplicateDetectionScreenModel.ContentType.NOVEL) },
-                        label = { Text("Novel") },
-                        leadingIcon = if (state.contentType == DuplicateDetectionScreenModel.ContentType.NOVEL) {
-                            { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                        } else null,
-                    )
-                }
-
-                // Show URLs toggle
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { screenModel.toggleShowFullUrls() }
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(
-                        checked = state.showFullUrls,
-                        onCheckedChange = { screenModel.toggleShowFullUrls() },
-                    )
-                    Text(
-                        "Show full URLs",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                }
-                // Sort mode selector
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        "Sort:",
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.align(Alignment.CenterVertically),
-                    )
-                    FilterChip(
-                        selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.NAME,
-                        onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.NAME) },
-                        label = { Text("Name") },
-                        leadingIcon = if (state.sortMode == DuplicateDetectionScreenModel.SortMode.NAME) {
-                            { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                        } else null,
-                    )
-                    FilterChip(
-                        selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.LATEST_ADDED,
-                        onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.LATEST_ADDED) },
-                        label = { Text("Latest") },
-                        leadingIcon = if (state.sortMode == DuplicateDetectionScreenModel.SortMode.LATEST_ADDED) {
-                            { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                        } else null,
-                    )
-                    FilterChip(
-                        selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.CHAPTER_COUNT_DESC,
-                        onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.CHAPTER_COUNT_DESC) },
-                        label = { Text("Ch↓") },
-                        leadingIcon = if (state.sortMode == DuplicateDetectionScreenModel.SortMode.CHAPTER_COUNT_DESC) {
-                            { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                        } else null,
-                    )
-                    FilterChip(
-                        selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.DOWNLOAD_COUNT_DESC,
-                        onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.DOWNLOAD_COUNT_DESC) },
-                        label = { Text("DL↓") },
-                        leadingIcon = if (state.sortMode == DuplicateDetectionScreenModel.SortMode.DOWNLOAD_COUNT_DESC) {
-                            { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                        } else null,
-                    )
-                    FilterChip(
-                        selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.READ_COUNT_DESC,
-                        onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.READ_COUNT_DESC) },
-                        label = { Text("Read↓") },
-                        leadingIcon = if (state.sortMode == DuplicateDetectionScreenModel.SortMode.READ_COUNT_DESC) {
-                            { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                        } else null,
-                    )
-                    FilterChip(
-                        selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.PINNED_SOURCE,
-                        onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.PINNED_SOURCE) },
-                        label = {
-                            Icon(
-                                imageVector = Icons.Filled.PushPin,
-                                contentDescription = "Pinned",
-                                modifier = Modifier.size(18.dp),
-                            )
-                        },
-                        leadingIcon = if (state.sortMode == DuplicateDetectionScreenModel.SortMode.PINNED_SOURCE) {
-                            { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
-                        } else null,
-                    )
-                }
-
-                // Tristate Category filters
-                if (state.categories.isNotEmpty()) {
-                    val relevantCategories = state.categories.filter { category ->
-                        when (state.contentType) {
-                            DuplicateDetectionScreenModel.ContentType.ALL -> true
-                            DuplicateDetectionScreenModel.ContentType.NOVEL ->
-                                category.contentType == CategoryModel.CONTENT_TYPE_ALL ||
-                                    category.contentType == CategoryModel.CONTENT_TYPE_NOVEL
-                            DuplicateDetectionScreenModel.ContentType.MANGA ->
-                                category.contentType == CategoryModel.CONTENT_TYPE_ALL ||
-                                    category.contentType == CategoryModel.CONTENT_TYPE_MANGA
-                        }
-                    }
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                    ) {
+                        // Content type selector (Manga/Novel/Both)
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Text(
-                                "Category:",
+                                "Type:",
                                 style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.align(Alignment.CenterVertically),
                             )
-                            if (state.selectedCategoryFilters.isNotEmpty() || state.excludedCategoryFilters.isNotEmpty()) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                FilterChip(
-                                    selected = true,
-                                    onClick = { screenModel.clearCategoryFilters() },
-                                    label = { Text("Clear") },
-                                )
-                            }
+                            FilterChip(
+                                selected = state.contentType == DuplicateDetectionScreenModel.ContentType.ALL,
+                                onClick = { screenModel.setContentType(DuplicateDetectionScreenModel.ContentType.ALL) },
+                                label = { Text("All") },
+                                leadingIcon = if (state.contentType == DuplicateDetectionScreenModel.ContentType.ALL) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
+                                } else {
+                                    null
+                                },
+                            )
+                            FilterChip(
+                                selected = state.contentType == DuplicateDetectionScreenModel.ContentType.MANGA,
+                                onClick = { screenModel.setContentType(DuplicateDetectionScreenModel.ContentType.MANGA) },
+                                label = { Text("Manga") },
+                                leadingIcon = if (state.contentType == DuplicateDetectionScreenModel.ContentType.MANGA) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
+                                } else {
+                                    null
+                                },
+                            )
+                            FilterChip(
+                                selected = state.contentType == DuplicateDetectionScreenModel.ContentType.NOVEL,
+                                onClick = { screenModel.setContentType(DuplicateDetectionScreenModel.ContentType.NOVEL) },
+                                label = { Text("Novel") },
+                                leadingIcon = if (state.contentType == DuplicateDetectionScreenModel.ContentType.NOVEL) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
+                                } else {
+                                    null
+                                },
+                            )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            relevantCategories.forEach { category ->
-                                val isIncluded = category.id in state.selectedCategoryFilters
-                                val isExcluded = category.id in state.excludedCategoryFilters
-                                FilterChip(
-                                    selected = isIncluded || isExcluded,
-                                    onClick = { screenModel.toggleCategoryFilter(category.id) },
-                                    label = { Text(category.name) },
-                                    leadingIcon = if (isIncluded) {
-                                        { Icon(Icons.Filled.Check, contentDescription = "Included", Modifier.size(18.dp)) }
-                                    } else if (isExcluded) {
-                                        { Icon(Icons.Filled.Close, contentDescription = "Excluded", Modifier.size(18.dp)) }
-                                    } else null,
-                                    colors = if (isExcluded) {
-                                        FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
-                                            selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer,
-                                        )
-                                    } else {
-                                        FilterChipDefaults.filterChipColors()
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
 
+                        // Show URLs toggle
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { screenModel.toggleShowFullUrls() }
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = state.showFullUrls,
+                                onCheckedChange = { screenModel.toggleShowFullUrls() },
+                            )
+                            Text(
+                                "Show full URLs",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(start = 8.dp),
+                            )
+                        }
+                        // Sort mode selector
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                "Sort:",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.align(Alignment.CenterVertically),
+                            )
+                            FilterChip(
+                                selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.NAME,
+                                onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.NAME) },
+                                label = { Text("Name") },
+                                leadingIcon = if (state.sortMode == DuplicateDetectionScreenModel.SortMode.NAME) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
+                                } else {
+                                    null
+                                },
+                            )
+                            FilterChip(
+                                selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.LATEST_ADDED,
+                                onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.LATEST_ADDED) },
+                                label = { Text("Latest") },
+                                leadingIcon = if (state.sortMode == DuplicateDetectionScreenModel.SortMode.LATEST_ADDED) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
+                                } else {
+                                    null
+                                },
+                            )
+                            FilterChip(
+                                selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.CHAPTER_COUNT_DESC,
+                                onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.CHAPTER_COUNT_DESC) },
+                                label = { Text("Ch↓") },
+                                leadingIcon = if (state.sortMode == DuplicateDetectionScreenModel.SortMode.CHAPTER_COUNT_DESC) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
+                                } else {
+                                    null
+                                },
+                            )
+                            FilterChip(
+                                selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.DOWNLOAD_COUNT_DESC,
+                                onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.DOWNLOAD_COUNT_DESC) },
+                                label = { Text("DL↓") },
+                                leadingIcon = if (state.sortMode == DuplicateDetectionScreenModel.SortMode.DOWNLOAD_COUNT_DESC) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
+                                } else {
+                                    null
+                                },
+                            )
+                            FilterChip(
+                                selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.READ_COUNT_DESC,
+                                onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.READ_COUNT_DESC) },
+                                label = { Text("Read↓") },
+                                leadingIcon = if (state.sortMode == DuplicateDetectionScreenModel.SortMode.READ_COUNT_DESC) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
+                                } else {
+                                    null
+                                },
+                            )
+                            FilterChip(
+                                selected = state.sortMode == DuplicateDetectionScreenModel.SortMode.PINNED_SOURCE,
+                                onClick = { screenModel.setSortMode(DuplicateDetectionScreenModel.SortMode.PINNED_SOURCE) },
+                                label = {
+                                    Icon(
+                                        imageVector = Icons.Filled.PushPin,
+                                        contentDescription = "Pinned",
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                },
+                                leadingIcon = if (state.sortMode == DuplicateDetectionScreenModel.SortMode.PINNED_SOURCE) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
+                                } else {
+                                    null
+                                },
+                            )
+                        }
+
+                        // Tristate Category filters
+                        if (state.categories.isNotEmpty()) {
+                            val relevantCategories = state.categories.filter { category ->
+                                when (state.contentType) {
+                                    DuplicateDetectionScreenModel.ContentType.ALL -> true
+                                    DuplicateDetectionScreenModel.ContentType.NOVEL ->
+                                        category.contentType == CategoryModel.CONTENT_TYPE_ALL ||
+                                            category.contentType == CategoryModel.CONTENT_TYPE_NOVEL
+                                    DuplicateDetectionScreenModel.ContentType.MANGA ->
+                                        category.contentType == CategoryModel.CONTENT_TYPE_ALL ||
+                                            category.contentType == CategoryModel.CONTENT_TYPE_MANGA
+                                }
+                            }
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        "Category:",
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                    if (state.selectedCategoryFilters.isNotEmpty() || state.excludedCategoryFilters.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        FilterChip(
+                                            selected = true,
+                                            onClick = { screenModel.clearCategoryFilters() },
+                                            label = { Text("Clear") },
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    relevantCategories.forEach { category ->
+                                        val isIncluded = category.id in state.selectedCategoryFilters
+                                        val isExcluded = category.id in state.excludedCategoryFilters
+                                        FilterChip(
+                                            selected = isIncluded || isExcluded,
+                                            onClick = { screenModel.toggleCategoryFilter(category.id) },
+                                            label = { Text(category.name) },
+                                            leadingIcon = if (isIncluded) {
+                                                { Icon(Icons.Filled.Check, contentDescription = "Included", Modifier.size(18.dp)) }
+                                            } else if (isExcluded) {
+                                                { Icon(Icons.Filled.Close, contentDescription = "Excluded", Modifier.size(18.dp)) }
+                                            } else {
+                                                null
+                                            },
+                                            colors = if (isExcluded) {
+                                                FilterChipDefaults.filterChipColors(
+                                                    selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                                                    selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer,
+                                                )
+                                            } else {
+                                                FilterChipDefaults.filterChipColors()
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -913,7 +937,10 @@ private fun DeleteSelectedDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(deleteManga, deleteChapters); onDismiss() }) {
+            TextButton(onClick = {
+                onConfirm(deleteManga, deleteChapters)
+                onDismiss()
+            }) {
                 Text("Delete")
             }
         },
@@ -969,7 +996,10 @@ private fun MoveToCategoryDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(selectedCategories.toList()); onDismiss() },
+                onClick = {
+                    onConfirm(selectedCategories.toList())
+                    onDismiss()
+                },
                 enabled = selectedCategories.isNotEmpty(),
             ) {
                 Text("Move")

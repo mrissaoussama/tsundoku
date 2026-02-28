@@ -121,10 +121,12 @@ class MetadataUpdateJob(private val context: Context, workerParams: WorkerParame
                                     val source = sourceManager.get(manga.source) ?: return@withUpdateNotification
                                     try {
                                         val networkManga = source.getMangaDetails(manga.toSManga())
-                                        val updatedManga = manga.prepUpdateCover(coverCache, networkManga, true)
-                                            .copyFrom(networkManga)
                                         try {
-                                            updateManga.await(updatedManga.toMangaUpdate())
+                                            updateManga.awaitUpdateFromSource(
+                                                localManga = manga,
+                                                remoteManga = networkManga,
+                                                manualFetch = true,
+                                            )
                                         } catch (e: Exception) {
                                             logcat(LogPriority.ERROR) { "Manga doesn't exist anymore" }
                                         }

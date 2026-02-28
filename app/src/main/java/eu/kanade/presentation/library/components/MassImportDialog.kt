@@ -11,16 +11,16 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.Clear
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ContentPaste
-import androidx.compose.material.icons.outlined.Clear
-import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.*
@@ -33,8 +33,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import eu.kanade.domain.manga.interactor.MassImport
-import eu.kanade.tachiyomi.data.massimport.MassImportJob
 import eu.kanade.presentation.category.visualName
+import eu.kanade.tachiyomi.data.massimport.MassImportJob
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.Dispatchers
@@ -82,7 +82,7 @@ fun MassImportDialog(
                     context.toast("Error reading file: ${e.message}")
                 }
             }
-        }
+        },
     )
 
     // State to track which batch report to save
@@ -112,7 +112,7 @@ fun MassImportDialog(
                     }
                 }
             }
-        }
+        },
     )
 
     // File save launcher for exporting URLs
@@ -136,7 +136,7 @@ fun MassImportDialog(
                     }
                 }
             }
-        }
+        },
     )
 
     // Merge initialText into pendingUrls when dialog opens
@@ -215,13 +215,13 @@ fun MassImportDialog(
                             .fillMaxWidth()
                             .heightIn(max = 250.dp)
                             .padding(bottom = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         // Use distinct batch IDs to prevent duplicates
                         val distinctBatches = queue.distinctBy { it.id }.reversed()
                         items(
                             items = distinctBatches,
-                            key = { it.id }
+                            key = { it.id },
                         ) { batch ->
                             BatchItem(
                                 batch = batch,
@@ -272,7 +272,7 @@ fun MassImportDialog(
                 Text(
                     text = "Add New Batch",
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = 8.dp),
                 )
 
                 // Category Selection
@@ -491,7 +491,7 @@ fun MassImportDialog(
                 if (isAnalyzing) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 8.dp)
+                        modifier = Modifier.padding(top = 8.dp),
                     ) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
@@ -580,16 +580,16 @@ private fun BatchItem(
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         ),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
             // Header row with status and actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -605,12 +605,12 @@ private fun BatchItem(
                             MassImportJob.BatchStatus.Completed -> MaterialTheme.colorScheme.tertiary
                             MassImportJob.BatchStatus.Cancelled -> MaterialTheme.colorScheme.error
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
+                        },
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "${batch.progress}/${batch.total}",
-                        style = MaterialTheme.typography.labelSmall
+                        style = MaterialTheme.typography.labelSmall,
                     )
                 }
 
@@ -619,12 +619,12 @@ private fun BatchItem(
                     // Expand/collapse details
                     IconButton(
                         onClick = { expanded = !expanded },
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     ) {
                         Icon(
                             imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
                             contentDescription = "Details",
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(16.dp),
                         )
                     }
 
@@ -632,13 +632,13 @@ private fun BatchItem(
                     if (batch.status == MassImportJob.BatchStatus.Pending || batch.status == MassImportJob.BatchStatus.Running) {
                         IconButton(
                             onClick = onCancel,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(24.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Cancel,
                                 contentDescription = "Cancel",
                                 modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.error
+                                tint = MaterialTheme.colorScheme.error,
                             )
                         }
                     }
@@ -649,24 +649,24 @@ private fun BatchItem(
                         if (batch.status == MassImportJob.BatchStatus.Cancelled && batch.progress < batch.total) {
                             IconButton(
                                 onClick = onRequeue,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(24.dp),
                             ) {
                                 Icon(
                                     imageVector = Icons.Outlined.Refresh,
                                     contentDescription = "Requeue",
                                     modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.primary
+                                    tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }
                         IconButton(
                             onClick = onRemove,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(24.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Delete,
                                 contentDescription = "Remove",
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                         }
                     }
@@ -687,23 +687,23 @@ private fun BatchItem(
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         text = "✓${batch.added}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                     Text(
                         text = "○${batch.skipped}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (batch.errored > 0) {
                         Text(
                             text = "✕${batch.errored}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
@@ -718,14 +718,14 @@ private fun BatchItem(
                 // Actions row - icon buttons only for compactness
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     // Copy URLs
                     IconButton(onClick = onCopyUrls, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.Outlined.ContentCopy,
                             contentDescription = "Copy URLs",
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
                         )
                     }
 
@@ -734,7 +734,7 @@ private fun BatchItem(
                         Icon(
                             Icons.Outlined.Save,
                             contentDescription = "Export URLs",
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
                         )
                     }
 
@@ -745,7 +745,7 @@ private fun BatchItem(
                                 Icons.Outlined.ContentCopy,
                                 contentDescription = "Copy Errors",
                                 modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.error
+                                tint = MaterialTheme.colorScheme.error,
                             )
                         }
                     }
@@ -756,7 +756,7 @@ private fun BatchItem(
                             Icon(
                                 Icons.Outlined.Description,
                                 contentDescription = "Copy Report",
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp),
                             )
                         }
 
@@ -765,7 +765,7 @@ private fun BatchItem(
                                 Icons.Outlined.Save,
                                 contentDescription = "Save Report",
                                 modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = MaterialTheme.colorScheme.primary,
                             )
                         }
 
@@ -775,7 +775,7 @@ private fun BatchItem(
                                     Icons.Outlined.Refresh,
                                     contentDescription = "Retry Errors",
                                     modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.primary
+                                    tint = MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }
@@ -787,21 +787,21 @@ private fun BatchItem(
                 Text(
                     text = "URLs (${batch.urls.size}):",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 batch.urls.take(3).forEach { url ->
                     Text(
                         text = url.take(50) + if (url.length > 50) "..." else "",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
+                        maxLines = 1,
                     )
                 }
                 if (batch.urls.size > 3) {
                     Text(
                         text = "... and ${batch.urls.size - 3} more",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -811,21 +811,21 @@ private fun BatchItem(
                     Text(
                         text = "Errors (${batch.erroredUrls.size}):",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
                     )
                     batch.erroredUrls.take(3).forEach { url ->
                         Text(
                             text = url.take(50) + if (url.length > 50) "..." else "",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
-                            maxLines = 1
+                            maxLines = 1,
                         )
                     }
                     if (batch.erroredUrls.size > 3) {
                         Text(
                             text = "... and ${batch.erroredUrls.size - 3} more",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }

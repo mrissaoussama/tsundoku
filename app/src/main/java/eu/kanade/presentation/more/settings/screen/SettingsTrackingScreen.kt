@@ -598,7 +598,9 @@ object SettingsTrackingScreen : SearchableSettings {
                 } else {
                     emptyList()
                 }
-            } catch (_: Exception) { emptyList() }
+            } catch (_: Exception) {
+                emptyList()
+            }
             val defaultLists = listOf(
                 Pair("0", "Reading List"),
                 Pair("1", "Completed"),

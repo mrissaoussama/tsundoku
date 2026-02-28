@@ -387,7 +387,7 @@ fun LibraryBottomActionMenu(
                         ) {
                             if (onUpdateClicked != null) {
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(MR.strings.action_update_library)) },
+                                    text = { Text("Update selected") },
                                     onClick = {
                                         overflowMenuOpen = false
                                         onUpdateClicked()

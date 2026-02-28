@@ -76,6 +76,7 @@ data object HistoryTab : Tab {
             onClickFavorite = screenModel::addFavorite,
             onFilterSelected = screenModel::setFilter,
             onGroupByNovelChanged = screenModel::setGroupByNovel,
+            onLoadNextPage = screenModel::loadNextPage,
         )
 
         val onDismissRequest = { screenModel.setDialog(null) }

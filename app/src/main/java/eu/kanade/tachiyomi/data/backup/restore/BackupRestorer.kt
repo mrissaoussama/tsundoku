@@ -105,7 +105,9 @@ class BackupRestorer(
             // concurrently causes restoreAppPreferences to see an empty categories table.
             val categoriesJob = if (options.categories) {
                 restoreCategories(summary.backupCategories)
-            } else null
+            } else {
+                null
+            }
             categoriesJob?.join()
 
             if (options.appSettings) {

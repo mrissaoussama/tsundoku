@@ -1,3 +1,5 @@
+@file:Suppress("ktlint:standard:max-line-length", "ktlint:standard:property-naming")
+
 package tachiyomi.data.manga
 
 import kotlinx.coroutines.flow.Flow
@@ -25,14 +27,84 @@ class MangaRepositoryImpl(
 ) : MangaRepository {
 
     override suspend fun getMangaById(id: Long): Manga {
-        return handler.awaitOne { mangasQueries.getMangaById(id) { id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel, _, _, _, _, _, _ ->
+        return handler.awaitOne {
+            mangasQueries.getMangaById(id) {
+                    id,
+                    source,
+                    url,
+                    artist,
+                    author,
+                    description,
+                    genre,
+                    title,
+                    alternative_titles,
+                    status,
+                    thumbnail_url,
+                    favorite,
+                    last_update,
+                    next_update,
+                    initialized,
+                    viewer,
+                    chapter_flags,
+                    cover_last_modified,
+                    date_added,
+                    update_strategy,
+                    calculate_interval,
+                    last_modified_at,
+                    favorite_modified_at,
+                    version,
+                    is_syncing,
+                    notes,
+                    is_novel,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                ->
                 MangaMapper.mapManga(id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel)
             }
         }
     }
 
     override suspend fun getMangaByIdAsFlow(id: Long): Flow<Manga> {
-        return handler.subscribeToOne { mangasQueries.getMangaById(id) { id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel, _, _, _, _, _, _ ->
+        return handler.subscribeToOne {
+            mangasQueries.getMangaById(id) {
+                    id,
+                    source,
+                    url,
+                    artist,
+                    author,
+                    description,
+                    genre,
+                    title,
+                    alternative_titles,
+                    status,
+                    thumbnail_url,
+                    favorite,
+                    last_update,
+                    next_update,
+                    initialized,
+                    viewer,
+                    chapter_flags,
+                    cover_last_modified,
+                    date_added,
+                    update_strategy,
+                    calculate_interval,
+                    last_modified_at,
+                    favorite_modified_at,
+                    version,
+                    is_syncing,
+                    notes,
+                    is_novel,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                ->
                 MangaMapper.mapManga(id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel)
             }
         }
@@ -43,7 +115,41 @@ class MangaRepositoryImpl(
             mangasQueries.getMangaByUrlAndSource(
                 url,
                 sourceId,
-            ) { id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel, _, _, _, _, _, _ ->
+            ) {
+                    id,
+                    source,
+                    url,
+                    artist,
+                    author,
+                    description,
+                    genre,
+                    title,
+                    alternative_titles,
+                    status,
+                    thumbnail_url,
+                    favorite,
+                    last_update,
+                    next_update,
+                    initialized,
+                    viewer,
+                    chapter_flags,
+                    cover_last_modified,
+                    date_added,
+                    update_strategy,
+                    calculate_interval,
+                    last_modified_at,
+                    favorite_modified_at,
+                    version,
+                    is_syncing,
+                    notes,
+                    is_novel,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                ->
                 MangaMapper.mapManga(id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel)
             }
         }
@@ -51,7 +157,35 @@ class MangaRepositoryImpl(
 
     override suspend fun getLiteMangaByUrlAndSourceId(url: String, sourceId: Long): Manga? {
         return handler.awaitOneOrNull {
-            mangasQueries.getLiteMangaByUrlAndSource(url, sourceId) { id, source, url, _, _, _, _, title, _, status, thumbnailUrl, favorite, last_update, next_update, _, _, _, cover_last_modified, date_added, _, _, _, _, _, _, notes, is_novel ->
+            mangasQueries.getLiteMangaByUrlAndSource(url, sourceId) {
+                    id,
+                    source,
+                    url,
+                    _,
+                    _,
+                    _,
+                    _,
+                    title,
+                    _,
+                    status,
+                    thumbnailUrl,
+                    favorite,
+                    last_update,
+                    next_update,
+                    _,
+                    _,
+                    _,
+                    cover_last_modified,
+                    date_added,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    notes,
+                    is_novel,
+                ->
                 MangaMapper.mapManga(
                     id = id,
                     source = source,
@@ -90,7 +224,41 @@ class MangaRepositoryImpl(
             mangasQueries.getMangaByUrlAndSource(
                 url,
                 sourceId,
-            ) { id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel, _, _, _, _, _, _ ->
+            ) {
+                    id,
+                    source,
+                    url,
+                    artist,
+                    author,
+                    description,
+                    genre,
+                    title,
+                    alternative_titles,
+                    status,
+                    thumbnail_url,
+                    favorite,
+                    last_update,
+                    next_update,
+                    initialized,
+                    viewer,
+                    chapter_flags,
+                    cover_last_modified,
+                    date_added,
+                    update_strategy,
+                    calculate_interval,
+                    last_modified_at,
+                    favorite_modified_at,
+                    version,
+                    is_syncing,
+                    notes,
+                    is_novel,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                ->
                 MangaMapper.mapManga(id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel)
             }
         }
@@ -98,7 +266,41 @@ class MangaRepositoryImpl(
 
     override suspend fun getFavorites(): List<Manga> {
         return handler.awaitList {
-            mangasQueries.getFavorites { id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel, _, _, _, _, _, _ ->
+            mangasQueries.getFavorites {
+                    id,
+                    source,
+                    url,
+                    artist,
+                    author,
+                    description,
+                    genre,
+                    title,
+                    alternative_titles,
+                    status,
+                    thumbnail_url,
+                    favorite,
+                    last_update,
+                    next_update,
+                    initialized,
+                    viewer,
+                    chapter_flags,
+                    cover_last_modified,
+                    date_added,
+                    update_strategy,
+                    calculate_interval,
+                    last_modified_at,
+                    favorite_modified_at,
+                    version,
+                    is_syncing,
+                    notes,
+                    is_novel,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                ->
                 MangaMapper.mapManga(id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel)
             }
         }
@@ -106,7 +308,18 @@ class MangaRepositoryImpl(
 
     override suspend fun getFavoritesEntry(): List<Manga> {
         return handler.awaitList {
-            mangasQueries.getFavoritesEntry { id, source, url, title, artist, author, thumbnail_url, cover_last_modified, favorite, is_novel ->
+            mangasQueries.getFavoritesEntry {
+                    id,
+                    source,
+                    url,
+                    title,
+                    artist,
+                    author,
+                    thumbnail_url,
+                    cover_last_modified,
+                    favorite,
+                    is_novel,
+                ->
                 MangaMapper.mapManga(
                     id = id,
                     source = source,
@@ -142,7 +355,18 @@ class MangaRepositoryImpl(
 
     override fun getFavoritesEntryBySourceId(sourceId: Long): Flow<List<Manga>> {
         return handler.subscribeToList {
-            mangasQueries.getFavoritesEntryBySourceId(sourceId) { id, source, url, title, artist, author, thumbnail_url, cover_last_modified, favorite, is_novel ->
+            mangasQueries.getFavoritesEntryBySourceId(sourceId) {
+                    id,
+                    source,
+                    url,
+                    title,
+                    artist,
+                    author,
+                    thumbnail_url,
+                    cover_last_modified,
+                    favorite,
+                    is_novel,
+                ->
                 MangaMapper.mapManga(
                     id = id,
                     source = source,
@@ -207,7 +431,41 @@ class MangaRepositoryImpl(
 
     override suspend fun getReadMangaNotInLibrary(): List<Manga> {
         return handler.awaitList {
-            mangasQueries.getReadMangaNotInLibrary { id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel, _, _, _, _, _, _ ->
+            mangasQueries.getReadMangaNotInLibrary {
+                    id,
+                    source,
+                    url,
+                    artist,
+                    author,
+                    description,
+                    genre,
+                    title,
+                    alternative_titles,
+                    status,
+                    thumbnail_url,
+                    favorite,
+                    last_update,
+                    next_update,
+                    initialized,
+                    viewer,
+                    chapter_flags,
+                    cover_last_modified,
+                    date_added,
+                    update_strategy,
+                    calculate_interval,
+                    last_modified_at,
+                    favorite_modified_at,
+                    version,
+                    is_syncing,
+                    notes,
+                    is_novel,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                ->
                 MangaMapper.mapManga(id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel)
             }
         }
@@ -215,12 +473,14 @@ class MangaRepositoryImpl(
 
     @Volatile
     private var cachedLibraryManga: List<LibraryManga>? = null
+
     @Volatile
     private var cacheTimestamp: Long = 0
     private val CACHE_VALIDITY_MS = Long.MAX_VALUE
 
     @Volatile
     private var cachedFavoriteSourceUrl: List<Pair<Long, String>>? = null
+
     @Volatile
     private var favoriteSourceUrlCacheTimestamp: Long = 0
     private val FAVORITE_URL_CACHE_VALIDITY_MS = 10000L // 10 seconds
@@ -240,17 +500,58 @@ class MangaRepositoryImpl(
     }
 
     override suspend fun getLibraryManga(): List<LibraryManga> {
-        val caller = Thread.currentThread().stackTrace.take(15).joinToString("\\n  ") { "${it.className}.${it.methodName}:${it.lineNumber}" }
+        val caller = Thread.currentThread().stackTrace.take(15).joinToString("\\n  ") {
+            "${it.className}.${it.methodName}:${it.lineNumber}"
+        }
         val now = System.currentTimeMillis()
         if (cachedLibraryManga != null && now - cacheTimestamp < CACHE_VALIDITY_MS) {
-            logcat(LogPriority.DEBUG) { "MangaRepositoryImpl.getLibraryManga: Using CACHE (age=${now - cacheTimestamp}ms, size=${cachedLibraryManga?.size})" }
+            logcat(LogPriority.DEBUG) {
+                "MangaRepositoryImpl.getLibraryManga: Using CACHE (age=${now - cacheTimestamp}ms, size=${cachedLibraryManga?.size})"
+            }
             return cachedLibraryManga!!
         }
 
-        logcat(LogPriority.WARN) { "MangaRepositoryImpl.getLibraryManga: Executing DB query (cache invalid/expired)\\nFull call stack:\\n  $caller" }
+        logcat(LogPriority.WARN) {
+            "MangaRepositoryImpl.getLibraryManga: Executing DB query (cache invalid/expired)\\nFull call stack:\\n  $caller"
+        }
         val queryStart = System.currentTimeMillis()
         val result = handler.awaitList {
-            mangasQueries.libraryGrid { id, source, url, _, _, _, genre, title, _, status, thumbnailUrl, favorite, lastUpdate, nextUpdate, _, _, _, coverLastModified, dateAdded, _, _, _, _, _, _, notes, isNovel, totalCount, readCount, latestUpload, chapterFetchedAt, lastRead, bookmarkCount, categories ->
+            mangasQueries.libraryGrid {
+                    id,
+                    source,
+                    url,
+                    _,
+                    _,
+                    _,
+                    genre,
+                    title,
+                    _,
+                    status,
+                    thumbnailUrl,
+                    favorite,
+                    lastUpdate,
+                    nextUpdate,
+                    _,
+                    _,
+                    _,
+                    coverLastModified,
+                    dateAdded,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    notes,
+                    isNovel,
+                    totalCount,
+                    readCount,
+                    latestUpload,
+                    chapterFetchedAt,
+                    lastRead,
+                    bookmarkCount,
+                    categories,
+                ->
                 MangaMapper.mapLibraryManga(
                     id = id,
                     source = source,
@@ -291,7 +592,9 @@ class MangaRepositoryImpl(
         }
 
         val queryDuration = System.currentTimeMillis() - queryStart
-        logcat(LogPriority.INFO) { "MangaRepositoryImpl.getLibraryManga: Query completed in ${queryDuration}ms, returned ${result.size} items" }
+        logcat(LogPriority.INFO) {
+            "MangaRepositoryImpl.getLibraryManga: Query completed in ${queryDuration}ms, returned ${result.size} items"
+        }
 
         // Update cache
         cachedLibraryManga = result
@@ -301,7 +604,42 @@ class MangaRepositoryImpl(
 
     override suspend fun getLibraryMangaById(mangaId: Long): LibraryManga? {
         return handler.awaitOneOrNull {
-            mangasQueries.libraryGridById(mangaId) { id, source, url, _, _, _, genre, title, _, status, thumbnailUrl, favorite, lastUpdate, nextUpdate, _, _, _, coverLastModified, dateAdded, _, _, _, _, _, _, notes, isNovel, totalCount, readCount, latestUpload, chapterFetchedAt, lastRead, bookmarkCount, categories ->
+            mangasQueries.libraryGridById(mangaId) {
+                    id,
+                    source,
+                    url,
+                    _,
+                    _,
+                    _,
+                    genre,
+                    title,
+                    _,
+                    status,
+                    thumbnailUrl,
+                    favorite,
+                    lastUpdate,
+                    nextUpdate,
+                    _,
+                    _,
+                    _,
+                    coverLastModified,
+                    dateAdded,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    notes,
+                    isNovel,
+                    totalCount,
+                    readCount,
+                    latestUpload,
+                    chapterFetchedAt,
+                    lastRead,
+                    bookmarkCount,
+                    categories,
+                ->
                 MangaMapper.mapLibraryManga(
                     id = id,
                     source = source,
@@ -345,7 +683,42 @@ class MangaRepositoryImpl(
     override suspend fun getLibraryMangaByIds(mangaIds: List<Long>): List<LibraryManga> {
         if (mangaIds.isEmpty()) return emptyList()
         return handler.awaitList {
-            mangasQueries.libraryGridByIds(mangaIds) { id, source, url, _, _, _, genre, title, _, status, thumbnailUrl, favorite, lastUpdate, nextUpdate, _, _, _, coverLastModified, dateAdded, _, _, _, _, _, _, notes, isNovel, totalCount, readCount, latestUpload, chapterFetchedAt, lastRead, bookmarkCount, categories ->
+            mangasQueries.libraryGridByIds(mangaIds) {
+                    id,
+                    source,
+                    url,
+                    _,
+                    _,
+                    _,
+                    genre,
+                    title,
+                    _,
+                    status,
+                    thumbnailUrl,
+                    favorite,
+                    lastUpdate,
+                    nextUpdate,
+                    _,
+                    _,
+                    _,
+                    coverLastModified,
+                    dateAdded,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    notes,
+                    isNovel,
+                    totalCount,
+                    readCount,
+                    latestUpload,
+                    chapterFetchedAt,
+                    lastRead,
+                    bookmarkCount,
+                    categories,
+                ->
                 MangaMapper.mapLibraryManga(
                     id = id,
                     source = source,
@@ -390,7 +763,20 @@ class MangaRepositoryImpl(
         logcat(LogPriority.INFO) { "MangaRepositoryImpl.getLibraryMangaForUpdate: Executing lightweight query" }
         val queryStart = System.currentTimeMillis()
         val result = handler.awaitList {
-            mangasQueries.libraryForUpdate { id, source, url, title, status, favorite, lastUpdate, nextUpdate, updateStrategy, totalCount, readCount, categories ->
+            mangasQueries.libraryForUpdate {
+                    id,
+                    source,
+                    url,
+                    title,
+                    status,
+                    favorite,
+                    lastUpdate,
+                    nextUpdate,
+                    updateStrategy,
+                    totalCount,
+                    readCount,
+                    categories,
+                ->
                 MangaMapper.mapLibraryMangaForUpdate(
                     id = id,
                     source = source,
@@ -408,7 +794,9 @@ class MangaRepositoryImpl(
             }
         }
         val queryDuration = System.currentTimeMillis() - queryStart
-        logcat(LogPriority.INFO) { "MangaRepositoryImpl.getLibraryMangaForUpdate: Query completed in ${queryDuration}ms, returned ${result.size} items" }
+        logcat(LogPriority.INFO) {
+            "MangaRepositoryImpl.getLibraryMangaForUpdate: Query completed in ${queryDuration}ms, returned ${result.size} items"
+        }
         return result
     }
 
@@ -416,7 +804,42 @@ class MangaRepositoryImpl(
         logcat(LogPriority.INFO) { "MangaRepositoryImpl.getLibraryMangaAsFlow: Creating new Flow subscription" }
         return handler.subscribeToList {
             logcat(LogPriority.INFO) { "MangaRepositoryImpl.getLibraryMangaAsFlow: Executing libraryGrid query" }
-            mangasQueries.libraryGrid { id, source, url, _, _, _, genre, title, _, status, thumbnailUrl, favorite, lastUpdate, nextUpdate, _, _, _, coverLastModified, dateAdded, _, _, _, _, _, _, notes, isNovel, totalCount, readCount, latestUpload, chapterFetchedAt, lastRead, bookmarkCount, categories ->
+            mangasQueries.libraryGrid {
+                    id,
+                    source,
+                    url,
+                    _,
+                    _,
+                    _,
+                    genre,
+                    title,
+                    _,
+                    status,
+                    thumbnailUrl,
+                    favorite,
+                    lastUpdate,
+                    nextUpdate,
+                    _,
+                    _,
+                    _,
+                    coverLastModified,
+                    dateAdded,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    notes,
+                    isNovel,
+                    totalCount,
+                    readCount,
+                    latestUpload,
+                    chapterFetchedAt,
+                    lastRead,
+                    bookmarkCount,
+                    categories,
+                ->
                 MangaMapper.mapLibraryManga(
                     id = id,
                     source = source,
@@ -457,7 +880,9 @@ class MangaRepositoryImpl(
         }
             // Log when debounce passes through
             .onEach { list ->
-                logcat(LogPriority.INFO) { "MangaRepositoryImpl.getLibraryMangaAsFlow: Flow emitting ${list.size} items (after debounce)" }
+                logcat(LogPriority.INFO) {
+                    "MangaRepositoryImpl.getLibraryMangaAsFlow: Flow emitting ${list.size} items (after debounce)"
+                }
             }
             // Debounce to prevent rapid re-queries when multiple table changes occur
             // (e.g., adding manga triggers changes to mangas, chapters, mangas_categories)
@@ -469,7 +894,41 @@ class MangaRepositoryImpl(
 
     override fun getFavoritesBySourceId(sourceId: Long): Flow<List<Manga>> {
         return handler.subscribeToList {
-            mangasQueries.getFavoriteBySourceId(sourceId) { id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel, _, _, _, _, _, _ ->
+            mangasQueries.getFavoriteBySourceId(sourceId) {
+                    id,
+                    source,
+                    url,
+                    artist,
+                    author,
+                    description,
+                    genre,
+                    title,
+                    alternative_titles,
+                    status,
+                    thumbnail_url,
+                    favorite,
+                    last_update,
+                    next_update,
+                    initialized,
+                    viewer,
+                    chapter_flags,
+                    cover_last_modified,
+                    date_added,
+                    update_strategy,
+                    calculate_interval,
+                    last_modified_at,
+                    favorite_modified_at,
+                    version,
+                    is_syncing,
+                    notes,
+                    is_novel,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                ->
                 MangaMapper.mapManga(id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel)
             }
         }
@@ -477,7 +936,37 @@ class MangaRepositoryImpl(
 
     override suspend fun getDuplicateLibraryManga(id: Long, title: String): List<MangaWithChapterCount> {
         return handler.awaitList {
-            mangasQueries.getDuplicateLibraryManga(id, title) { id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel, totalCount, readCount ->
+            mangasQueries.getDuplicateLibraryManga(id, title) {
+                    id,
+                    source,
+                    url,
+                    artist,
+                    author,
+                    description,
+                    genre,
+                    title,
+                    alternative_titles,
+                    status,
+                    thumbnail_url,
+                    favorite,
+                    last_update,
+                    next_update,
+                    initialized,
+                    viewer,
+                    chapter_flags,
+                    cover_last_modified,
+                    date_added,
+                    update_strategy,
+                    calculate_interval,
+                    last_modified_at,
+                    favorite_modified_at,
+                    version,
+                    is_syncing,
+                    notes,
+                    is_novel,
+                    totalCount,
+                    readCount,
+                ->
                 MangaMapper.mapMangaWithChapterCount(
                     id = id,
                     source = source,
@@ -518,7 +1007,9 @@ class MangaRepositoryImpl(
             mangasQueries.findDuplicatesExact { normalizedTitle, ids, count ->
                 DuplicateGroup(
                     normalizedTitle = normalizedTitle ?: "",
-                    ids = ids?.let { idString -> idString.split(",").mapNotNull { id -> id.toLongOrNull() } } ?: emptyList(),
+                    ids =
+                    ids?.let { idString -> idString.split(",").mapNotNull { id -> id.toLongOrNull() } }
+                        ?: emptyList(),
                     count = count.toInt(),
                 )
             }
@@ -551,7 +1042,9 @@ class MangaRepositoryImpl(
             mangasQueries.findDuplicatesByUrl { url, source, ids, count ->
                 DuplicateGroup(
                     normalizedTitle = url, // Using URL as the group key
-                    ids = ids?.let { idString -> idString.split(",").mapNotNull { id -> id.toLongOrNull() } } ?: emptyList(),
+                    ids =
+                    ids?.let { idString -> idString.split(",").mapNotNull { id -> id.toLongOrNull() } }
+                        ?: emptyList(),
                     count = count.toInt(),
                 )
             }
@@ -568,12 +1061,16 @@ class MangaRepositoryImpl(
             }
         }
         val queryDuration = System.currentTimeMillis() - queryStart
-        logcat(LogPriority.INFO) { "MangaRepositoryImpl.getFavoriteGenres: Query completed in ${queryDuration}ms, returned ${result.size} items" }
+        logcat(LogPriority.INFO) {
+            "MangaRepositoryImpl.getFavoriteGenres: Query completed in ${queryDuration}ms, returned ${result.size} items"
+        }
         return result
     }
 
     override suspend fun getFavoriteGenresWithSource(): List<Triple<Long, Long, List<String>?>> {
-        logcat(LogPriority.INFO) { "MangaRepositoryImpl.getFavoriteGenresWithSource: Executing lightweight genres with source query" }
+        logcat(LogPriority.INFO) {
+            "MangaRepositoryImpl.getFavoriteGenresWithSource: Executing lightweight genres with source query"
+        }
         val queryStart = System.currentTimeMillis()
         val result = handler.awaitList {
             mangasQueries.getFavoriteGenresWithSource { id, source, genre ->
@@ -581,12 +1078,16 @@ class MangaRepositoryImpl(
             }
         }
         val queryDuration = System.currentTimeMillis() - queryStart
-        logcat(LogPriority.INFO) { "MangaRepositoryImpl.getFavoriteGenresWithSource: Query completed in ${queryDuration}ms, returned ${result.size} items" }
+        logcat(LogPriority.INFO) {
+            "MangaRepositoryImpl.getFavoriteGenresWithSource: Query completed in ${queryDuration}ms, returned ${result.size} items"
+        }
         return result
     }
 
     override suspend fun getFavoriteSourceUrlPairs(): List<Pair<Long, String>> {
-        logcat(LogPriority.INFO) { "MangaRepositoryImpl.getFavoriteSourceUrlPairs: Executing ultra-lightweight source+url query" }
+        logcat(LogPriority.INFO) {
+            "MangaRepositoryImpl.getFavoriteSourceUrlPairs: Executing ultra-lightweight source+url query"
+        }
         val queryStart = System.currentTimeMillis()
         val result = handler.awaitList {
             mangasQueries.getFavoriteSourceAndUrlPairs { source, url ->
@@ -594,18 +1095,24 @@ class MangaRepositoryImpl(
             }
         }
         val queryDuration = System.currentTimeMillis() - queryStart
-        logcat(LogPriority.INFO) { "MangaRepositoryImpl.getFavoriteSourceUrlPairs: Query completed in ${queryDuration}ms, returned ${result.size} items" }
+        logcat(LogPriority.INFO) {
+            "MangaRepositoryImpl.getFavoriteSourceUrlPairs: Query completed in ${queryDuration}ms, returned ${result.size} items"
+        }
         return result
     }
 
     override suspend fun getFavoriteSourceIds(): List<Long> {
-        logcat(LogPriority.INFO) { "MangaRepositoryImpl.getFavoriteSourceIds: Executing ultra-lightweight source IDs query" }
+        logcat(LogPriority.INFO) {
+            "MangaRepositoryImpl.getFavoriteSourceIds: Executing ultra-lightweight source IDs query"
+        }
         val queryStart = System.currentTimeMillis()
         val result = handler.awaitList {
             mangasQueries.getFavoriteSourceIds()
         }
         val queryDuration = System.currentTimeMillis() - queryStart
-        logcat(LogPriority.INFO) { "MangaRepositoryImpl.getFavoriteSourceIds: Query completed in ${queryDuration}ms, returned ${result.size} sources" }
+        logcat(LogPriority.INFO) {
+            "MangaRepositoryImpl.getFavoriteSourceIds: Query completed in ${queryDuration}ms, returned ${result.size} sources"
+        }
         return result
     }
 
@@ -613,7 +1120,37 @@ class MangaRepositoryImpl(
         if (ids.isEmpty()) return emptyList()
         return ids.chunked(500).flatMap { chunk ->
             handler.awaitList {
-                mangasQueries.getMangaWithCounts(chunk) { id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel, totalCount, readCount ->
+                mangasQueries.getMangaWithCounts(chunk) {
+                        id,
+                        source,
+                        url,
+                        artist,
+                        author,
+                        description,
+                        genre,
+                        title,
+                        alternative_titles,
+                        status,
+                        thumbnail_url,
+                        favorite,
+                        last_update,
+                        next_update,
+                        initialized,
+                        viewer,
+                        chapter_flags,
+                        cover_last_modified,
+                        date_added,
+                        update_strategy,
+                        calculate_interval,
+                        last_modified_at,
+                        favorite_modified_at,
+                        version,
+                        is_syncing,
+                        notes,
+                        is_novel,
+                        totalCount,
+                        readCount,
+                    ->
                     MangaMapper.mapMangaWithChapterCount(
                         id = id,
                         source = source,
@@ -654,7 +1191,37 @@ class MangaRepositoryImpl(
         if (ids.isEmpty()) return emptyList()
         return ids.chunked(500).flatMap { chunk ->
             handler.awaitList {
-                mangasQueries.getMangaWithCountsLight(chunk) { id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel, totalCount, readCount ->
+                mangasQueries.getMangaWithCountsLight(chunk) {
+                        id,
+                        source,
+                        url,
+                        artist,
+                        author,
+                        description,
+                        genre,
+                        title,
+                        alternative_titles,
+                        status,
+                        thumbnail_url,
+                        favorite,
+                        last_update,
+                        next_update,
+                        initialized,
+                        viewer,
+                        chapter_flags,
+                        cover_last_modified,
+                        date_added,
+                        update_strategy,
+                        calculate_interval,
+                        last_modified_at,
+                        favorite_modified_at,
+                        version,
+                        is_syncing,
+                        notes,
+                        is_novel,
+                        totalCount,
+                        readCount,
+                    ->
                     MangaMapper.mapMangaWithChapterCount(
                         id = id,
                         source = source,
@@ -694,7 +1261,41 @@ class MangaRepositoryImpl(
     override suspend fun getUpcomingManga(statuses: Set<Long>): Flow<List<Manga>> {
         val epochMillis = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toEpochSecond() * 1000
         return handler.subscribeToList {
-            mangasQueries.getUpcomingManga(epochMillis, statuses) { id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel, _, _, _, _, _, _ ->
+            mangasQueries.getUpcomingManga(epochMillis, statuses) {
+                    id,
+                    source,
+                    url,
+                    artist,
+                    author,
+                    description,
+                    genre,
+                    title,
+                    alternative_titles,
+                    status,
+                    thumbnail_url,
+                    favorite,
+                    last_update,
+                    next_update,
+                    initialized,
+                    viewer,
+                    chapter_flags,
+                    cover_last_modified,
+                    date_added,
+                    update_strategy,
+                    calculate_interval,
+                    last_modified_at,
+                    favorite_modified_at,
+                    version,
+                    is_syncing,
+                    notes,
+                    is_novel,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                    _,
+                ->
                 MangaMapper.mapManga(id, source, url, artist, author, description, genre, title, alternative_titles, status, thumbnail_url, favorite, last_update, next_update, initialized, viewer, chapter_flags, cover_last_modified, date_added, update_strategy, calculate_interval, last_modified_at, favorite_modified_at, version, is_syncing, notes, is_novel)
             }
         }
@@ -910,8 +1511,12 @@ class MangaRepositoryImpl(
                         val key = manga.source to normalizedUrl
                         if (key in seen) {
                             // This would create a duplicate - include manga ID for direct deletion
-                            duplicates.add(MangaRepository.DuplicateUrlInfo(manga.id, manga.title, manga.url, normalizedUrl))
-                            logcat(LogPriority.WARN) { "Skipping duplicate: ${manga.title} (${manga.url}) would conflict with existing normalized URL" }
+                            duplicates.add(
+                                MangaRepository.DuplicateUrlInfo(manga.id, manga.title, manga.url, normalizedUrl),
+                            )
+                            logcat(LogPriority.WARN) {
+                                "Skipping duplicate: ${manga.title} (${manga.url}) would conflict with existing normalized URL"
+                            }
                         } else {
                             mangasQueries.update(
                                 source = null,
@@ -1003,7 +1608,9 @@ class MangaRepositoryImpl(
                         idsToDelete.add(manga.id)
                         removedItems.add(Triple(manga.title, manga.url, normalizedUrl))
                         removedCount++
-                        logcat(LogPriority.INFO) { "Marked for deletion: ${manga.title} (${manga.url}) - conflicts with normalized URL" }
+                        logcat(LogPriority.INFO) {
+                            "Marked for deletion: ${manga.title} (${manga.url}) - conflicts with normalized URL"
+                        }
                     }
                 }
 
@@ -1029,7 +1636,9 @@ class MangaRepositoryImpl(
             mangasQueries.recomputeAllAggregates()
         }
         val queryDuration = System.currentTimeMillis() - queryStart
-        logcat(LogPriority.INFO) { "MangaRepositoryImpl.refreshLibraryCache: Aggregates recomputed in ${queryDuration}ms" }
+        logcat(LogPriority.INFO) {
+            "MangaRepositoryImpl.refreshLibraryCache: Aggregates recomputed in ${queryDuration}ms"
+        }
         invalidateLibraryCacheInternal()
     }
 
@@ -1040,12 +1649,16 @@ class MangaRepositoryImpl(
             mangasQueries.recomputeAllAggregates()
         }
         val queryDuration = System.currentTimeMillis() - queryStart
-        logcat(LogPriority.INFO) { "MangaRepositoryImpl.refreshLibraryCacheIncremental: Completed in ${queryDuration}ms" }
+        logcat(LogPriority.INFO) {
+            "MangaRepositoryImpl.refreshLibraryCacheIncremental: Completed in ${queryDuration}ms"
+        }
         invalidateLibraryCacheInternal()
     }
 
     override suspend fun refreshLibraryCacheForManga(mangaId: Long) {
-        logcat(LogPriority.DEBUG) { "MangaRepositoryImpl.refreshLibraryCacheForManga: Recomputing aggregates for manga $mangaId" }
+        logcat(LogPriority.DEBUG) {
+            "MangaRepositoryImpl.refreshLibraryCacheForManga: Recomputing aggregates for manga $mangaId"
+        }
         handler.await(inTransaction = true) {
             mangasQueries.recomputeAggregatesForManga(mangaId)
         }
@@ -1067,7 +1680,9 @@ class MangaRepositoryImpl(
                                 tag.trim()
                                     .split(" ")
                                     .joinToString(" ") { word ->
-                                        word.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+                                        word.lowercase().replaceFirstChar {
+                                            if (it.isLowerCase()) it.titlecase() else it.toString()
+                                        }
                                     }
                             }
                             .filter { it.isNotBlank() }

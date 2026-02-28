@@ -122,7 +122,7 @@ class ChapterRepositoryImpl(
     override suspend fun getChapterById(id: Long): Chapter? {
         return handler.awaitOneOrNull { chaptersQueries.getChapterById(id, ::mapChapter) }
     }
-    
+
     override suspend fun getChaptersByIds(ids: List<Long>): List<Chapter> {
         if (ids.isEmpty()) return emptyList()
         return handler.awaitList { chaptersQueries.getChaptersByIds(ids, ::mapChapter) }
@@ -147,7 +147,7 @@ class ChapterRepositoryImpl(
             )
         }
     }
-    
+
     override suspend fun findMangaIdsWithChapterNameMatching(query: String): List<Long> {
         return handler.awaitList {
             chaptersQueries.findMangaIdsWithChapterNameMatching(query)

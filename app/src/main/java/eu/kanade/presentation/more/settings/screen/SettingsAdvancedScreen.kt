@@ -12,8 +12,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -56,7 +56,6 @@ import eu.kanade.domain.extension.interactor.TrustExtension
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.screen.advanced.ClearDatabaseScreen
 import eu.kanade.presentation.more.settings.screen.debug.DebugInfoScreen
-import tachiyomi.domain.manga.model.MangaUpdate
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.library.MetadataUpdateJob
 import eu.kanade.tachiyomi.network.NetworkHelper
@@ -94,13 +93,14 @@ import tachiyomi.core.common.util.system.ImageUtil
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.data.AndroidDatabaseHandler
 import tachiyomi.data.DatabaseHandler
-import tachiyomi.domain.library.service.LibraryPreferences
-import tachiyomi.domain.manga.interactor.ResetViewerFlags
-import tachiyomi.domain.manga.repository.MangaRepository
-import tachiyomi.domain.translation.repository.TranslatedChapterRepository
 import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.category.interactor.SetMangaCategories
 import tachiyomi.domain.category.model.Category
+import tachiyomi.domain.library.service.LibraryPreferences
+import tachiyomi.domain.manga.interactor.ResetViewerFlags
+import tachiyomi.domain.manga.model.MangaUpdate
+import tachiyomi.domain.manga.repository.MangaRepository
+import tachiyomi.domain.translation.repository.TranslatedChapterRepository
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.util.collectAsState
@@ -271,7 +271,6 @@ object SettingsAdvancedScreen : SearchableSettings {
                     TextButton(
                         onClick = {
                             scope.launch {
-
                                 val prefsDir = File(context.applicationInfo.dataDir, "shared_prefs")
                                 if (prefsDir.exists()) {
                                     prefsDir.listFiles()?.forEach { file ->
@@ -760,10 +759,12 @@ object SettingsAdvancedScreen : SearchableSettings {
                                     }
 
                                     withUIContext {
-                                        context.toast(buildString {
-                                            append("Removed $removedCount entries")
-                                            if (errorCount > 0) append(" ($errorCount errors)")
-                                        })
+                                        context.toast(
+                                            buildString {
+                                                append("Removed $removedCount entries")
+                                                if (errorCount > 0) append(" ($errorCount errors)")
+                                            },
+                                        )
                                     }
 
                                     // Clear queue after successful processing
@@ -828,10 +829,13 @@ object SettingsAdvancedScreen : SearchableSettings {
 
                                 val totalSize = (stats["total_size_bytes"] as? Long) ?: 0L
                                 val freelistSize = (stats["freelist_size_bytes"] as? Long) ?: 0L
+
                                 @Suppress("UNCHECKED_CAST")
                                 val tableCounts = (stats["table_row_counts"] as? Map<String, Long>) ?: emptyMap()
+
                                 @Suppress("UNCHECKED_CAST")
                                 val tableSizes = (stats["table_sizes_bytes"] as? Map<String, Long>) ?: emptyMap()
+
                                 @Suppress("UNCHECKED_CAST")
                                 val indexSizes = (stats["index_sizes_bytes"] as? Map<String, Long>) ?: emptyMap()
                                 val avgChapterBytes = (stats["avg_chapter_text_bytes"] as? Double) ?: 0.0

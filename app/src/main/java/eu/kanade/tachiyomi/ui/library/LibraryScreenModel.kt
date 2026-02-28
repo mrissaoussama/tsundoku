@@ -30,6 +30,7 @@ import eu.kanade.tachiyomi.data.translation.TranslationService
 import eu.kanade.tachiyomi.source.isNovelSource
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
+import tachiyomi.domain.source.model.StubSource
 import eu.kanade.tachiyomi.util.chapter.getNextUnread
 import eu.kanade.tachiyomi.util.removeCovers
 import kotlinx.collections.immutable.ImmutableList
@@ -183,8 +184,10 @@ class LibraryScreenModel(
                 getLibraryManga.isLoading(),
             ) { flows: Array<*> ->
                 val searchConfig = flows[0] as SearchConfig
+
                 @Suppress("UNCHECKED_CAST")
                 val categories = flows[1] as List<Category>
+
                 @Suppress("UNCHECKED_CAST")
                 val favorites = flows[2] as List<LibraryItem>
                 val (tracksMap, trackingFilters) = flows[3] as Pair<*, *>
@@ -192,6 +195,7 @@ class LibraryScreenModel(
                 val isLoading = flows[5] as Boolean
 
                 val showSystemCategory = favorites.any { it.libraryManga.categories.contains(0L) }
+
                 @Suppress("UNCHECKED_CAST")
                 val filteredFavorites = favorites
                     .applyFilters(tracksMap as Map<Long, List<Track>>, trackingFilters as Map<Long, TriState>, itemPreferences as ItemPreferences)
@@ -220,7 +224,9 @@ class LibraryScreenModel(
                 .distinctUntilChanged()
                 .map { data ->
                     val favoritesById = HashMap<Long, LibraryItem>(data.favorites.size * 2)
-                    for (item in data.favorites) { favoritesById[item.id] = item }
+                    for (item in data.favorites) {
+                        favoritesById[item.id] = item
+                    }
                     data.favorites
                         .applyGrouping(data.categories, data.showSystemCategory)
                         .applySort(favoritesById, data.tracksMap, data.loggedInTrackerIds)
@@ -954,7 +960,7 @@ class LibraryScreenModel(
             getLibraryManga.applyCategoryUpdates(mangaIds, addCategories, removeCategories)
 
             clearSelection()
-}
+        }
     }
 
     fun getDisplayMode(): PreferenceMutableState<LibraryDisplayMode> {
@@ -1065,24 +1071,51 @@ class LibraryScreenModel(
     /**
      * Update selected novels by fetching chapters from source
      */
-    fun updateSelectedNovels() {
-        val selectedManga = state.value.selectedManga
-        if (selectedManga.isEmpty()) return
+    fun updateSelected(
+        mangaList: List<Manga>,
+        fetchChapters: Boolean,
+        fetchDetails: Boolean,
+        ignoreSkipRecentlyUpdated: Boolean,
+    ) {
+        if (mangaList.isEmpty()) return
+        clearSelection()
+
+        val skipUpdateTime = try {
+            libraryPreferences.skipUpdateTime().get()
+        } catch (e: Exception) {
+            0
+        }
+        val currentTime = System.currentTimeMillis()
 
         screenModelScope.launchIO {
-            val results = selectedManga.map { manga ->
+            val results = mangaList.map { manga ->
                 async {
                     try {
-                        val source = sourceManager.get(manga.source) as? HttpSource
-                        if (source == null) {
+                        if (!ignoreSkipRecentlyUpdated && skipUpdateTime > 0 && manga.lastUpdate > 0) {
+                            val daysSinceUpdate = (currentTime - manga.lastUpdate) / (1000 * 60 * 60 * 24)
+                            if (daysSinceUpdate < skipUpdateTime) {
+                                return@async false
+                            }
+                        }
+
+val source = sourceManager.getOrStub(manga.source)
+                          if (source is StubSource) {
                             logcat(LogPriority.WARN) { "No source for ${manga.title}" }
                             return@async false
                         }
 
-                        // Fetch chapters from source
-                        val chapters = withIOContext { source.getChapterList(manga.toSManga()) }
-                        syncChaptersWithSource.await(chapters, manga, source)
-                        logcat(LogPriority.DEBUG) { "Updated ${manga.title}: ${chapters.size} chapters" }
+                        if (fetchDetails) {
+                            val networkManga = source.getMangaDetails(manga.toSManga())
+                            updateManga.awaitUpdateFromSource(manga, networkManga, manualFetch = true)
+                            logcat(LogPriority.DEBUG) { "Updated details for ${manga.title}" }
+                        }
+
+                        if (fetchChapters) {
+                            val chapters = withIOContext { source.getChapterList(manga.toSManga()) }
+                            syncChaptersWithSource.await(chapters, manga, source)
+                            logcat(LogPriority.DEBUG) { "Updated ${manga.title}: ${chapters.size} chapters" }
+                        }
+
                         true
                     } catch (e: Exception) {
                         logcat(LogPriority.ERROR, e) { "Failed to update ${manga.title}" }
@@ -1092,9 +1125,8 @@ class LibraryScreenModel(
             }
             val outcomes = results.awaitAll()
             val successCount = outcomes.count { it }
-            logcat(LogPriority.INFO) { "Batch update complete: $successCount/${selectedManga.size} succeeded" }
+            logcat(LogPriority.INFO) { "Batch update complete: $successCount/${mangaList.size} succeeded" }
         }
-        clearSelection()
     }
 
     fun search(query: String?) {
@@ -1148,6 +1180,10 @@ class LibraryScreenModel(
 
     fun openDeleteMangaDialog() {
         mutableState.update { it.copy(dialog = Dialog.DeleteManga(state.value.selectedManga)) }
+    }
+
+    fun openUpdateSelectedDialog() {
+        mutableState.update { it.copy(dialog = Dialog.UpdateSelected(state.value.selectedManga)) }
     }
 
     fun openRemoveChaptersDialog() {
@@ -1466,7 +1502,6 @@ class LibraryScreenModel(
 
                         results.add("${manga.title}: Exported ${epubChapters.size} chapters")
                         successCount++
-
                     } catch (e: Exception) {
                         logcat(LogPriority.ERROR, e) { "Failed to export ${manga.title}" }
                         results.add("${manga.title}: Error - ${e.message}")
@@ -1509,7 +1544,6 @@ class LibraryScreenModel(
                     }
                     snackbarHostState.showSnackbar(message)
                 }
-
             } catch (e: Exception) {
                 logcat(LogPriority.ERROR, e) { "Batch EPUB export failed" }
                 withUIContext {
@@ -1640,6 +1674,7 @@ class LibraryScreenModel(
         data object ImportEpub : Dialog
         data class ExportEpub(val manga: List<Manga>) : Dialog
         data class DuplicateDetection(val duplicates: List<DuplicateGroup>) : Dialog
+        data class UpdateSelected(val manga: List<Manga>) : Dialog
         data class ChangeCategory(
             val manga: List<Manga>,
             val initialSelection: ImmutableList<CheckboxState<Category>>,

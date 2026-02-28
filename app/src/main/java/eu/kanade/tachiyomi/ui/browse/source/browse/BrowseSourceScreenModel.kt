@@ -24,6 +24,7 @@ import eu.kanade.presentation.util.ioCoroutineScope
 import eu.kanade.tachiyomi.data.cache.CoverCache
 import eu.kanade.tachiyomi.data.translation.TranslationEngineManager
 import eu.kanade.tachiyomi.source.CatalogueSource
+import eu.kanade.tachiyomi.source.isNovelSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.util.removeCovers
 import kotlinx.collections.immutable.ImmutableList
@@ -68,7 +69,6 @@ import tachiyomi.domain.translation.service.TranslationPreferences
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.time.Instant
-import eu.kanade.tachiyomi.source.isNovelSource
 import eu.kanade.tachiyomi.source.model.Filter as SourceModelFilter
 
 class BrowseSourceScreenModel(
@@ -234,36 +234,36 @@ class BrowseSourceScreenModel(
     val mangaPagerFlowFlow = kotlinx.coroutines.flow.combine(
         state.map { Triple(it.listing.query, it.filters, it.filters.hashCode()) }
             .distinctUntilChanged { old, new -> old.first == new.first && old.third == new.third },
-        _initialPage
+        _initialPage,
     ) { (query, filters, _), startPage ->
         logcat(LogPriority.DEBUG) { "Creating new Pager for query='$query', filters=${filters.hashCode()}, startPage=$startPage" }
         // Reset page counter when creating a new pager
         tachiyomi.data.source.BaseSourcePagingSource.resetPageCounter()
         Pager(
             PagingConfig(pageSize = 25),
-            initialKey = startPage
+            initialKey = startPage,
         ) {
             getRemoteManga(sourceId, query ?: "", filters)
         }.flow.map { pagingData ->
             pagingData.map { manga ->
-                    // Normalize URL to prevent duplicates from trailing slashes/fragments
-                    val normalizedUrl = normalizeUrl(manga.url)
-                    val normalizedManga = if (normalizedUrl != manga.url) {
-                        manga.copy(url = normalizedUrl)
-                    } else {
-                        manga
-                    }
-                    // Use cached library lookup instead of individual DB subscription
-                    libraryMangaForSource
-                        .map { libraryMap ->
-                            libraryMap[normalizedUrl] ?: normalizedManga
-                        }
-                        .stateIn(ioCoroutineScope)
+                // Normalize URL to prevent duplicates from trailing slashes/fragments
+                val normalizedUrl = normalizeUrl(manga.url)
+                val normalizedManga = if (normalizedUrl != manga.url) {
+                    manga.copy(url = normalizedUrl)
+                } else {
+                    manga
                 }
-                    .filter { !hideInLibraryItems || !it.value.favorite }
+                // Use cached library lookup instead of individual DB subscription
+                libraryMangaForSource
+                    .map { libraryMap ->
+                        libraryMap[normalizedUrl] ?: normalizedManga
+                    }
+                    .stateIn(ioCoroutineScope)
             }
-                .cachedIn(ioCoroutineScope)
+                .filter { !hideInLibraryItems || !it.value.favorite }
         }
+            .cachedIn(ioCoroutineScope)
+    }
         .stateIn(ioCoroutineScope, SharingStarted.Lazily, emptyFlow())
 
     fun getColumnsPreference(orientation: Int): GridCells {

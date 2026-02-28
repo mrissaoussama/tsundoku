@@ -81,7 +81,6 @@ data object UpdatesTab : Tab {
             hasActiveFilters = state.hasActiveFilters,
             onToggleGroupByNovel = screenModel::toggleGroupByNovel,
             onClickNovelGroup = { mangaId -> navigator.push(MangaScreen(mangaId)) },
-            onClearUpdatesCacheClicked = screenModel::clearUpdatesCacheAll,
         )
 
         val onDismissDialog = { screenModel.setDialog(null) }

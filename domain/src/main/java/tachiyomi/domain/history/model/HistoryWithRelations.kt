@@ -12,4 +12,7 @@ data class HistoryWithRelations(
     val readAt: Date?,
     val readDuration: Long,
     val coverData: MangaCover,
+    val chapterRead: Boolean,
+    val lastPageRead: Long,
+    val isNovel: Boolean,
 )

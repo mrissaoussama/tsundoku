@@ -17,6 +17,7 @@ import eu.kanade.tachiyomi.data.backup.models.BackupManga
 import eu.kanade.tachiyomi.data.backup.models.BackupPreference
 import eu.kanade.tachiyomi.data.backup.models.BackupSource
 import eu.kanade.tachiyomi.data.backup.models.BackupSourcePreferences
+import eu.kanade.tachiyomi.source.isNovelSource
 import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.protobuf.ProtoBuf
 import logcat.LogPriority
@@ -38,7 +39,6 @@ import java.text.SimpleDateFormat
 import java.time.Instant
 import java.util.Date
 import java.util.Locale
-import eu.kanade.tachiyomi.source.isNovelSource
 
 class BackupCreator(
     private val context: Context,
@@ -137,11 +137,11 @@ class BackupCreator(
                 filteredManga.chunked(MANGA_BATCH_SIZE).forEach { batch ->
                     // Fetch full details for incomplete objects (favorites from getFavoritesEntry)
                     val fullBatch = batch.map { manga ->
-                         if (manga.favorite && manga.description == null) {
-                             mangaRepository.getMangaById(manga.id)
-                         } else {
-                             manga
-                         }
+                        if (manga.favorite && manga.description == null) {
+                            mangaRepository.getMangaById(manga.id)
+                        } else {
+                            manga
+                        }
                     }
 
                     val backupBatch = mangaBackupCreator.backupMangaStream(fullBatch, options).toList()

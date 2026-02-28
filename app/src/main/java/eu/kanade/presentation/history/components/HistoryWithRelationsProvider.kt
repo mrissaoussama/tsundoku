@@ -14,6 +14,9 @@ internal class HistoryWithRelationsProvider : PreviewParameterProvider<HistoryWi
         chapterNumber = 10.2,
         readAt = Date(1697247357L),
         readDuration = 123L,
+        chapterRead = false,
+        lastPageRead = 0L,
+        isNovel = false,
         coverData = tachiyomi.domain.manga.model.MangaCover(
             mangaId = 3L,
             sourceId = 4L,
@@ -31,6 +34,9 @@ internal class HistoryWithRelationsProvider : PreviewParameterProvider<HistoryWi
         chapterNumber = 10.2,
         readAt = null,
         readDuration = 123L,
+        chapterRead = false,
+        lastPageRead = 0L,
+        isNovel = false,
         coverData = tachiyomi.domain.manga.model.MangaCover(
             mangaId = 3L,
             sourceId = 4L,
@@ -48,6 +54,9 @@ internal class HistoryWithRelationsProvider : PreviewParameterProvider<HistoryWi
         chapterNumber = -2.0,
         readAt = Date(1697247357L),
         readDuration = 123L,
+        chapterRead = false,
+        lastPageRead = 0L,
+        isNovel = false,
         coverData = tachiyomi.domain.manga.model.MangaCover(
             mangaId = 3L,
             sourceId = 4L,

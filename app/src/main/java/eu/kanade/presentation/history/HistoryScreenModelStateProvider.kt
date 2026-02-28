@@ -103,6 +103,9 @@ class HistoryScreenModelStateProvider : PreviewParameterProvider<HistoryScreenMo
                         chapterNumber = Random.nextDouble(),
                         readAt = Date.from(Instant.now()),
                         readDuration = Random.nextLong(),
+                        chapterRead = Random.nextBoolean(),
+                        lastPageRead = Random.nextLong(0, 100),
+                        isNovel = false,
                         coverData = MangaCover(
                             mangaId = Random.nextLong(),
                             sourceId = Random.nextLong(),

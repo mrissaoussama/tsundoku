@@ -22,7 +22,12 @@ spotless {
     kotlin {
         target("**/*.kt", "**/*.kts")
         targetExclude("**/build/**/*.kt")
-        ktlint(libs.ktlint.core.get().version)
+        ktlint(libs.ktlint.core.get().version).editorConfigOverride(mapOf(
+            "ktlint_standard_max-line-length" to "disabled",
+            "ktlint_standard_backing-property-naming" to "disabled",
+            "ktlint_standard_property-naming" to "disabled",
+            "ktlint_standard_no-wildcard-imports" to "disabled"
+        ))
         trimTrailingWhitespace()
         endWithNewline()
     }

@@ -9,7 +9,10 @@ import org.junit.jupiter.api.parallel.ExecutionMode
 @Execution(ExecutionMode.CONCURRENT)
 class LNReaderBackupImporterTest {
 
-    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+    }
 
     @Test
     fun `LNChapter bookmark as integer 0 should deserialize correctly`() {
@@ -92,7 +95,6 @@ class LNReaderBackupImporterTest {
         novel.chapters[1].unread shouldBe 0
         novel.chapters[1].chapterNumber shouldBe 2.0f
     }
-
 
     @Test
     fun `LNReader device-local cover path starting with Novels should be recognized`() {

@@ -69,16 +69,16 @@ import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
-import tachiyomi.domain.chapter.service.getChapterSort
 import tachiyomi.domain.chapter.interactor.UpdateChapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
+import tachiyomi.domain.chapter.service.getChapterSort
 import tachiyomi.domain.download.service.DownloadPreferences
 import tachiyomi.domain.history.interactor.GetNextChapters
 import tachiyomi.domain.history.interactor.UpsertHistory
 import tachiyomi.domain.history.model.HistoryUpdate
 import tachiyomi.domain.library.service.LibraryPreferences
-import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.interactor.GetLibraryManga
+import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.translation.service.TranslationPreferences
@@ -255,6 +255,17 @@ class ReaderViewModel @JvmOverloads constructor(
                     currentChapter.requestedPage = chapterPageIndex
                 } else if (!currentChapter.chapter.read) {
                     currentChapter.requestedPage = currentChapter.chapter.last_page_read
+                } else {
+                    // Chapter already read: restore last position if preference is enabled
+                    val isNovel = manga?.isNovel == true
+                    val restorePosition = if (isNovel) {
+                        libraryPreferences.novelReadProgress100().get()
+                    } else {
+                        libraryPreferences.mangaReadProgress100().get()
+                    }
+                    if (restorePosition) {
+                        currentChapter.requestedPage = currentChapter.chapter.last_page_read
+                    }
                 }
                 chapterId = currentChapter.chapter.id!!
             }
@@ -720,7 +731,9 @@ class ReaderViewModel @JvmOverloads constructor(
                     }
                 }
 
-                logcat(LogPriority.DEBUG) { "NovelProgress: Saved $clampedProgress% for ${selectedChapter.chapter.name}" }
+                logcat(LogPriority.DEBUG) {
+                    "NovelProgress: Saved $clampedProgress% for ${selectedChapter.chapter.name}"
+                }
             } // end mutex
         }
     }
@@ -737,7 +750,7 @@ class ReaderViewModel @JvmOverloads constructor(
         val manga = manga ?: return
 
         // Only download ahead if current + next chapter is already downloaded too to avoid jank
-        if (getCurrentChapter()?.pageLoader !is DownloadPageLoader) return
+        if (!manga.isNovel && getCurrentChapter()?.pageLoader !is DownloadPageLoader) return
         val nextChapter = state.value.viewerChapters?.nextChapter?.chapter ?: return
 
         viewModelScope.launchIO {
@@ -748,7 +761,7 @@ class ReaderViewModel @JvmOverloads constructor(
                 manga.title,
                 manga.source,
             )
-            if (!isNextChapterDownloaded) return@launchIO
+            if (!manga.isNovel && !isNextChapterDownloaded) return@launchIO
 
             val chaptersToDownload = getNextChapters.await(manga.id, nextChapter.id!!).run {
                 if (readerPreferences.skipDupe().get()) {

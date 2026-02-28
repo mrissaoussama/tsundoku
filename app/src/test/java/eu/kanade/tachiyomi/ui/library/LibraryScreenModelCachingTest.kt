@@ -53,7 +53,6 @@ class LibraryScreenModelCachingTest {
 
         // New item is a different reference
         (list2[2] === manga3) shouldBe true
-
     }
 
     @Test
@@ -63,7 +62,6 @@ class LibraryScreenModelCachingTest {
 
         (manga1a == manga1b) shouldBe true
         (manga1a === manga1b) shouldBe false
-
     }
 
     @Test
@@ -81,7 +79,6 @@ class LibraryScreenModelCachingTest {
         val secondEmission = stateFlow.value
 
         (firstEmission[0] === secondEmission[0]) shouldBe true
-
     }
 
     private fun createTestLibraryManga(

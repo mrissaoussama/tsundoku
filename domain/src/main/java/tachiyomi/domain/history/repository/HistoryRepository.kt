@@ -7,7 +7,9 @@ import tachiyomi.domain.history.model.HistoryWithRelations
 
 interface HistoryRepository {
 
-    fun getHistory(query: String): Flow<List<HistoryWithRelations>>
+    fun getHistory(query: String, limit: Long = Long.MAX_VALUE): Flow<List<HistoryWithRelations>>
+
+    fun getHistoryGrouped(query: String, limit: Long = Long.MAX_VALUE): Flow<List<HistoryWithRelations>>
 
     suspend fun getLastHistory(): HistoryWithRelations?
 

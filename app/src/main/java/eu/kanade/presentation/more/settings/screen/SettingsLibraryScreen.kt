@@ -217,8 +217,8 @@ object SettingsLibraryScreen : SearchableSettings {
                         LibraryPreferences.SKIP_UPDATE_60_DAYS to "Skip if updated in last 60 days",
                         LibraryPreferences.SKIP_UPDATE_90_DAYS to "Skip if updated in last 90 days",
                     ),
-                    title = "Skip recently updated manga",
-                    subtitle = "Skip manga that were recently updated during bulk updates",
+                    title = "Skip recently updated entries",
+                    subtitle = "Skip entries that were recently updated during bulk updates",
                 ),
                 Preference.PreferenceItem.SwitchPreference(
                     preference = libraryPreferences.newShowUpdatesCount(),
@@ -281,6 +281,16 @@ object SettingsLibraryScreen : SearchableSettings {
                     preference = libraryPreferences.sortMangaTags(),
                     title = "Sort novel tags alphabetically",
                     subtitle = "Sort tags on novel detail page by name instead of source order",
+                ),
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = libraryPreferences.mangaReadProgress100(),
+                    title = "Restore position in completed manga chapters",
+                    subtitle = "Resume manga chapters from where you left off even when already marked as read",
+                ),
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = libraryPreferences.novelReadProgress100(),
+                    title = "Restore position in completed novel chapters",
+                    subtitle = "Resume novel chapters from where you left off even when already marked as read",
                 ),
             ),
         )

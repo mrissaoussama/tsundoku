@@ -79,7 +79,7 @@ interface DatabaseHandler {
      * @return Map with keys: page_size, page_count, freelist_count, total_size_bytes
      */
     suspend fun getDatabaseStats(): Map<String, Long>
-    
+
     /**
      * Get detailed database statistics including per-table and per-index sizes.
      * Useful for diagnosing what's consuming database space.

@@ -1,3 +1,5 @@
+@file:Suppress("ktlint:standard:backing-property-naming")
+
 package tachiyomi.domain.manga.interactor
 
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +30,8 @@ class GetLibraryManga(
     private val mutex = Mutex()
 
     private val _libraryState = MutableStateFlow<List<LibraryManga>>(emptyList())
+
+    @Suppress("ktlint:standard:backing-property-naming")
     private val _isLoading = MutableStateFlow(true)
     private var isInitialized = false
     private var lastRefreshTime = 0L
@@ -48,7 +52,8 @@ class GetLibraryManga(
      * Get the current cached library synchronously (may be empty if not yet loaded).
      */
     suspend fun await(): List<LibraryManga> {
-        val caller = Thread.currentThread().stackTrace.getOrNull(3)?.let { "${it.className}.${it.methodName}" } ?: "unknown"
+        val caller =
+            Thread.currentThread().stackTrace.getOrNull(3)?.let { "${it.className}.${it.methodName}" } ?: "unknown"
         logcat(LogPriority.DEBUG) { "GetLibraryManga.await() called by: $caller" }
         // If not initialized, wait for initial load
         if (!isInitialized) {
@@ -175,7 +180,13 @@ class GetLibraryManga(
      * Apply chapter count/read updates to the in-memory library list without a full DB refresh.
      * Call this after chapters are read, downloaded, or deleted to keep badges accurate.
      */
-    suspend fun applyChapterUpdates(mangaId: Long, totalChapters: Long? = null, readCount: Long? = null, bookmarkCount: Long? = null, lastRead: Long? = null) {
+    suspend fun applyChapterUpdates(
+        mangaId: Long,
+        totalChapters: Long? = null,
+        readCount: Long? = null,
+        bookmarkCount: Long? = null,
+        lastRead: Long? = null,
+    ) {
         mutex.withLock {
             val current = _libraryState.value
             val result = ArrayList<LibraryManga>(current.size)
@@ -184,12 +195,14 @@ class GetLibraryManga(
                 if (item.id != mangaId) {
                     result.add(item)
                 } else {
-                    result.add(item.copy(
-                        totalChapters = totalChapters ?: item.totalChapters,
-                        readCount = readCount ?: item.readCount,
-                        bookmarkCount = bookmarkCount ?: item.bookmarkCount,
-                        lastRead = lastRead ?: item.lastRead,
-                    ))
+                    result.add(
+                        item.copy(
+                            totalChapters = totalChapters ?: item.totalChapters,
+                            readCount = readCount ?: item.readCount,
+                            bookmarkCount = bookmarkCount ?: item.bookmarkCount,
+                            lastRead = lastRead ?: item.lastRead,
+                        ),
+                    )
                     changed = true
                 }
             }
@@ -224,7 +237,10 @@ class GetLibraryManga(
      * Apply manga detail updates (title, cover URL, status, etc.) to the in-memory list.
      * This avoids a full DB refresh when a single manga's metadata changes.
      */
-    suspend fun applyMangaDetailUpdate(mangaId: Long, updater: (tachiyomi.domain.manga.model.Manga) -> tachiyomi.domain.manga.model.Manga) {
+    suspend fun applyMangaDetailUpdate(
+        mangaId: Long,
+        updater: (tachiyomi.domain.manga.model.Manga) -> tachiyomi.domain.manga.model.Manga,
+    ) {
         mutex.withLock {
             val current = _libraryState.value
             val result = ArrayList<LibraryManga>(current.size)
@@ -245,7 +261,10 @@ class GetLibraryManga(
      * Non-suspend version of applyMangaDetailUpdate for use in onDispose() callbacks
      * where the calling scope is about to be cancelled.
      */
-    fun applyMangaDetailUpdateSync(mangaId: Long, updater: (tachiyomi.domain.manga.model.Manga) -> tachiyomi.domain.manga.model.Manga) {
+    fun applyMangaDetailUpdateSync(
+        mangaId: Long,
+        updater: (tachiyomi.domain.manga.model.Manga) -> tachiyomi.domain.manga.model.Manga,
+    ) {
         // Direct update without mutex since this is called from onDispose
         val current = _libraryState.value
         val result = ArrayList<LibraryManga>(current.size)
@@ -268,7 +287,9 @@ class GetLibraryManga(
     suspend fun addToLibrary(mangaId: Long) {
         mangaRepository.refreshLibraryCacheForManga(mangaId)
         val libraryManga = mangaRepository.getLibraryMangaById(mangaId) ?: run {
-            logcat(LogPriority.WARN) { "GetLibraryManga.addToLibrary: Could not fetch LibraryManga for $mangaId, falling back to refresh" }
+            logcat(LogPriority.WARN) {
+                "GetLibraryManga.addToLibrary: Could not fetch LibraryManga for $mangaId, falling back to refresh"
+            }
             refresh()
             return
         }
@@ -291,7 +312,9 @@ class GetLibraryManga(
         }
         val newItems = mangaRepository.getLibraryMangaByIds(mangaIds)
         if (newItems.isEmpty()) {
-            logcat(LogPriority.WARN) { "GetLibraryManga.addToLibraryBulk: Could not fetch any LibraryManga for ${mangaIds.size} ids, falling back to refresh" }
+            logcat(LogPriority.WARN) {
+                "GetLibraryManga.addToLibraryBulk: Could not fetch any LibraryManga for ${mangaIds.size} ids, falling back to refresh"
+            }
             refresh()
             return
         }
@@ -328,14 +351,18 @@ class GetLibraryManga(
         mutex.withLock {
             val now = System.currentTimeMillis()
             if (!force && (now - lastRefreshTime) < minRefreshIntervalMs) {
-                logcat(LogPriority.DEBUG) { "GetLibraryManga: Skipping refresh (too soon, ${now - lastRefreshTime}ms since last)" }
+                logcat(LogPriority.DEBUG) {
+                    "GetLibraryManga: Skipping refresh (too soon, ${now - lastRefreshTime}ms since last)"
+                }
                 return
             }
 
             _isLoading.value = true
             val stackTrace = Thread.currentThread().stackTrace
                 .drop(2).take(10)
-                .joinToString("\n    ") { "${it.className.substringAfterLast('.')}.${it.methodName}(${it.fileName}:${it.lineNumber})" }
+                .joinToString("\n    ") {
+                    "${it.className.substringAfterLast('.')}.${it.methodName}(${it.fileName}:${it.lineNumber})"
+                }
 
             if (force) {
                 logcat(LogPriority.INFO) { "GetLibraryManga: Rebuilding library_cache table (forced)" }

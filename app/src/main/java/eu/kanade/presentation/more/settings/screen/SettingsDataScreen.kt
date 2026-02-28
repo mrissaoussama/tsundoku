@@ -596,7 +596,14 @@ object SettingsDataScreen : SearchableSettings {
 @Composable
 private fun LNReaderImportOptionsDialog(
     onDismissRequest: () -> Unit,
-    onConfirm: (novels: Boolean, chapters: Boolean, categories: Boolean, history: Boolean, plugins: Boolean, missingPlugins: Boolean) -> Unit,
+    onConfirm: (
+        novels: Boolean,
+        chapters: Boolean,
+        categories: Boolean,
+        history: Boolean,
+        plugins: Boolean,
+        missingPlugins: Boolean,
+    ) -> Unit,
 ) {
     var restoreNovels by remember { mutableStateOf(true) }
     var restoreChapters by remember { mutableStateOf(true) }
@@ -656,7 +663,14 @@ private fun LNReaderImportOptionsDialog(
         confirmButton = {
             androidx.compose.material3.TextButton(
                 onClick = {
-                    onConfirm(restoreNovels, restoreChapters, restoreCategories, restoreHistory, restorePlugins, restoreMissingPlugins)
+                    onConfirm(
+                        restoreNovels,
+                        restoreChapters,
+                        restoreCategories,
+                        restoreHistory,
+                        restorePlugins,
+                        restoreMissingPlugins,
+                    )
                 },
                 enabled = restoreNovels || restoreCategories || restorePlugins,
             ) {

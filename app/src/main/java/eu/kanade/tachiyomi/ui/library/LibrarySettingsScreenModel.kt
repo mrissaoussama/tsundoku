@@ -236,7 +236,9 @@ class LibrarySettingsScreenModel(
                         // Add (JS) suffix for JS plugin sources
                         val displayName = if (source is JsSource) "${source.name} (JS)" else source.name
                         ExtensionInfo(sourceId, displayName, isStub, isNovel)
-                    } else null
+                    } else {
+                        null
+                    }
                 }.sortedWith(
                     compareBy<ExtensionInfo> { it.sourceId != 0L && it.sourceId != 1L }
                         .thenBy { !it.isStub }

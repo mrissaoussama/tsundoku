@@ -203,7 +203,17 @@ class AndroidDatabaseHandler(
 
             // Get row counts per table
             val tableCounts = mutableMapOf<String, Long>()
-            listOf("chapters", "mangas", "history", "library_cache", "categories", "mangas_categories", "manga_sync", "excluded_scanlators", "translated_chapters").forEach { table ->
+            listOf(
+                "chapters",
+                "mangas",
+                "history",
+                "library_cache",
+                "categories",
+                "mangas_categories",
+                "manga_sync",
+                "excluded_scanlators",
+                "translated_chapters",
+            ).forEach { table ->
                 try {
                     driver.executeQuery(null, "SELECT count(*) FROM $table", { cursor ->
                         if (cursor.next().value) {
@@ -221,7 +231,8 @@ class AndroidDatabaseHandler(
             val tableSizes = mutableMapOf<String, Long>()
             val indexSizes = mutableMapOf<String, Long>()
             try {
-                driver.executeQuery(null,
+                driver.executeQuery(
+                    null,
                     "SELECT name, SUM(pgsize) as size FROM dbstat GROUP BY name ORDER BY size DESC",
                     { cursor ->
                         while (cursor.next().value) {
@@ -234,7 +245,10 @@ class AndroidDatabaseHandler(
                             }
                         }
                         app.cash.sqldelight.db.QueryResult.Unit
-                    }, 0, null)
+                    },
+                    0,
+                    null,
+                )
                 result["table_sizes_bytes"] = tableSizes
                 result["index_sizes_bytes"] = indexSizes
             } catch (e: Exception) {
@@ -254,27 +268,35 @@ class AndroidDatabaseHandler(
             // Average chapter data size estimate
             val chapterCount = tableCounts["chapters"] ?: 0L
             if (chapterCount > 0) {
-                driver.executeQuery(null,
+                driver.executeQuery(
+                    null,
                     "SELECT AVG(length(url) + length(name) + coalesce(length(scanlator), 0)) FROM chapters LIMIT 1000",
                     { cursor ->
                         if (cursor.next().value) {
                             result["avg_chapter_text_bytes"] = cursor.getDouble(0) ?: 0.0
                         }
                         app.cash.sqldelight.db.QueryResult.Unit
-                    }, 0, null)
+                    },
+                    0,
+                    null,
+                )
             }
 
             // Average manga description size
             val mangaCount = tableCounts["mangas"] ?: 0L
             if (mangaCount > 0) {
-                driver.executeQuery(null,
+                driver.executeQuery(
+                    null,
                     "SELECT AVG(coalesce(length(description), 0)) FROM mangas",
                     { cursor ->
                         if (cursor.next().value) {
                             result["avg_manga_description_bytes"] = cursor.getDouble(0) ?: 0.0
                         }
                         app.cash.sqldelight.db.QueryResult.Unit
-                    }, 0, null)
+                    },
+                    0,
+                    null,
+                )
             }
 
             result
