@@ -33,6 +33,7 @@ import eu.kanade.tachiyomi.ui.browse.migration.sources.MigrateSourceScreenModel
 import eu.kanade.tachiyomi.util.system.copyToClipboard
 import kotlinx.collections.immutable.ImmutableList
 import tachiyomi.domain.source.model.Source
+import tachiyomi.domain.source.model.StubSource
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.components.Badge
@@ -173,7 +174,8 @@ private fun MigrateSourceItem(
         },
         content = { _, sourceLangString ->
             val isJsSource = remember(source.id) {
-                Injekt.get<SourceManager>().get(source.id) is JsSource
+                val resolved = Injekt.get<SourceManager>().get(source.id)
+                resolved is JsSource || (resolved is StubSource && resolved.name.contains("(JS)"))
             }
             Column(
                 modifier = Modifier
