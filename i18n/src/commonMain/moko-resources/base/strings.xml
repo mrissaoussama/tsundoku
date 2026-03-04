@@ -1181,12 +1181,13 @@
 
     <!-- EPUB compression settings -->
     <string name="pref_epub_compression_level">EPUB compression level</string>
-    <string name="pref_epub_compression_default">Default compression</string>
-    <string name="pref_epub_compression_none">No compression (fastest, largest files)</string>
-    <string name="pref_epub_compression_low">Low compression (fast)</string>
+    <string name="pref_epub_compression_default">Default (library decides)</string>
+    <string name="pref_epub_compression_none">No compression (fastest)</string>
+    <string name="pref_epub_compression_low">Low compression</string>
     <string name="pref_epub_compression_medium">Medium compression</string>
-    <string name="pref_epub_compression_high">High compression (slow, smallest files)</string>
+    <string name="pref_epub_compression_high">High compression (smallest)</string>
     <string name="pref_epub_compression_default_label">Default</string>
+    <string name="pref_epub_compression_level_label">Level %d</string>
 
     <!-- Advanced settings - data section -->
     <string name="pref_delete_all_translations">Delete all translations</string>
