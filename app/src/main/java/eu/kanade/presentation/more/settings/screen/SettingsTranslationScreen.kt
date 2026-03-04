@@ -84,6 +84,8 @@ object SettingsTranslationScreen : SearchableSettings {
         val sourceLanguage by prefs.sourceLanguage().collectAsState()
         val targetLanguage by prefs.targetLanguage().collectAsState()
         val chunkSize by prefs.translationChunkSize().collectAsState()
+        val anchoringEnabled by prefs.contextualAnchoringEnabled().collectAsState()
+        val anchoringParagraphs by prefs.contextualAnchoringParagraphs().collectAsState()
 
         val engines = engineManager.engines
         val engineEntries = engines.associate { it.id.toString() to it.name }.toImmutableMap()
@@ -171,6 +173,21 @@ object SettingsTranslationScreen : SearchableSettings {
                     subtitle = stringResource(MR.strings.pref_translation_chunk_paragraphs_rec),
                     valueString = "$chunkSize ${stringResource(MR.strings.pref_translation_chunk_paragraphs)}",
                     onValueChanged = { prefs.translationChunkSize().set(it) },
+                ),
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = prefs.contextualAnchoringEnabled(),
+                    title = stringResource(MR.strings.pref_translation_contextual_anchoring),
+                    subtitle = stringResource(MR.strings.pref_translation_contextual_anchoring_desc),
+                    enabled = enabled,
+                ),
+                Preference.PreferenceItem.SliderPreference(
+                    value = anchoringParagraphs,
+                    valueRange = 1..10,
+                    title = stringResource(MR.strings.pref_translation_contextual_anchoring_paragraphs),
+                    subtitle = stringResource(MR.strings.pref_translation_contextual_anchoring_paragraphs_desc),
+                    valueString = "$anchoringParagraphs",
+                    onValueChanged = { prefs.contextualAnchoringParagraphs().set(it) },
+                    enabled = anchoringEnabled && enabled,
                 ),
             ),
         )
