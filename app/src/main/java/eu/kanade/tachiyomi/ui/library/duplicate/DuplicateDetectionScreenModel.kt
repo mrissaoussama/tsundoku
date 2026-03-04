@@ -221,7 +221,7 @@ class DuplicateDetectionScreenModel(
         // Load source type priorities
         val typeRaw = libraryPreferences.sourceTypePriorities().get()
         if (typeRaw.isNotBlank()) {
-            val typeMap = typeRaw.split(";").mapNotNull { entry ->
+            val typeMap = typeRaw.split(";").filter { it.isNotBlank() }.mapNotNull { entry ->
                 val parts = entry.split(":")
                 if (parts.size == 2) {
                     try {
@@ -243,7 +243,7 @@ class DuplicateDetectionScreenModel(
         // Load specific source priorities
         val specificRaw = libraryPreferences.specificSourcePriorities().get()
         if (specificRaw.isNotBlank()) {
-            val specificMap = specificRaw.split(";").mapNotNull { entry ->
+            val specificMap = specificRaw.split(";").filter { it.isNotBlank() }.mapNotNull { entry ->
                 val parts = entry.split(":")
                 if (parts.size == 2) {
                     try {
@@ -638,15 +638,19 @@ class DuplicateDetectionScreenModel(
             }
 
             if (deleteManga) {
-                selectedIds.forEach { mangaId ->
-                    try {
-                        val manga = mangaRepository.getMangaById(mangaId)
-                        val source = sourceManager.get(manga.source)
-                        if (source != null) {
-                            downloadManager.deleteManga(manga, source)
+                // Downloads are already deleted above if deleteChapters was true;
+                // only delete here if deleteChapters was false
+                if (!deleteChapters) {
+                    selectedIds.forEach { mangaId ->
+                        try {
+                            val manga = mangaRepository.getMangaById(mangaId)
+                            val source = sourceManager.get(manga.source)
+                            if (source != null) {
+                                downloadManager.deleteManga(manga, source)
+                            }
+                        } catch (e: Exception) {
+                            logcat(LogPriority.ERROR) { "Error cleaning up manga $mangaId: ${e.message}" }
                         }
-                    } catch (e: Exception) {
-                        logcat(LogPriority.ERROR) { "Error cleaning up manga $mangaId: ${e.message}" }
                     }
                 }
             }

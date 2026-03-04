@@ -370,7 +370,7 @@ class DuplicateDetectionScreen : Screen {
                     )
                     Icon(
                         imageVector = if (filtersExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                        contentDescription = if (filtersExpanded) "Collapse" else "Expand",
+                        contentDescription = if (filtersExpanded) stringResource(MR.strings.action_collapse) else stringResource(MR.strings.action_expand),
                     )
                 }
 
@@ -506,7 +506,7 @@ class DuplicateDetectionScreen : Screen {
                                 label = {
                                     Icon(
                                         imageVector = Icons.Filled.PushPin,
-                                        contentDescription = "Pinned",
+                                        contentDescription = stringResource(MR.strings.duplicate_select_pinned),
                                         modifier = Modifier.size(18.dp),
                                     )
                                 },
@@ -577,9 +577,9 @@ class DuplicateDetectionScreen : Screen {
                                             onClick = { screenModel.toggleCategoryFilter(category.id) },
                                             label = { Text(displayName) },
                                             leadingIcon = if (isIncluded) {
-                                                { Icon(Icons.Filled.Check, contentDescription = "Included", Modifier.size(18.dp)) }
+                                                { Icon(Icons.Filled.Check, contentDescription = null, Modifier.size(18.dp)) }
                                             } else if (isExcluded) {
-                                                { Icon(Icons.Filled.Close, contentDescription = "Excluded", Modifier.size(18.dp)) }
+                                                { Icon(Icons.Filled.Close, contentDescription = null, Modifier.size(18.dp)) }
                                             } else {
                                                 null
                                             },
@@ -810,7 +810,7 @@ private fun DuplicateGroupCard(
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(
                         imageVector = if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        contentDescription = if (expanded) stringResource(MR.strings.action_collapse) else stringResource(MR.strings.action_expand),
                     )
                 }
             }
