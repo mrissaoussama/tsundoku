@@ -8,6 +8,8 @@ import eu.kanade.tachiyomi.source.NovelSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import mihon.core.archive.archiveReader
 import mihon.core.archive.epubReader
 import tachiyomi.core.common.i18n.stringResource
@@ -32,6 +34,8 @@ class ChapterLoader(
     private val manga: Manga,
     private val source: Source,
     private val jsPluginManager: JsPluginManager = Injekt.get(),
+    private val extensionManager: eu.kanade.tachiyomi.extension.ExtensionManager = Injekt.get(),
+    private val sourceManager: tachiyomi.domain.source.service.SourceManager = Injekt.get(),
 ) {
 
     /**
@@ -81,7 +85,7 @@ class ChapterLoader(
     /**
      * Returns the page loader to use for this [chapter].
      */
-    private fun getPageLoader(chapter: ReaderChapter): PageLoader {
+    private suspend fun getPageLoader(chapter: ReaderChapter): PageLoader {
         val dbChapter = chapter.chapter
         val isDownloaded = downloadManager.isChapterDownloaded(
             dbChapter.name,
@@ -116,11 +120,39 @@ class ChapterLoader(
             }
             source is HttpSource -> HttpPageLoader(chapter, source)
             source is StubSource -> {
-                // Try to find it in JsPluginManager.
+                // Wait for KT extensions to finish loading
+                if (!extensionManager.isInitialized.value) {
+                    kotlinx.coroutines.withTimeoutOrNull(10_000L) {
+                        extensionManager.isInitialized.first { it }
+                    }
+                    val ktSource = sourceManager.get(source.id)
+                    if (ktSource != null && ktSource !is StubSource) {
+                        logcat { "ChapterLoader: StubSource ${source.id} resolved via KT extension → ${ktSource.name}" }
+                        return when (ktSource) {
+                            is NovelSource -> LocalNovelPageLoader(chapter, ktSource)
+                            is HttpSource -> HttpPageLoader(chapter, ktSource)
+                            else -> error(context.stringResource(MR.strings.loader_not_implemented_error))
+                        }
+                    }
+                }
+
+                // Try JS plugins
                 val jsSource = jsPluginManager.getSource(source.id)
+                    ?: run {
+                        // Wait up to 5s for plugins to load
+                        kotlinx.coroutines.withTimeoutOrNull(5000L) {
+                            jsPluginManager.jsSources.first { sources ->
+                                sources.any { it.id == source.id }
+                            }
+                        }
+                        jsPluginManager.getSource(source.id)
+                    }
                 if (jsSource is NovelSource) {
                     logcat { "ChapterLoader: StubSource ${source.id} resolved via JsPluginManager → ${jsSource.name}" }
                     LocalNovelPageLoader(chapter, jsSource)
+                } else if (jsSource is HttpSource) {
+                    logcat { "ChapterLoader: StubSource ${source.id} resolved via JsPluginManager → ${jsSource.name}" }
+                    HttpPageLoader(chapter, jsSource)
                 } else {
                     error(context.stringResource(MR.strings.source_not_installed, source.toString()))
                 }
