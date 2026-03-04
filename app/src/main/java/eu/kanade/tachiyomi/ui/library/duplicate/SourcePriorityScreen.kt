@@ -93,10 +93,10 @@ object SourcePriorityScreen : Screen {
                 }
 
                 val sourceTypes = listOf(
-                    DuplicateDetectionScreenModel.SourceType.JS to "JS Extensions",
-                    DuplicateDetectionScreenModel.SourceType.KT to "Kotlin Extensions",
-                    DuplicateDetectionScreenModel.SourceType.CUSTOM to "Custom Extensions",
-                    DuplicateDetectionScreenModel.SourceType.LOCAL to "Local Source",
+                    DuplicateDetectionScreenModel.SourceType.JS to stringResource(MR.strings.duplicate_source_type_js_extensions),
+                    DuplicateDetectionScreenModel.SourceType.KT to stringResource(MR.strings.duplicate_source_type_kt_extensions),
+                    DuplicateDetectionScreenModel.SourceType.CUSTOM to stringResource(MR.strings.duplicate_source_type_custom_extensions),
+                    DuplicateDetectionScreenModel.SourceType.LOCAL to stringResource(MR.strings.duplicate_source_type_local_source),
                 )
 
                 items(sourceTypes, key = { it.first.name }) { (type, label) ->
@@ -141,7 +141,7 @@ object SourcePriorityScreen : Screen {
                 if (state.sourceItems.isEmpty()) {
                     item(key = "empty") {
                         Text(
-                            text = "No sources with library entries found",
+                            text = stringResource(MR.strings.duplicate_no_sources_found),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 16.dp),
@@ -218,7 +218,7 @@ class SourcePriorityScreenModel(
     private fun loadTypePriorities() {
         val raw = libraryPreferences.sourceTypePriorities().get()
         if (raw.isBlank()) return
-        val map = raw.split(";").mapNotNull { entry ->
+        val map = raw.split(";").filter { it.isNotBlank() }.mapNotNull { entry ->
             val parts = entry.split(":")
             if (parts.size == 2) {
                 try {
@@ -238,7 +238,7 @@ class SourcePriorityScreenModel(
     private fun loadSourcePriorities() {
         val raw = libraryPreferences.specificSourcePriorities().get()
         if (raw.isBlank()) return
-        val map = raw.split(";").mapNotNull { entry ->
+        val map = raw.split(";").filter { it.isNotBlank() }.mapNotNull { entry ->
             val parts = entry.split(":")
             if (parts.size == 2) {
                 try {

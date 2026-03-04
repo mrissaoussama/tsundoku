@@ -1049,4 +1049,15 @@
     <string name="migrationListScreen.migrateDialog.cancelLabel">Cancel</string>
     <string name="migrationListScreen.progressDialog.cancelLabel">Cancel</string>
     <string name="migrationListScreen.matchWithoutChapterToast">No chapters found, this entry cannot be used for migration</string>
+
+    <!-- Duplicate detection -->
+    <string name="duplicate_source_type_js_extensions">JS Extensions</string>
+    <string name="duplicate_source_type_kt_extensions">Kotlin Extensions</string>
+    <string name="duplicate_source_type_custom_extensions">Custom Extensions</string>
+    <string name="duplicate_source_type_local_source">Local Source</string>
+    <string name="duplicate_no_sources_found">No sources with library entries found</string>
+
+    <!-- Misc UI -->
+    <string name="action_collapse">Collapse</string>
+    <string name="action_expand">Expand</string>
 </resources>
