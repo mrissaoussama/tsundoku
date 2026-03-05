@@ -56,6 +56,10 @@ class JsPluginManager(
 
     private val cacheDir: File = File(context.cacheDir, "lnreader_plugins_cache")
 
+    // Persistent icon cache inside the lnreader_plugins directory
+    private val iconsCacheDir: File
+        get() = File(cacheDir, "icons").apply { mkdirs() }
+
     // State
     private val _repositories = MutableStateFlow<List<JsPluginRepository>>(emptyList())
     val repositories: StateFlow<List<JsPluginRepository>> = _repositories.asStateFlow()
@@ -147,6 +151,9 @@ class JsPluginManager(
 
             // Save to cache file
             saveCachedPluginList(allPlugins)
+
+            // Cache icons to avoid re-fetching each time
+            cacheIcons(allPlugins)
         } finally {
             _isLoading.value = false
         }
@@ -677,6 +684,50 @@ class JsPluginManager(
      */
     fun getInstalledPlugin(pluginId: String): InstalledJsPlugin? {
         return _installedPlugins.value.find { it.plugin.id == pluginId }
+    }
+
+    // Icon caching
+
+    /**
+     * Returns the local cached icon file for a plugin, or null if not cached.
+     */
+    fun getCachedIconFile(pluginId: String): File? {
+        val file = File(iconsCacheDir, "$pluginId.png")
+        return file.takeIf { it.exists() && it.length() > 0 }
+    }
+
+    /**
+     * Returns the local icon path if cached, otherwise the original URL.
+     * This avoids re-fetching icons on every screen visit.
+     */
+    fun getIconUrl(plugin: JsPlugin): String {
+        val cached = getCachedIconFile(plugin.id)
+        return cached?.let { "file://${it.absolutePath}" } ?: plugin.iconUrl
+    }
+
+    /**
+     * Download and cache icons for a list of plugins in the background.
+     */
+    private suspend fun cacheIcons(plugins: List<JsPlugin>) = withContext(Dispatchers.IO) {
+        for (plugin in plugins) {
+            if (plugin.iconUrl.isBlank()) continue
+            val iconFile = File(iconsCacheDir, "${plugin.id}.png")
+            if (iconFile.exists() && iconFile.length() > 0) continue
+            try {
+                val response = client.newCall(GET(plugin.iconUrl)).execute()
+                response.use { resp ->
+                    if (resp.isSuccessful) {
+                        resp.body?.byteStream()?.use { input ->
+                            iconFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                logcat(LogPriority.WARN) { "Failed to cache icon for ${plugin.name}: ${e.message}" }
+            }
+        }
     }
 
     // UniFile helpers

@@ -41,22 +41,22 @@ fun UpdateSelectedDialog(
             }
         },
         title = {
-            Text(text = "Update selected")
+            Text(text = stringResource(MR.strings.update_selected_title))
         },
         text = {
             Column {
                 LabeledCheckbox(
-                    label = "Fetch chapters",
+                    label = stringResource(MR.strings.update_selected_fetch_chapters),
                     checked = fetchChapters,
                     onCheckedChange = { fetchChapters = it },
                 )
                 LabeledCheckbox(
-                    label = "Fetch manga details",
+                    label = stringResource(MR.strings.update_selected_fetch_details),
                     checked = fetchDetails,
                     onCheckedChange = { fetchDetails = it },
                 )
                 LabeledCheckbox(
-                    label = "Ignore 'Skip recently updated' and force update",
+                    label = stringResource(MR.strings.update_selected_ignore_skip),
                     checked = ignoreSkipRecentlyUpdated,
                     onCheckedChange = { ignoreSkipRecentlyUpdated = it },
                 )

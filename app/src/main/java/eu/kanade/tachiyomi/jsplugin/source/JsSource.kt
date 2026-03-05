@@ -66,8 +66,8 @@ class JsSource(
     private var lastUsed = System.currentTimeMillis()
 
     // Cache manga details and chapters to prevent re-fetching
-    private val detailsCache = mutableMapOf<String, Pair<SManga, Long>>()
-    private val chaptersCache = mutableMapOf<String, Pair<List<SChapter>, Long>>()
+    private val detailsCache = java.util.concurrent.ConcurrentHashMap<String, Pair<SManga, Long>>()
+    private val chaptersCache = java.util.concurrent.ConcurrentHashMap<String, Pair<List<SChapter>, Long>>()
     private val cacheTimeout = 300_000L // 5 minutes
 
     companion object {
@@ -513,7 +513,7 @@ class JsSource(
             chapters.forEachIndexed { index, chapter ->
                 // Only override chapter_number if the plugin didn't provide one
                 // (default SChapter chapter_number is -1)
-                if (chapter.chapter_number < 0 || total > 1) {
+                if (chapter.chapter_number < 0) {
                     // Assign sequential numbers matching position: index 0 → 1, index 1 → 2, etc.
                     chapter.chapter_number = (index + 1).toFloat()
                 }

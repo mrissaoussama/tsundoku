@@ -45,7 +45,6 @@ class FindDuplicateNovels(
             for (j in i + 1 until normalized.size) {
                 val (idB, titleB, normB) = normalized[j]
                 if (normB.isEmpty()) continue
-                if (normA[0] != normB[0]) continue
                 val lenA = normA.length
                 val lenB = normB.length
                 if (lenA >= lenB * 0.8 && lenB >= lenA * 0.8) continue
