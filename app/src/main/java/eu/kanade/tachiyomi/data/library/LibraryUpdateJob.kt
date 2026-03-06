@@ -358,7 +358,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                                 ensureActive()
 
                                 // Apply an additional delay of 3-8 minutes every 5 sources
-                                if (floor((index / 5).toDouble()) > 0 && updateStagger) {
+                                if ((index + 1) % 5 == 0 && updateStagger) {
                                     // Randomly select minutes, convert to ms
                                     // Add a random number to appear more typical
                                     val stagger = (Random.nextLong(3, 8) * 60000L) + Random.nextLong(23, 999)
