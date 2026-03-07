@@ -73,7 +73,7 @@ jobs:
       - name: Decode keystore
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tsundoku-otaku/tsundoku'
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+          echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > release.keystore
 
       - name: Sign all nightly APKs
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tsundoku-otaku/tsundoku'
@@ -82,8 +82,8 @@ jobs:
             echo "Signing $apk"
             $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
               --ks release.keystore \
-              --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
-              --ks-pass pass:"${{ secrets.KEYSTORE_PASSWORD }}" \
+              --ks-key-alias "${{ secrets.ALIAS }}" \
+              --ks-pass pass:"${{ secrets.KEY_STORE_PASSWORD }}" \
               --key-pass pass:"${{ secrets.KEY_PASSWORD }}" \
               "$apk"
           done

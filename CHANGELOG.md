@@ -11,6 +11,9 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - `Other` - for technical stuff.
 
 ## [Unreleased]
+
+
+## [v0.1.0] - 2026-03-06
 ### Improved
 - Add lnreader-based grey color scheme [@Rojikku](https://github.com/Rojikku) [#2](https://github.com/tsundoku-otaku/tsundoku/pull/2)
 - Rebrand from Mihon [@Rojikku](https://github.com/Rojikku) [#5](https://github.com/tsundoku-otaku/tsundoku/pull/5)
@@ -31,6 +34,9 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - **Mass Import**: Batch import from sources with per-extension throttling overrides, duplicate counting fix
 - **Browse Screen Enhancements**: Jump-to-page, page range loading, back confirmation
 
+
+[Unreleased]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.0...main
+[v0.1.0]: https://github.com/tsundoku-otaku/tsundoku/compare/5b88f88...v0.1.0
 
 ## [Mihon]
 This project was originally forked from Mihon, and, while we keep separate version numbers, we would like to note in our changelog when we merge from upstream, and link to their changelog to try to give appropriate credit.
