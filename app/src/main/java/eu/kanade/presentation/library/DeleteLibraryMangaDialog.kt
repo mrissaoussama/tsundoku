@@ -56,8 +56,14 @@ fun DeleteLibraryMangaDialog(
     )
 
     val checkboxItems = remember(
-        containsLocalManga, removeFromLibrary, deleteDownloads, clearChaptersFromDb,
-        deleteTranslations, clearCovers, clearDescriptions, clearTags,
+        containsLocalManga,
+        removeFromLibrary,
+        deleteDownloads,
+        clearChaptersFromDb,
+        deleteTranslations,
+        clearCovers,
+        clearDescriptions,
+        clearTags,
     ) {
         buildList {
             add(CheckboxItem(MR.strings.manga_from_library, removeFromLibrary, { onRemoveFromLibraryChanged(it) }))

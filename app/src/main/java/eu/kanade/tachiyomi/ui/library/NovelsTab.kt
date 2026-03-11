@@ -311,8 +311,14 @@ data object NovelsTab : Tab {
                     onDismissRequest = onDismissRequest,
                     onConfirm = { deleteManga, deleteChapter, clearChaptersFromDb, deleteTranslations, clearCovers, clearDescriptions, clearTags ->
                         screenModel.removeMangas(
-                            dialog.manga, deleteManga, deleteChapter, clearChaptersFromDb, deleteTranslations,
-                            clearCovers, clearDescriptions, clearTags,
+                            dialog.manga,
+                            deleteManga,
+                            deleteChapter,
+                            clearChaptersFromDb,
+                            deleteTranslations,
+                            clearCovers,
+                            clearDescriptions,
+                            clearTags,
                         )
                         screenModel.clearSelection()
                     },
