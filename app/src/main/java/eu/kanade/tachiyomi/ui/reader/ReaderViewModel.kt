@@ -117,7 +117,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
     private val mutableState = MutableStateFlow(
         State(
-            isTranslating = translationPreferences.translationEnabled().get() ||
+            isTranslating = translationPreferences.translationEnabled().get() &&
                 translationPreferences.smartAutoTranslate().get(),
         ),
     )
@@ -154,6 +154,15 @@ class ReaderViewModel @JvmOverloads constructor(
      * The chapter loader for the loaded manga. It'll be null until [manga] is set.
      */
     private var loader: ChapterLoader? = null
+
+    /**
+     * Novel scroll progress (0-100%) via SavedState. Persists synchronously before process death,
+     */
+    private var novelScrollProgress = savedState.get<Int>("novel_scroll_progress") ?: -1
+        set(value) {
+            savedState["novel_scroll_progress"] = value
+            field = value
+        }
 
     /**
      * The time the chapter was started reading
@@ -272,7 +281,15 @@ class ReaderViewModel @JvmOverloads constructor(
                         currentChapter.requestedPage = currentChapter.chapter.last_page_read
                     }
                 }
+
                 chapterId = currentChapter.chapter.id!!
+
+                // For novels: override with SavedState progress if available (survives process death
+                // even when the mutex-serialized DB write hasn't completed yet)
+                if (novelScrollProgress > 0) {
+                    currentChapter.requestedPage = novelScrollProgress
+                    novelScrollProgress = -1
+                }
             }
             .launchIn(viewModelScope)
     }
@@ -342,8 +359,9 @@ class ReaderViewModel @JvmOverloads constructor(
     private suspend fun loadChapter(
         loader: ChapterLoader,
         chapter: ReaderChapter,
+        forceFromSource: Boolean = false,
     ): ViewerChapters {
-        loader.loadChapter(chapter)
+        loader.loadChapter(chapter, forceFromSource)
 
         val chapterPos = chapterList.indexOf(chapter)
         val newChapters = ViewerChapters(
@@ -563,10 +581,7 @@ class ReaderViewModel @JvmOverloads constructor(
                 // Reset chapter state to force reload
                 currChapter.state = ReaderChapter.State.Wait
 
-                // If reloading from source, we need to clear the downloaded flag temporarily
-                // This is handled in the loader based on chapter state
-
-                loadChapter(loader, currChapter)
+                loadChapter(loader, currChapter, forceFromSource = fromSource)
 
                 // Notify the viewer to refresh
                 withUIContext {
@@ -703,9 +718,10 @@ class ReaderViewModel @JvmOverloads constructor(
 
                 selectedChapter.chapter.last_page_read = clampedProgress
 
-                // Mark as read if at the end (95% or more)
+                // Mark as read if at the configured threshold or more
+                val markAsReadThreshold = readerPreferences.novelMarkAsReadThreshold().get()
                 val wasRead = selectedChapter.chapter.read
-                if (clampedProgress >= 95 && !wasRead) {
+                if (clampedProgress >= markAsReadThreshold && !wasRead) {
                     selectedChapter.chapter.read = true
                     updateTrackChapterRead(selectedChapter)
                     deleteChapterIfNeeded(selectedChapter)
@@ -744,7 +760,9 @@ class ReaderViewModel @JvmOverloads constructor(
      * Update the novel progress percentage in the state for UI display (e.g., slider).
      */
     fun updateNovelProgressPercent(progress: Int) {
-        mutableState.update { it.copy(novelProgressPercent = progress.coerceIn(0, 100)) }
+        val clamped = progress.coerceIn(0, 100)
+        mutableState.update { it.copy(novelProgressPercent = clamped) }
+        novelScrollProgress = clamped
     }
 
     private fun downloadNextChapters() {
