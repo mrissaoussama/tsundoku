@@ -77,7 +77,7 @@ jobs:
       - name: Decode keystore
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tsundoku-otaku/tsundoku'
         run: |
-          echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > release.keystore
+          echo ${{ secrets.SIGNING_KEY }} | base64 --decode > release.keystore
 
       - name: Sign all nightly APKs
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tsundoku-otaku/tsundoku'
