@@ -323,4 +323,16 @@ class TranslationPreferences(
         "translation_contextual_anchoring_paragraphs",
         2,
     )
+
+    // Gemini (Google AI)
+
+    fun geminiApiKey() = preferenceStore.getString(
+        "translation_gemini_api_key",
+        "",
+    )
+
+    fun geminiModel() = preferenceStore.getString(
+        "translation_gemini_model",
+        "gemini-2.0-flash",
+    )
 }

@@ -6,6 +6,7 @@ import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.download.DownloadManager
 import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.data.translation.engine.DeepSeekTranslateEngine
+import eu.kanade.tachiyomi.data.translation.engine.GeminiTranslateEngine
 import eu.kanade.tachiyomi.data.translation.engine.LibreTranslateEngine
 import eu.kanade.tachiyomi.data.translation.engine.OllamaTranslateEngine
 import eu.kanade.tachiyomi.data.translation.engine.OpenAITranslateEngine
@@ -887,6 +888,7 @@ class TranslationService(
             OpenAITranslateEngine.ENGINE_ID,
             DeepSeekTranslateEngine.ENGINE_ID,
             OllamaTranslateEngine.ENGINE_ID,
+            GeminiTranslateEngine.ENGINE_ID,
         )
 
         /** Max retries per chunk before giving up. */

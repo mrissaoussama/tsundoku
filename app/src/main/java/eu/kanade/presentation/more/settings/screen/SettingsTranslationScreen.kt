@@ -258,6 +258,9 @@ object SettingsTranslationScreen : SearchableSettings {
         val customHttpUrl by prefs.customHttpUrl().collectAsState()
         val customHttpApiKey by prefs.customHttpApiKey().collectAsState()
         val customHttpResponsePath by prefs.customHttpResponsePath().collectAsState()
+        val geminiKey by prefs.geminiApiKey().collectAsState()
+        val geminiModel by prefs.geminiModel().collectAsState()
+
 
         // Pre-resolve strings for non-composable testButton function
         val testEngineFormat = stringResource(MR.strings.pref_translation_test_engine)
@@ -377,6 +380,23 @@ object SettingsTranslationScreen : SearchableSettings {
                 title = "Google Translate (Free)",
                 preferenceItems = persistentListOf(
                     testButton(engineManager.engines.first { it.name.contains("Scraper") }),
+                ),
+            ),
+            // Gemini (Google AI)
+            Preference.PreferenceGroup(
+                title = "Gemini (Google AI)",
+                preferenceItems = persistentListOf(
+                    Preference.PreferenceItem.EditTextPreference(
+                        preference = prefs.geminiApiKey(),
+                        title = stringResource(MR.strings.pref_translation_api_key),
+                        subtitle = if (geminiKey.isNotBlank()) "••••••••" else stringResource(TDMR.strings.not_set),
+                    ),
+                    Preference.PreferenceItem.EditTextPreference(
+                        preference = prefs.geminiModel(),
+                        title = stringResource(TDMR.strings.pref_translation_ollama_model),
+                        subtitle = geminiModel.ifBlank { "gemini-2.0-flash" },
+                    ),
+                    testButton(engineManager.engines.first { it.name.contains("Gemini") }),
                 ),
             ),
             // LibreTranslate

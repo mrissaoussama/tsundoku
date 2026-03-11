@@ -4,6 +4,7 @@ import android.content.Context
 import eu.kanade.tachiyomi.data.translation.engine.CustomHttpTranslateEngine
 import eu.kanade.tachiyomi.data.translation.engine.DeepLTranslateEngine
 import eu.kanade.tachiyomi.data.translation.engine.DeepSeekTranslateEngine
+import eu.kanade.tachiyomi.data.translation.engine.GeminiTranslateEngine
 import eu.kanade.tachiyomi.data.translation.engine.GoogleTranslateEngine
 import eu.kanade.tachiyomi.data.translation.engine.GoogleTranslateScraperEngine
 import eu.kanade.tachiyomi.data.translation.engine.HuggingFaceTranslateEngine
@@ -37,6 +38,7 @@ class TranslationEngineManager(
             SystranTranslateEngine(), // Paid, enterprise quality
             DeepLTranslateEngine(), // Paid, high quality
             GoogleTranslateEngine(), // Paid, comprehensive
+            GeminiTranslateEngine(), // Paid, Google AI
             GoogleTranslateScraperEngine(), // Free, scraper
             CustomHttpTranslateEngine(), // Custom HTTP endpoint
         )
@@ -112,5 +114,6 @@ class TranslationEngineManager(
         const val ENGINE_SYSTRAN = 5L
         const val ENGINE_DEEPL = 6L
         const val ENGINE_GOOGLE = 7L
+        const val ENGINE_GEMINI = 8L
     }
 }
