@@ -20,6 +20,12 @@ class TrackRepositoryImpl(
         }
     }
 
+    override suspend fun getAllTracks(): List<Track> {
+        return handler.awaitList {
+            manga_syncQueries.getTracks(TrackMapper::mapTrack)
+        }
+    }
+
     override fun getTracksAsFlow(): Flow<List<Track>> {
         return handler.subscribeToDebouncedList(1.seconds) {
             manga_syncQueries.getTracks(TrackMapper::mapTrack)

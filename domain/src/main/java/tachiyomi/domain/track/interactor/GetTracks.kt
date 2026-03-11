@@ -19,6 +19,15 @@ class GetTracks(
         }
     }
 
+    suspend fun awaitAll(): List<Track> {
+        return try {
+            trackRepository.getAllTracks()
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e)
+            emptyList()
+        }
+    }
+
     suspend fun await(mangaId: Long): List<Track> {
         return try {
             trackRepository.getTracksByMangaId(mangaId)

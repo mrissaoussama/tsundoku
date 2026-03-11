@@ -103,12 +103,10 @@ class StatsScreenModel(
 
     private suspend fun getMangaTrackMap(libraryManga: List<LibraryManga>): Map<Long, List<Track>> {
         val loggedInTrackerIds = loggedInTrackers.map { it.id }.toHashSet()
-        return libraryManga.associate { manga ->
-            val tracks = getTracks.await(manga.id)
-                .fastFilter { it.trackerId in loggedInTrackerIds }
-
-            manga.id to tracks
-        }
+        val mangaIds = libraryManga.mapTo(HashSet()) { it.id }
+        return getTracks.awaitAll()
+            .fastFilter { it.mangaId in mangaIds && it.trackerId in loggedInTrackerIds }
+            .groupBy { it.mangaId }
     }
 
     private fun getScoredMangaTrackMap(mangaTrackMap: Map<Long, List<Track>>): Map<Long, List<Track>> {
