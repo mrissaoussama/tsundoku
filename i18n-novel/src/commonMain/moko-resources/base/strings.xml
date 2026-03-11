@@ -642,4 +642,18 @@
     <string name="skip_update_days">Skip if updated in last %d day(s)</string>
     <string name="novel_ext_repos_js_header">JS Plugin Repos</string>
     <string name="novel_ext_repos_kt_header">Kotlin Extension Repos</string>
+
+    <!-- Database maintenance notifications -->
+    <string name="channel_db_maintenance">Database Maintenance</string>
+    <string name="db_maintenance_title">Database maintenance</string>
+    <string name="db_maintenance_starting">Starting&#8230;</string>
+    <string name="db_maintenance_running_analyze">Running ANALYZE&#8230;</string>
+    <string name="db_maintenance_running_reindex">Running REINDEX&#8230;</string>
+    <string name="db_maintenance_running_vacuum">Running VACUUM (this may take a while)&#8230;</string>
+    <string name="db_maintenance_complete_title">Database Maintenance</string>
+    <string name="db_maintenance_optimized_saved">Database optimized! Saved %s</string>
+    <string name="db_maintenance_optimized">Database optimized!</string>
+    <string name="db_maintenance_failed">Maintenance failed: %s</string>
+    <string name="db_maintenance_already_running">Database maintenance is already running</string>
+    <string name="db_maintenance_started">Database maintenance started &#8212; check notifications for progress</string>
 </resources>
