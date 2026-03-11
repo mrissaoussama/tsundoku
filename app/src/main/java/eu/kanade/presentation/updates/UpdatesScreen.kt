@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.FilterList
@@ -21,11 +22,13 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAll
@@ -74,6 +77,7 @@ fun UpdateScreen(
     hasActiveFilters: Boolean,
     onToggleGroupByNovel: () -> Unit = {},
     onClickNovelGroup: (Long) -> Unit = {},
+    onLoadMore: () -> Unit = {},
 ) {
     BackHandler(enabled = state.selectionMode) {
         onSelectAll(false)
@@ -127,8 +131,25 @@ fun UpdateScreen(
                     enabled = !state.selectionMode,
                     indicatorPadding = contentPadding,
                 ) {
+                    val lazyListState = rememberLazyListState()
+
+                    // Trigger loadMore when near end of list
+                    LaunchedEffect(lazyListState) {
+                        snapshotFlow {
+                            val layoutInfo = lazyListState.layoutInfo
+                            val totalItems = layoutInfo.totalItemsCount
+                            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                            lastVisible to totalItems
+                        }.collect { (lastVisible, totalItems) ->
+                            if (totalItems > 0 && lastVisible >= totalItems - 3) {
+                                onLoadMore()
+                            }
+                        }
+                    }
+
                     FastScrollLazyColumn(
                         contentPadding = contentPadding,
+                        state = lazyListState,
                     ) {
                         // Filter chips row
                         item(key = "filter_chips") {

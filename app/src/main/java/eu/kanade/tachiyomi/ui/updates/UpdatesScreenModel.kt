@@ -25,6 +25,7 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -111,22 +112,28 @@ class UpdatesScreenModel(
     private val selectedPositions: Array<Int> = arrayOf(-1, -1)
     private val selectedChapterIds: HashSet<Long> = HashSet()
 
+    // DB-level pagination: start with one page, grow as user scrolls
+    private val currentLimit = MutableStateFlow(GetUpdates.PAGE_SIZE)
+
     init {
         screenModelScope.launchIO {
             // Set date limit for recent chapters
-            val limit = ZonedDateTime.now().minusMonths(3).toInstant()
+            val dateThreshold = ZonedDateTime.now().minusMonths(3).toInstant()
 
             combine(
                 // needed for SQL filters (unread, started, bookmarked, etc)
-                getUpdatesItemPreferenceFlow()
-                    .distinctUntilChanged()
-                    .flatMapLatest {
+                combine(
+                    getUpdatesItemPreferenceFlow().distinctUntilChanged(),
+                    currentLimit,
+                ) { prefs, dbLimit -> prefs to dbLimit }
+                    .flatMapLatest { (prefs, dbLimit) ->
                         getUpdates.subscribe(
-                            limit,
-                            unread = it.filterUnread.toBooleanOrNull(),
-                            started = it.filterStarted.toBooleanOrNull(),
-                            bookmarked = it.filterBookmarked.toBooleanOrNull(),
-                            hideExcludedScanlators = it.filterExcludedScanlators,
+                            dateThreshold,
+                            limit = dbLimit,
+                            unread = prefs.filterUnread.toBooleanOrNull(),
+                            started = prefs.filterStarted.toBooleanOrNull(),
+                            bookmarked = prefs.filterBookmarked.toBooleanOrNull(),
+                            hideExcludedScanlators = prefs.filterExcludedScanlators,
                         ).distinctUntilChanged()
                     },
                 downloadCache.changes,
@@ -143,20 +150,25 @@ class UpdatesScreenModel(
                     updates
                 }
                 latestUpdates = filteredUpdates
-                filteredUpdates
+                val items = filteredUpdates
                     .toUpdateItems()
                     .applyFilters(itemPreferences)
                     .toPersistentList()
+                // If returned items fill the limit, there may be more
+                val hasMore = updates.size.toLong() >= currentLimit.value
+                items to hasMore
             }
                 .catch {
                     logcat(LogPriority.ERROR, it)
                     _events.send(Event.InternalError)
                 }
-                .collectLatest { updateItems ->
+                .collectLatest { (updateItems, hasMore) ->
                     mutableState.update {
                         it.copy(
                             isLoading = false,
+                            isLoadingMore = false,
                             items = updateItems,
+                            hasMorePages = hasMore,
                         )
                     }
                 }
@@ -205,18 +217,18 @@ class UpdatesScreenModel(
 
     private fun List<UpdatesWithRelations>.toUpdateItems(): List<UpdatesItem> {
         val filter = state.value.filter
+        // Cache source lookups to avoid repeated getOrStub + isNovelSource calls
+        val novelSourceCache = mutableMapOf<Long, Boolean>()
+        fun isNovel(sourceId: Long): Boolean = novelSourceCache.getOrPut(sourceId) {
+            sourceManager.getOrStub(sourceId).isNovelSource()
+        }
+
         return this
             .filter { update ->
                 when (filter) {
                     UpdatesFilter.ALL -> true
-                    UpdatesFilter.MANGA -> {
-                        val source = sourceManager.getOrStub(update.sourceId)
-                        !source.isNovelSource()
-                    }
-                    UpdatesFilter.NOVELS -> {
-                        val source = sourceManager.getOrStub(update.sourceId)
-                        source.isNovelSource()
-                    }
+                    UpdatesFilter.MANGA -> !isNovel(update.sourceId)
+                    UpdatesFilter.NOVELS -> isNovel(update.sourceId)
                 }
             }
             .map { update ->
@@ -233,13 +245,12 @@ class UpdatesScreenModel(
                     downloaded -> Download.State.DOWNLOADED
                     else -> Download.State.NOT_DOWNLOADED
                 }
-                val source = sourceManager.getOrStub(update.sourceId)
                 UpdatesItem(
                     update = update,
                     downloadStateProvider = { downloadState },
                     downloadProgressProvider = { activeDownload?.progress ?: 0 },
                     selected = update.chapterId in selectedChapterIds,
-                    isNovel = source.isNovelSource(),
+                    isNovel = isNovel(update.sourceId),
                 )
             }
     }
@@ -493,6 +504,16 @@ class UpdatesScreenModel(
         }
     }
 
+    /**
+     * Load more updates from the database.
+     * Increases the SQL LIMIT to fetch the next page of results.
+     */
+    fun loadMore() {
+        if (!state.value.hasMorePages || state.value.isLoadingMore) return
+        mutableState.update { it.copy(isLoadingMore = true) }
+        currentLimit.value += GetUpdates.PAGE_SIZE
+    }
+
     private fun getUpdatesItemPreferenceFlow(): Flow<ItemPreferences> {
         return combine(
             updatesPreferences.filterDownloaded().changes(),
@@ -532,6 +553,8 @@ class UpdatesScreenModel(
         val dialog: Dialog? = null,
         val filter: UpdatesFilter = UpdatesFilter.ALL,
         val groupByNovel: Boolean = false,
+        val hasMorePages: Boolean = true,
+        val isLoadingMore: Boolean = false,
     ) {
         val selected = items.filter { it.selected }
         val selectionMode = selected.isNotEmpty()
@@ -578,6 +601,8 @@ class UpdatesScreenModel(
         mutableState.update {
             it.copy(items = latestUpdates.toUpdateItems().toPersistentList())
         }
+        // Reset pagination when filter changes
+        currentLimit.value = GetUpdates.PAGE_SIZE
     }
 
     sealed interface Dialog {
