@@ -448,15 +448,8 @@ class LibraryScreenModel(
         trackMap: Map<Long, List<Track>>,
         loggedInTrackerIds: Set<Long>,
     ): Map<Category, List</* LibraryItem */ Long>> {
-        val lowercaseTitles = HashMap<Long, String>(favoritesById.size * 2)
-        for ((id, item) in favoritesById) {
-            lowercaseTitles[id] = item.libraryManga.manga.title.lowercase()
-        }
-
         val sortAlphabetically: (LibraryItem, LibraryItem) -> Int = { manga1, manga2 ->
-            val title1 = lowercaseTitles[manga1.id] ?: manga1.libraryManga.manga.title.lowercase()
-            val title2 = lowercaseTitles[manga2.id] ?: manga2.libraryManga.manga.title.lowercase()
-            title1.compareToWithCollator(title2)
+            manga1.libraryManga.manga.title.compareToWithCollator(manga2.libraryManga.manga.title)
         }
 
         val defaultTrackerScoreSortValue = -1.0

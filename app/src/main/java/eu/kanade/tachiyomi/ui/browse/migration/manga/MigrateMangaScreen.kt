@@ -147,7 +147,8 @@ data class MigrateMangaScreen(
         when (val dialog = state.dialog) {
             is MigrateMangaScreenModel.Dialog.QuickMigrateSourcePicker -> {
                 QuickMigrateSourcePickerDialog(
-                    sources = screenModel.availableSources,
+                    defaultIsNovel = screenModel.isSourceNovel,
+                    getSources = { screenModel.getAvailableSources(it) },
                     onSourceSelected = { screenModel.checkQuickMigrate(it) },
                     onDismissRequest = { screenModel.dismissDialog() },
                 )

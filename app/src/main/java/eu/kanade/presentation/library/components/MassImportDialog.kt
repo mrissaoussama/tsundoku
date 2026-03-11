@@ -139,17 +139,6 @@ fun MassImportDialog(
         },
     )
 
-    // Merge initialText into pendingUrls when dialog opens
-    LaunchedEffect(initialText) {
-        if (initialText.isNotBlank()) {
-            pendingUrls = if (pendingUrls.isBlank()) {
-                initialText
-            } else {
-                "$pendingUrls\n$initialText"
-            }
-        }
-    }
-
     var selectedCategoryId by remember { mutableStateOf<Long?>(null) }
     var categoryDropdownExpanded by remember { mutableStateOf(false) }
     var fetchDetails by remember { mutableStateOf(true) }

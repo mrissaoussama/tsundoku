@@ -57,9 +57,9 @@ class JsPluginManager(
 
     private val cacheDir: File = File(context.cacheDir, "lnreader_plugins_cache")
 
-    // Persistent icon cache inside the lnreader_plugins directory
+    // Persistent icon cache — stored in filesDir so Android won't purge it (cacheDir is ephemeral)
     private val iconsCacheDir: File
-        get() = File(cacheDir, "icons").apply { mkdirs() }
+        get() = File(context.filesDir, "lnreader_icons_cache").apply { mkdirs() }
 
     // State
     private val _repositories = MutableStateFlow<List<JsPluginRepository>>(emptyList())

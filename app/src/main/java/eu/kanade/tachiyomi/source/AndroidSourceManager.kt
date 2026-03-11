@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -108,6 +109,13 @@ class AndroidSourceManager(
                     "AndroidSourceManager: collectLatest() updating sourcesMapFlow with ${sources.size} sources"
                 }
                 sourcesMapFlow.value = sources
+                // Wait for extension manager to finish loading before marking initialized.
+                // Without this, the first combine emission (empty extensions) would set
+                // isInitialized=true, causing consumers like ReaderViewModel to get StubSources
+                // when restoring after process death.
+                if (!_isInitialized.value) {
+                    extensionManager.isInitialized.first { it }
+                }
                 _isInitialized.value = true
             }
         }

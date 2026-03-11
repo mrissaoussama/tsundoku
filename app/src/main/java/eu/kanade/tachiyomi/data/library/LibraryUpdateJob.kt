@@ -85,6 +85,8 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.random.Random
 
+private const val MEMORY_PRESSURE_THRESHOLD = 0.85
+
 @OptIn(ExperimentalAtomicApi::class)
 class LibraryUpdateJob(private val context: Context, workerParams: WorkerParameters) :
     CoroutineWorker(context, workerParams) {
@@ -357,6 +359,9 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                                 val manga = libraryManga.manga
                                 ensureActive()
 
+                                // Check memory pressure before each manga update
+                                checkMemoryPressure()
+
                                 // Apply an additional delay of 3-8 minutes every 5 sources
                                 if ((index + 1) % 5 == 0 && updateStagger) {
                                     // Randomly select minutes, convert to ms
@@ -509,6 +514,21 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
             completed.load(),
             mangaToUpdate.size,
         )
+    }
+
+    /**
+     * Wait if memory usage exceeds the threshold to let GC reclaim before continuing.
+     * This prevents OOM when updating many sources concurrently.
+     */
+    private suspend fun checkMemoryPressure() {
+        val runtime = Runtime.getRuntime()
+        val maxMem = runtime.maxMemory()
+        val usedMem = runtime.totalMemory() - runtime.freeMemory()
+        if (usedMem.toDouble() / maxMem > MEMORY_PRESSURE_THRESHOLD) {
+            logcat(LogPriority.WARN) { "LibraryUpdate: Memory pressure ${usedMem / 1024 / 1024}MB / ${maxMem / 1024 / 1024}MB, pausing..." }
+            System.gc()
+            delay(2000)
+        }
     }
 
     /**

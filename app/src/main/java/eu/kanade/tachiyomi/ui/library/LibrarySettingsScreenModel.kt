@@ -313,6 +313,12 @@ class LibrarySettingsScreenModel(
                         } else {
                             genres.forEach { tag ->
                                 val normalizedTag = tag.trim()
+                                    .split(" ")
+                                    .joinToString(" ") { word ->
+                                        word.lowercase().replaceFirstChar { c ->
+                                            if (c.isLowerCase()) c.titlecase() else c.toString()
+                                        }
+                                    }
                                 if (normalizedTag.isNotBlank()) {
                                     tagCounts[normalizedTag] = (tagCounts[normalizedTag] ?: 0) + 1
                                 }

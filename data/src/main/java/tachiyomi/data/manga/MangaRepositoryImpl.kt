@@ -1672,9 +1672,15 @@ class MangaRepositoryImpl(
             handler.await(inTransaction = true) {
                 favoriteGenres.forEach { (mangaId, genres) ->
                     if (!genres.isNullOrEmpty()) {
+                        // Flatten: re-split each tag on common separators that sources may use
+                        // (e.g. "Action,Adventure" or "Action; Adventure" stored as one tag)
+                        val flattened = genres.flatMap { tag ->
+                            tag.split(",", ";").map { it.trim() }
+                        }
+
                         // Normalize: trim, title-case, remove duplicates (keeping first occurrence)
                         val seen = mutableSetOf<String>()
-                        val normalized = genres
+                        val normalized = flattened
                             .map { tag ->
                                 // Trim whitespace and title-case each word
                                 tag.trim()

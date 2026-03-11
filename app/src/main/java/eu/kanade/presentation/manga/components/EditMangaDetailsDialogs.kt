@@ -45,11 +45,13 @@ fun EditTitleDialog(
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 80.dp, max = 200.dp),
                     label = { Text("Title") },
-                    singleLine = true,
+                    maxLines = 5,
                     keyboardOptions = KeyboardOptions(
-                        imeAction = ImeAction.Done,
+                        imeAction = ImeAction.Default,
                     ),
                 )
                 Text(
@@ -160,11 +162,13 @@ fun EditUrlDialog(
                 OutlinedTextField(
                     value = url,
                     onValueChange = { url = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 80.dp, max = 200.dp),
                     label = { Text("URL") },
-                    singleLine = true,
+                    maxLines = 5,
                     keyboardOptions = KeyboardOptions(
-                        imeAction = ImeAction.Done,
+                        imeAction = ImeAction.Default,
                         keyboardType = KeyboardType.Uri,
                     ),
                 )

@@ -57,6 +57,7 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.novel.TDMR
+import tachiyomi.domain.storage.service.StorageManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.File
@@ -64,6 +65,8 @@ import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
+
+private const val MEMORY_PRESSURE_THRESHOLD = 0.85
 
 class MassImportJob(private val context: Context, workerParams: WorkerParameters) :
     CoroutineWorker(context, workerParams) {
@@ -98,6 +101,28 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         val fetchChapters = inputData.getBoolean(KEY_FETCH_CHAPTERS, false)
         val batchId = inputData.getString(KEY_BATCH_ID) ?: ""
 
+        // Save queue as a simple text file to the user's app storage directory
+        // Format: first line = category ID, rest are URLs
+        val recoveryFile = try {
+            val storageManager: StorageManager = Injekt.get()
+            val dir = storageManager.getMassImportDirectory()
+            val fileName = "queue_${batchId.ifEmpty { System.currentTimeMillis().toString() }}.txt"
+            dir?.findFile(fileName)?.delete()
+            dir?.createFile(fileName)?.also { file ->
+                file.openOutputStream().bufferedWriter().use { writer ->
+                    writer.write(categoryId.toString())
+                    writer.newLine()
+                    urls.forEach { url ->
+                        writer.write(url)
+                        writer.newLine()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logcat(LogPriority.WARN, e) { "Failed to write recovery queue file" }
+            null
+        }
+
         setForegroundSafely()
 
         return withIOContext {
@@ -114,6 +139,8 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             } finally {
                 context.cancelNotification(Notifications.ID_MASS_IMPORT_PROGRESS)
                 inputData.getString(KEY_URLS_FILE)?.let { path -> runCatching { File(path).delete() } }
+                // Clear recovery queue file on completion
+                runCatching { recoveryFile?.delete() }
             }
         }
     }
@@ -231,6 +258,9 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
 
                         // Acquire permit - this ensures only one request per source processes at a time
                         sourceSemaphore.withPermit {
+                            // Check memory pressure before processing
+                            waitForMemoryPressure()
+
                             // Process the request while holding the permit
                             activeImports[url] = true
                             updateNotification(
@@ -289,7 +319,9 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                             }
                         }
                     } else {
-                        // No throttling - process normally
+                        // No throttling - process normally, but still check memory
+                        waitForMemoryPressure()
+
                         activeImports[url] = true
                         updateNotification(
                             completedCount.get(),
@@ -609,6 +641,21 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         return sourceManager.getCatalogueSources()
             .filter { it is HttpSource || it is JsSource }
             .filter { it.isNovelSource() }
+    }
+
+    /**
+     * Wait if memory usage exceeds the threshold to let GC reclaim before continuing.
+     * This prevents OOM when doing many concurrent HTTP requests + Jsoup parsing.
+     */
+    private suspend fun waitForMemoryPressure() {
+        val runtime = Runtime.getRuntime()
+        val maxMem = runtime.maxMemory()
+        val usedMem = runtime.totalMemory() - runtime.freeMemory()
+        if (usedMem.toDouble() / maxMem > MEMORY_PRESSURE_THRESHOLD) {
+            logcat(LogPriority.WARN) { "MassImport: Memory pressure ${usedMem / 1024 / 1024}MB / ${maxMem / 1024 / 1024}MB, pausing..." }
+            System.gc()
+            delay(2000)
+        }
     }
 
     /**

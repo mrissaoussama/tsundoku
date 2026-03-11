@@ -82,6 +82,10 @@ class StorageManager(
     fun getTranslationsDirectory(): UniFile? {
         return baseDir?.createDirectory(TRANSLATIONS_PATH)
     }
+
+    fun getMassImportDirectory(): UniFile? {
+        return baseDir?.createDirectory(MASS_IMPORT_PATH)
+    }
 }
 
 private const val AUTOMATIC_BACKUPS_PATH = "autobackup"
@@ -91,3 +95,4 @@ private const val LOCAL_NOVEL_SOURCE_PATH = "localnovels"
 private const val LNREADER_PLUGINS_PATH = "lnreader_plugins"
 private const val FONTS_PATH = "fonts"
 private const val TRANSLATIONS_PATH = "translations"
+private const val MASS_IMPORT_PATH = "mass_import"

@@ -41,13 +41,14 @@ class MigrateMangaScreenModel(
     private val _events: Channel<MigrationMangaEvent> = Channel()
     val events: Flow<MigrationMangaEvent> = _events.receiveAsFlow()
 
-    val availableSources: List<CatalogueSource>
-        get() {
-            val isSourceNovel = sourceManager.get(sourceId)?.isNovelSource() == true
-            return sourceManager.getCatalogueSources()
-                .filter { it.id != sourceId && it.isNovelSource() == isSourceNovel }
-                .sortedBy { it.name }
-        }
+    val isSourceNovel: Boolean
+        get() = sourceManager.get(sourceId)?.isNovelSource() == true
+
+    fun getAvailableSources(filterNovel: Boolean): List<CatalogueSource> {
+        return sourceManager.getCatalogueSources()
+            .filter { it.id != sourceId && it.isNovelSource() == filterNovel }
+            .sortedBy { it.name }
+    }
 
     init {
         screenModelScope.launch {
