@@ -11,6 +11,25 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - `Other` - for technical stuff.
 
 ## [Unreleased]
+### Improved
+- Optimized Novel Delay Sliders and expanded ranges [@Rojikku](https://github.com/Rojikku) [5e220d2](https://github.com/tsundoku-otaku/tsundoku/commit/5e220d284ed5e71d5c422c1577cfcb0c26c47ff3)
+- Database Maintenance can happen in background as WorkerManager job [@mrissaoussamau](https://github.com/mrissaoussama) [#32](https://github.com/tsundoku-otaku/tsundoku/pull/32)
+- Library clear/clean operations can happen in background as WorkerManager job [@mrissaoussamau](https://github.com/mrissaoussama) [#33](https://github.com/tsundoku-otaku/tsundoku/pull/33)
+- Added pagination to updates screen (Allows dynamic loading of update history) [@mrissaoussamau](https://github.com/mrissaoussama) [#35](https://github.com/tsundoku-otaku/tsundoku/pull/35)
+- Added Gemini to translation options [@mrissaoussamau](https://github.com/mrissaoussama) [#38](https://github.com/tsundoku-otaku/tsundoku/pull/38)
+
+### Changed
+- Corrected release logo color to match scheme with other releases (Lighter color) [@Rojikku](https://github.com/Rojikku) [e3fa1dc](https://github.com/tsundoku-otaku/tsundoku/commit/9eb8e1f0a23c9e3be986dbc657814c5ede4e56a2)
+
+### Fixed
+- Added safeguards to prevent Out of Memory issues with library exportation [@mrissaoussamau](https://github.com/mrissaoussama) [#36](https://github.com/tsundoku-otaku/tsundoku/pull/36)
+- Browse source paging isolation and filter preset icons [@mrissaoussamau](https://github.com/mrissaoussama) [#37](https://github.com/tsundoku-otaku/tsundoku/pull/37)
+- Switching chapters restores novel scroll position [@mrissaoussamau](https://github.com/mrissaoussama) [#39](https://github.com/tsundoku-otaku/tsundoku/pull/39)
+- Added Out of Memory safeguards to importer, storage handling fix, and "various fixes" [@mrissaoussamau](https://github.com/mrissaoussama) [#40](https://github.com/tsundoku-otaku/tsundoku/pull/40)
+
+### Other
+- Merged Mihon [f6b2684](https://github.com/mihonapp/mihon/commit/f6b2684323569ef0eb23e143cc5d65d7cc1aae3c) [@Rojikku](https://github.com/Rojikku)
+- Batch track queries in stats screen to fix N+1 [@mrissaoussamau](https://github.com/mrissaoussama) [#34](https://github.com/tsundoku-otaku/tsundoku/pull/34)
 
 
 ## [v0.1.0] - 2026-03-06
@@ -42,8 +61,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 This project was originally forked from Mihon, and, while we keep separate version numbers, we would like to note in our changelog when we merge from upstream, and link to their changelog to try to give appropriate credit.
 This project is greatly advantaged by building off all of their work, and their continued contributions!
 
+Merged from v0.19.4 [f6b2684](https://github.com/mihonapp/mihon/commit/f6b2684323569ef0eb23e143cc5d65d7cc1aae3c)
 Merged from v0.19.4 [81871a3](https://github.com/mihonapp/mihon/commit/81871a34694c8e408d907731292b7266c5b993cc)  
-Merged from v0.19.3 [89bbdb1](https://github.com/mihonapp/mihon/commit/89bbdb17fb4ed1cbe99c14f389940e0f91093a10)  
 Forked from Mihon v0.19.3 [7161bc2](https://github.com/mihonapp/mihon/commit/7161bc2e825bdfd66a1829f7dce42bd0570b1008)
 
-[mihon]: https://github.com/mihonapp/mihon/blob/81871a34694c8e408d907731292b7266c5b993cc/CHANGELOG.md
+[mihon]: https://github.com/mihonapp/mihon/blob/f6b2684323569ef0eb23e143cc5d65d7cc1aae3c/CHANGELOG.md
