@@ -41,16 +41,16 @@ class ChapterLoader(
      * Assigns the chapter's page loader and loads the its pages. Returns immediately if the chapter
      * is already loaded.
      */
-    suspend fun loadChapter(chapter: ReaderChapter) {
-        if (chapterIsReady(chapter)) {
+    suspend fun loadChapter(chapter: ReaderChapter, forceFromSource: Boolean = false) {
+        if (!forceFromSource && chapterIsReady(chapter)) {
             return
         }
 
         chapter.state = ReaderChapter.State.Loading
         withIOContext {
-            logcat { "Loading pages for ${chapter.chapter.name}" }
+            logcat { "Loading pages for ${chapter.chapter.name}${if (forceFromSource) " (from source)" else ""}" }
             try {
-                val loader = getPageLoader(chapter)
+                val loader = getPageLoader(chapter, forceFromSource)
                 chapter.pageLoader = loader
 
                 val pages = loader.getPages()
@@ -84,9 +84,9 @@ class ChapterLoader(
     /**
      * Returns the page loader to use for this [chapter].
      */
-    private suspend fun getPageLoader(chapter: ReaderChapter): PageLoader {
+    private suspend fun getPageLoader(chapter: ReaderChapter, forceFromSource: Boolean = false): PageLoader {
         val dbChapter = chapter.chapter
-        val isDownloaded = downloadManager.isChapterDownloaded(
+        val isDownloaded = !forceFromSource && downloadManager.isChapterDownloaded(
             dbChapter.name,
             dbChapter.scanlator,
             dbChapter.url,

@@ -261,6 +261,9 @@ class ReaderPreferences(
     // Auto-load next chapter at percentage (legacy 0 may exist; treated as default)
     fun novelAutoLoadNextChapterAt() = preferenceStore.getInt("pref_novel_auto_load_next_at", 95)
 
+    // Mark chapter as read when progress reaches this percentage
+    fun novelMarkAsReadThreshold() = preferenceStore.getInt("pref_novel_mark_read_threshold", 95)
+
     // Show raw HTML (display HTML tags without parsing) - useful for debugging
     fun novelShowRawHtml() = preferenceStore.getBoolean("pref_novel_show_raw_html", false)
 

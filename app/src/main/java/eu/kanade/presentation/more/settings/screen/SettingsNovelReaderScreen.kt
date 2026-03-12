@@ -280,6 +280,7 @@ object SettingsNovelReaderScreen : SearchableSettings {
     @Composable
     private fun getContentGroup(readerPreferences: ReaderPreferences): Preference.PreferenceGroup {
         val autoLoadNextAt = readerPreferences.novelAutoLoadNextChapterAt().collectAsState().value
+        val markAsReadThreshold = readerPreferences.novelMarkAsReadThreshold().collectAsState().value
 
         return Preference.PreferenceGroup(
             title = "Content",
@@ -295,6 +296,13 @@ object SettingsNovelReaderScreen : SearchableSettings {
                     title = "Auto-load next chapter at",
                     valueString = "$autoLoadNextAt%",
                     onValueChanged = { readerPreferences.novelAutoLoadNextChapterAt().set(it) },
+                ),
+                Preference.PreferenceItem.SliderPreference(
+                    value = markAsReadThreshold,
+                    valueRange = 50..100,
+                    title = "Mark chapter as read at",
+                    valueString = "$markAsReadThreshold%",
+                    onValueChanged = { readerPreferences.novelMarkAsReadThreshold().set(it) },
                 ),
                 Preference.PreferenceItem.SwitchPreference(
                     preference = readerPreferences.novelHideChapterTitle(),
