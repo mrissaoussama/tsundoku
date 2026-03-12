@@ -15,12 +15,14 @@ class UpdatesRepositoryImpl(
         read: Boolean,
         after: Long,
         limit: Long,
+        offset: Long,
     ): List<UpdatesWithRelations> {
         return databaseHandler.awaitList {
             updatesQueries.getUpdatesByReadStatus(
                 read = read,
                 after = after,
                 limit = limit,
+                offset = offset,
                 mapper = ::mapUpdatesWithRelations,
             )
         }
@@ -29,6 +31,7 @@ class UpdatesRepositoryImpl(
     override fun subscribeAll(
         after: Long,
         limit: Long,
+        offset: Long,
         unread: Boolean?,
         started: Boolean?,
         bookmarked: Boolean?,
@@ -38,6 +41,7 @@ class UpdatesRepositoryImpl(
             updatesQueries.getRecentUpdates(
                 after = after,
                 limit = limit,
+                offset = offset,
                 filterUnread = unread,
                 filterStarted = started,
                 filterBookmarked = bookmarked,
@@ -51,12 +55,14 @@ class UpdatesRepositoryImpl(
         read: Boolean,
         after: Long,
         limit: Long,
+        offset: Long,
     ): Flow<List<UpdatesWithRelations>> {
         return databaseHandler.subscribeToList {
             updatesQueries.getUpdatesByReadStatus(
                 read = read,
                 after = after,
                 limit = limit,
+                offset = offset,
                 mapper = ::mapUpdatesWithRelations,
             )
         }

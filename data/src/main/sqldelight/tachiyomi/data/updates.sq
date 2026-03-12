@@ -36,7 +36,8 @@ AND (:filterStarted IS NULL OR (CASE WHEN :filterStarted THEN C.last_page_read >
 AND (:filterBookmarked IS NULL OR C.bookmark = :filterBookmarked)
 AND (:hideExcludedScanlators = 0 OR ES.scanlator IS NULL)
 ORDER BY C.date_fetch DESC
-LIMIT :limit;
+LIMIT :limit
+OFFSET :offset;
 
 getUpdatesByReadStatus:
 SELECT
@@ -64,4 +65,5 @@ AND C.date_upload > :after
 AND M.favorite = 1
 AND C.date_fetch > M.date_added
 ORDER BY C.date_fetch DESC
-LIMIT :limit;
+LIMIT :limit
+OFFSET :offset;
