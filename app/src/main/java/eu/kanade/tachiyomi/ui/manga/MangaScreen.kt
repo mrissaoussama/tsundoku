@@ -192,6 +192,8 @@ class MangaScreen(
             onTranslateClicked = screenModel::translateMangaDetails,
             onTranslateDownloadedClicked = screenModel::translateDownloadedChapters,
             onExportEpubClicked = screenModel::showExportEpubDialog.takeIf { successState.isNovel },
+            showSourceName = successState.showSourceName,
+            onToggleSourceNameVisibility = screenModel::toggleSourceNameVisibility,
             onMultiBookmarkClicked = screenModel::bookmarkChapters,
             onMultiMarkAsReadClicked = screenModel::markChaptersRead,
             onMarkPreviousAsReadClicked = screenModel::markPreviousChapterRead,

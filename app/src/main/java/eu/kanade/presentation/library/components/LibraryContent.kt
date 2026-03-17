@@ -4,8 +4,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,6 +35,7 @@ fun LibraryContent(
     contentPadding: PaddingValues,
     currentPage: Int,
     hasActiveFilters: Boolean,
+    isQueryRunning: Boolean,
     showPageTabs: Boolean,
     onChangeCurrentPage: (Int) -> Unit,
     onClickManga: (Long) -> Unit,
@@ -114,6 +117,12 @@ fun LibraryContent(
                 onClickContinueReading = onContinueReadingClicked,
                 titleMaxLines = titleMaxLines,
                 showUrlInList = showUrlInList,
+            )
+        }
+
+        if (isQueryRunning && selection.isEmpty()) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
             )
         }
 

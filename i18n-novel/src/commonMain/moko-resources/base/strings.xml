@@ -668,4 +668,10 @@
     <string name="db_maintenance_failed">Maintenance failed: %s</string>
     <string name="db_maintenance_already_running">Database maintenance is already running</string>
     <string name="db_maintenance_started">Database maintenance started &#8212; check notifications for progress</string>
+
+    <string name="action_sort_source_name">Source name</string>
+    <string name="pref_show_manga_source_name">Show source name in manga details</string>
+    <string name="pref_show_manga_source_name_summary">Display source name under status on manga details screen</string>
+    <string name="action_hide_source_name">Hide source name</string>
+    <string name="action_show_source_name">Show source name</string>
 </resources>

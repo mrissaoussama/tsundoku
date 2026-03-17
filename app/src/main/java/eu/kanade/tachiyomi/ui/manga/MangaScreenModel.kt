@@ -266,6 +266,7 @@ class MangaScreenModel(
                     dialog = null,
                     hideMissingChapters = libraryPreferences.hideMissingChapters().get(),
                     isNovel = manga.isNovel,
+                    showSourceName = libraryPreferences.showMangaSourceName().get(),
                 )
             }
 
@@ -289,6 +290,12 @@ class MangaScreenModel(
                 val categories = getCategories.await(manga.id)
                 updateSuccessState { it.copy(categories = categories) }
             }
+        }
+    }
+
+    fun toggleSourceNameVisibility() {
+        updateSuccessState {
+            it.copy(showSourceName = !it.showSourceName)
         }
     }
 
@@ -1599,6 +1606,7 @@ class MangaScreenModel(
             val isNovel: Boolean = false,
             val similarNovels: List<MangaWithChapterCount> = emptyList(),
             val categories: List<Category> = emptyList(),
+            val showSourceName: Boolean = true,
         ) : State {
             val processedChapters by lazy {
                 chapters.applyFilters(manga).toList()

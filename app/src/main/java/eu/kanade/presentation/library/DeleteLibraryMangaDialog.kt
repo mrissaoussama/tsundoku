@@ -37,14 +37,15 @@ fun DeleteLibraryMangaDialog(
     var clearDescriptions by remember { mutableStateOf(false) }
     var clearTags by remember { mutableStateOf(false) }
 
-    // Cascading: "remove from library" auto-checks clear operations (but not downloads/translations)
+    // Keep destructive clear options disabled when removing from library.
+    // They are redundant because removing from library already clears associated data.
     fun onRemoveFromLibraryChanged(checked: Boolean) {
         removeFromLibrary = checked
         if (checked) {
-            clearChaptersFromDb = true
-            clearCovers = true
-            clearDescriptions = true
-            clearTags = true
+            clearChaptersFromDb = false
+            clearCovers = false
+            clearDescriptions = false
+            clearTags = false
         }
     }
 

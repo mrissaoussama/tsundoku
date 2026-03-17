@@ -247,6 +247,8 @@ class LibraryPreferences(
 
     fun hideMissingChapters() = preferenceStore.getBoolean("pref_hide_missing_chapter_indicators", false)
 
+    fun showMangaSourceName() = preferenceStore.getBoolean("pref_show_manga_source_name", true)
+
     /**
      * Whether the library should auto-refresh when database changes occur.
      */

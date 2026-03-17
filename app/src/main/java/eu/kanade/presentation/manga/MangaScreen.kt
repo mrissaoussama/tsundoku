@@ -128,6 +128,8 @@ fun MangaScreen(
     onTranslateClicked: (() -> Unit)? = null,
     onTranslateDownloadedClicked: (() -> Unit)? = null,
     onExportEpubClicked: (() -> Unit)? = null,
+    showSourceName: Boolean = true,
+    onToggleSourceNameVisibility: (() -> Unit)? = null,
 
     // For bottom action menu
     onMultiBookmarkClicked: (List<Chapter>, bookmarked: Boolean) -> Unit,
@@ -191,6 +193,8 @@ fun MangaScreen(
             onTranslateClicked = onTranslateClicked,
             onTranslateDownloadedClicked = onTranslateDownloadedClicked,
             onExportEpubClicked = onExportEpubClicked,
+            showSourceName = showSourceName,
+            onToggleSourceNameVisibility = onToggleSourceNameVisibility,
             onMultiBookmarkClicked = onMultiBookmarkClicked,
             onMultiMarkAsReadClicked = onMultiMarkAsReadClicked,
             onMarkPreviousAsReadClicked = onMarkPreviousAsReadClicked,
@@ -241,6 +245,8 @@ fun MangaScreen(
             onTranslateClicked = onTranslateClicked,
             onTranslateDownloadedClicked = onTranslateDownloadedClicked,
             onExportEpubClicked = onExportEpubClicked,
+            showSourceName = showSourceName,
+            onToggleSourceNameVisibility = onToggleSourceNameVisibility,
             onMultiBookmarkClicked = onMultiBookmarkClicked,
             onMultiMarkAsReadClicked = onMultiMarkAsReadClicked,
             onMarkPreviousAsReadClicked = onMarkPreviousAsReadClicked,
@@ -301,6 +307,8 @@ private fun MangaScreenSmallImpl(
     onTranslateClicked: (() -> Unit)?,
     onTranslateDownloadedClicked: (() -> Unit)?,
     onExportEpubClicked: (() -> Unit)?,
+    showSourceName: Boolean,
+    onToggleSourceNameVisibility: (() -> Unit)?,
 
     // For bottom action menu
     onMultiBookmarkClicked: (List<Chapter>, bookmarked: Boolean) -> Unit,
@@ -375,6 +383,8 @@ private fun MangaScreenSmallImpl(
                 onClickTranslate = onTranslateClicked,
                 onClickTranslateDownloaded = onTranslateDownloadedClicked,
                 onClickExportEpub = onExportEpubClicked,
+                showSourceName = showSourceName,
+                onToggleSourceNameVisibility = onToggleSourceNameVisibility,
                 onClickScrollToTop = {
                     scrollScope.launch { chapterListState.animateScrollToItem(0) }
                 },
@@ -487,7 +497,7 @@ private fun MangaScreenSmallImpl(
                             isTabletUi = false,
                             appBarPadding = topPadding,
                             manga = state.manga,
-                            sourceName = remember { state.source.getNameForMangaInfo() },
+                            sourceName = if (showSourceName) remember { state.source.getNameForMangaInfo() } else "",
                             isStubSource = remember { state.source is StubSource },
                             categories = state.categories,
                             onCoverClick = onCoverClicked,
@@ -616,6 +626,8 @@ fun MangaScreenLargeImpl(
     onTranslateClicked: (() -> Unit)?,
     onTranslateDownloadedClicked: (() -> Unit)?,
     onExportEpubClicked: (() -> Unit)?,
+    showSourceName: Boolean,
+    onToggleSourceNameVisibility: (() -> Unit)?,
 
     // For bottom action menu
     onMultiBookmarkClicked: (List<Chapter>, bookmarked: Boolean) -> Unit,
@@ -683,6 +695,8 @@ fun MangaScreenLargeImpl(
                 onClickTranslate = onTranslateClicked,
                 onClickTranslateDownloaded = onTranslateDownloadedClicked,
                 onClickExportEpub = onExportEpubClicked,
+                showSourceName = showSourceName,
+                onToggleSourceNameVisibility = onToggleSourceNameVisibility,
                 onClickScrollToTop = {
                     scrollScope.launch { chapterListState.animateScrollToItem(0) }
                 },
@@ -796,7 +810,7 @@ fun MangaScreenLargeImpl(
                             isTabletUi = true,
                             appBarPadding = contentPadding.calculateTopPadding(),
                             manga = state.manga,
-                            sourceName = remember { state.source.getNameForMangaInfo() },
+                            sourceName = if (showSourceName) remember { state.source.getNameForMangaInfo() } else "",
                             isStubSource = remember { state.source is StubSource },
                             categories = state.categories,
                             onCoverClick = onCoverClicked,

@@ -100,6 +100,10 @@ class UpdatesScreenModel(
     State(groupByNovel = Injekt.get<LibraryPreferences>().updatesGroupByNovel().get()),
 ) {
 
+    companion object {
+        private const val GROUPED_NOVEL_TARGET = 30
+    }
+
     @Volatile
     private var latestUpdates: List<UpdatesWithRelations> = emptyList()
 
@@ -163,6 +167,17 @@ class UpdatesScreenModel(
                     _events.send(Event.InternalError)
                 }
                 .collectLatest { (updateItems, hasMore) ->
+                    val shouldPrefetchForGroupedView =
+                        state.value.groupByNovel &&
+                            hasMore &&
+                            updateItems.groupBy { it.update.mangaId }.size < GROUPED_NOVEL_TARGET
+
+                    if (shouldPrefetchForGroupedView) {
+                        mutableState.update { it.copy(isLoadingMore = true) }
+                        currentLimit.value += GetUpdates.PAGE_SIZE
+                        return@collectLatest
+                    }
+
                     mutableState.update {
                         it.copy(
                             isLoading = false,

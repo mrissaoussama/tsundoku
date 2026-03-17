@@ -225,6 +225,11 @@ class LibraryScreenModel(
                 .dropWhile { !it.libraryData.isInitialized }
                 .map { it.libraryData }
                 .distinctUntilChanged()
+                .onEach {
+                    mutableState.update { state ->
+                        if (state.isLoading) state else state.copy(isQueryRunning = true)
+                    }
+                }
                 .map { data ->
                     val favoritesById = HashMap<Long, LibraryItem>(data.favorites.size * 2)
                     for (item in data.favorites) {
@@ -238,6 +243,7 @@ class LibraryScreenModel(
                     mutableState.update { state ->
                         state.copy(
                             isLoading = false,
+                            isQueryRunning = false,
                             groupedFavorites = it,
                         )
                     }
@@ -454,6 +460,7 @@ class LibraryScreenModel(
         }
 
         val defaultTrackerScoreSortValue = -1.0
+        val sourceNameCache by lazy { HashMap<Long, String>() }
         val trackerScores by lazy {
             val trackerMap = trackerManager.getAll(loggedInTrackerIds).associateBy { e -> e.id }
             trackMap.mapValues { entry ->
@@ -504,6 +511,15 @@ class LibraryScreenModel(
                     val item1Score = trackerScores[manga1.id] ?: defaultTrackerScoreSortValue
                     val item2Score = trackerScores[manga2.id] ?: defaultTrackerScoreSortValue
                     item1Score.compareTo(item2Score)
+                }
+                LibrarySort.Type.SourceName -> {
+                    val sourceName1 = sourceNameCache.getOrPut(manga1.libraryManga.manga.source) {
+                        sourceManager.getOrStub(manga1.libraryManga.manga.source).name
+                    }
+                    val sourceName2 = sourceNameCache.getOrPut(manga2.libraryManga.manga.source) {
+                        sourceManager.getOrStub(manga2.libraryManga.manga.source).name
+                    }
+                    sourceName1.compareToWithCollator(sourceName2)
                 }
                 LibrarySort.Type.Random -> {
                     error("Why Are We Still Here? Just To Suffer?")
@@ -620,14 +636,15 @@ class LibraryScreenModel(
                     LibraryType.Novel -> if (!manga.manga.isNovel) continue
                 }
 
+                val dlCount = downloadManager.getDownloadCount(manga.manga).toLong()
+
                 val cached = itemCache[manga.id]
                 val cachedRef = itemCacheMangaRef[manga.id]
-                if (cached != null && cachedRef === manga) {
+                if (cached != null && cachedRef === manga && cached.downloadCount == dlCount) {
                     result.add(cached)
                     continue
                 }
 
-                val dlCount = downloadManager.getDownloadCount(manga.manga).toLong()
                 val item = LibraryItem(
                     libraryManga = manga,
                     downloadCount = dlCount,
@@ -872,16 +889,18 @@ class LibraryScreenModel(
             }
 
             // Delegate clear operations to LibraryClearJob (runs as background WorkManager job)
-            val mangaIds = mangas.map { it.id }
-            val context = Injekt.get<android.app.Application>()
-            if (clearCovers) {
-                LibraryClearJob.start(context, mangaIds, LibraryClearJob.OP_CLEAR_COVERS)
-            }
-            if (clearDescriptions) {
-                LibraryClearJob.start(context, mangaIds, LibraryClearJob.OP_CLEAR_DESCRIPTIONS)
-            }
-            if (clearTags) {
-                LibraryClearJob.start(context, mangaIds, LibraryClearJob.OP_CLEAR_TAGS)
+            if (!deleteFromLibrary) {
+                val mangaIds = mangas.map { it.id }
+                val context = Injekt.get<android.app.Application>()
+                if (clearCovers) {
+                    LibraryClearJob.start(context, mangaIds, LibraryClearJob.OP_CLEAR_COVERS)
+                }
+                if (clearDescriptions) {
+                    LibraryClearJob.start(context, mangaIds, LibraryClearJob.OP_CLEAR_DESCRIPTIONS)
+                }
+                if (clearTags) {
+                    LibraryClearJob.start(context, mangaIds, LibraryClearJob.OP_CLEAR_TAGS)
+                }
             }
 
             // Refresh library UI after modifications
@@ -1108,12 +1127,12 @@ class LibraryScreenModel(
 
     fun commitSearch(query: String) {
         // Commit the search, triggering filtering
-        mutableState.update { it.copy(searchQuery = query.ifBlank { null }) }
+        mutableState.update { it.copy(searchQuery = query.ifBlank { null }, isQueryRunning = true) }
     }
 
     fun clearSearch() {
         // Clear both toolbar and committed search
-        mutableState.update { it.copy(toolbarQuery = null, searchQuery = null) }
+        mutableState.update { it.copy(toolbarQuery = null, searchQuery = null, isQueryRunning = true) }
     }
 
     fun updateActiveCategoryIndex(index: Int) {
@@ -1709,6 +1728,7 @@ class LibraryScreenModel(
     data class State(
         val isInitialized: Boolean = false,
         val isLoading: Boolean = true,
+        val isQueryRunning: Boolean = false,
         val toolbarQuery: String? = null, // What's shown in the search box
         val searchQuery: String? = null, // Committed search (triggers filtering)
         val selection: Set</* Manga */ Long> = setOf(),

@@ -131,7 +131,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
 
         libraryPreferences.lastUpdatedTimestamp().set(Instant.now().toEpochMilli())
 
-        val mangaIds = inputData.getLongArray(KEY_MANGA_IDS)
+        val mangaIds = loadMangaIds()
         forceFetchDetails = inputData.getBoolean(KEY_FETCH_DETAILS, false)
         skipChapterFetch = !inputData.getBoolean(KEY_FETCH_CHAPTERS, true)
         val ignoreSkip = inputData.getBoolean(KEY_IGNORE_SKIP, false)
@@ -589,6 +589,20 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
         return File("")
     }
 
+    private fun loadMangaIds(): LongArray? {
+        inputData.getLongArray(KEY_MANGA_IDS)?.let { return it }
+        val filePath = inputData.getString(KEY_IDS_FILE) ?: return null
+        return try {
+            val file = java.io.File(filePath)
+            val ids = file.readText().split(",").mapNotNull { it.trim().toLongOrNull() }.toLongArray()
+            file.delete()
+            ids
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Failed to read manga IDs from file: $filePath" }
+            null
+        }
+    }
+
     companion object {
         private const val TAG = "LibraryUpdate"
         private const val WORK_NAME_AUTO = "LibraryUpdate-auto"
@@ -607,6 +621,7 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
          * Keys for "Update Selected" mode — specific manga IDs with options.
          */
         private const val KEY_MANGA_IDS = "manga_ids"
+        private const val KEY_IDS_FILE = "ids_file"
         private const val KEY_FETCH_DETAILS = "fetch_details"
         private const val KEY_FETCH_CHAPTERS = "fetch_chapters"
         private const val KEY_IGNORE_SKIP = "ignore_skip"
@@ -677,17 +692,27 @@ class LibraryUpdateJob(private val context: Context, workerParams: WorkerParamet
                 return false
             }
 
-            val inputData = workDataOf(
-                KEY_CATEGORY to category?.id,
-                KEY_MANGA_IDS to mangaIds,
-                KEY_FETCH_DETAILS to fetchDetails,
-                KEY_FETCH_CHAPTERS to fetchChapters,
-                KEY_IGNORE_SKIP to ignoreSkipRecentlyUpdated,
-            )
+            val inputDataBuilder = androidx.work.Data.Builder().apply {
+                if (category != null) putLong(KEY_CATEGORY, category.id)
+                putBoolean(KEY_FETCH_DETAILS, fetchDetails)
+                putBoolean(KEY_FETCH_CHAPTERS, fetchChapters)
+                putBoolean(KEY_IGNORE_SKIP, ignoreSkipRecentlyUpdated)
+
+                if (mangaIds != null) {
+                    if (mangaIds.size <= 500) {
+                        putLongArray(KEY_MANGA_IDS, mangaIds)
+                    } else {
+                        val idsFile = java.io.File(context.cacheDir, "update_job_ids_${System.currentTimeMillis()}.txt")
+                        idsFile.writeText(mangaIds.joinToString(","))
+                        putString(KEY_IDS_FILE, idsFile.absolutePath)
+                    }
+                }
+            }
+
             val request = OneTimeWorkRequestBuilder<LibraryUpdateJob>()
                 .addTag(TAG)
                 .addTag(WORK_NAME_MANUAL)
-                .setInputData(inputData)
+                .setInputData(inputDataBuilder.build())
                 .build()
             wm.enqueueUniqueWork(WORK_NAME_MANUAL, ExistingWorkPolicy.KEEP, request)
 

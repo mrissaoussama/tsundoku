@@ -74,6 +74,7 @@ class DuplicateDetectionScreenModel(
         val selectedCategoryFilters: Set<Long> = emptySet(),
         val searchQuery: String = "",
         val excludedCategoryFilters: Set<Long> = emptySet(),
+        val filterByGroupCategory: Boolean = false,
         val sortMode: SortMode = SortMode.NAME,
         val mangaCategories: Map<Long, List<Category>> = emptyMap(),
         val showFullUrls: Boolean = false,
@@ -112,19 +113,36 @@ class DuplicateDetectionScreenModel(
                 val filtered = if (selectedCategoryFilters.isEmpty() && excludedCategoryFilters.isEmpty()) {
                     contentFiltered
                 } else {
-                    contentFiltered.mapValues { (_, novels) ->
-                        novels.filter { novel ->
-                            val novelCategories = mangaCategories[novel.manga.id] ?: emptyList()
-                            // Treat uncategorized manga as being in the default category (id=0)
-                            val categoryIds = novelCategories.map { it.id }.toSet()
-                                .ifEmpty { setOf(0L) }
-                            val passesInclude = selectedCategoryFilters.isEmpty() ||
-                                categoryIds.any { it in selectedCategoryFilters }
-                            val passesExclude = excludedCategoryFilters.isEmpty() ||
-                                categoryIds.none { it in excludedCategoryFilters }
-                            passesInclude && passesExclude
+                    if (filterByGroupCategory) {
+                        contentFiltered.filter { (_, novels) ->
+                            val groupMatches = novels.any { novel ->
+                                val novelCategories = mangaCategories[novel.manga.id] ?: emptyList()
+                                val categoryIds = novelCategories.map { it.id }.toSet().ifEmpty { setOf(0L) }
+                                val passesInclude = selectedCategoryFilters.isEmpty() || categoryIds.any { it in selectedCategoryFilters }
+                                passesInclude
+                            }
+                            val groupExcluded = excludedCategoryFilters.isNotEmpty() && novels.any { novel ->
+                                val novelCategories = mangaCategories[novel.manga.id] ?: emptyList()
+                                val categoryIds = novelCategories.map { it.id }.toSet().ifEmpty { setOf(0L) }
+                                categoryIds.any { it in excludedCategoryFilters }
+                            }
+                            groupMatches && !groupExcluded
                         }
-                    }.filter { it.value.size > 1 }
+                    } else {
+                        contentFiltered.mapValues { (_, novels) ->
+                            novels.filter { novel ->
+                                val novelCategories = mangaCategories[novel.manga.id] ?: emptyList()
+                                // Treat uncategorized manga as being in the default category (id=0)
+                                val categoryIds = novelCategories.map { it.id }.toSet()
+                                    .ifEmpty { setOf(0L) }
+                                val passesInclude = selectedCategoryFilters.isEmpty() ||
+                                    categoryIds.any { it in selectedCategoryFilters }
+                                val passesExclude = excludedCategoryFilters.isEmpty() ||
+                                    categoryIds.none { it in excludedCategoryFilters }
+                                passesInclude && passesExclude
+                            }
+                        }.filter { it.value.size > 1 }
+                    }
                 }
 
                 return when (sortMode) {
@@ -360,6 +378,10 @@ class DuplicateDetectionScreenModel(
 
     fun clearCategoryFilters() {
         mutableState.update { it.copy(selectedCategoryFilters = emptySet(), excludedCategoryFilters = emptySet()) }
+    }
+
+    fun setFilterByGroupCategory(filter: Boolean) {
+        mutableState.update { it.copy(filterByGroupCategory = filter) }
     }
 
     fun setSortMode(mode: SortMode) {

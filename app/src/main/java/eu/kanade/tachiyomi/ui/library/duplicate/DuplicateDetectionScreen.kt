@@ -439,6 +439,25 @@ class DuplicateDetectionScreen : Screen {
                                 modifier = Modifier.padding(start = 8.dp),
                             )
                         }
+
+                        // Require Group Match toggle
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { screenModel.setFilterByGroupCategory(!state.filterByGroupCategory) }
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = state.filterByGroupCategory,
+                                onCheckedChange = { screenModel.setFilterByGroupCategory(it) },
+                            )
+                            Text(
+                                "Filter by group strictly (at least one valid item)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(start = 8.dp),
+                            )
+                        }
                         // Sort mode selector
                         FlowRow(
                             modifier = Modifier

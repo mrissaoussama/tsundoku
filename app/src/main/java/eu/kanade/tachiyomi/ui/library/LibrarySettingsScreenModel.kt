@@ -297,6 +297,8 @@ class LibrarySettingsScreenModel(
                 // Calculate tag counts, filtering by type
                 val tagCounts = mutableMapOf<String, Int>()
                 var noTagsCount = 0
+                val tagCache = mutableMapOf<String, String>()
+
                 genresList.forEach { (_, sourceId, genres) ->
                     // Filter by content type
                     val source = sourceManager.getOrStub(sourceId)
@@ -311,14 +313,26 @@ class LibrarySettingsScreenModel(
                         if (genres.isNullOrEmpty()) {
                             noTagsCount++
                         } else {
-                            genres.forEach { tag ->
-                                val normalizedTag = tag.trim()
-                                    .split(" ")
-                                    .joinToString(" ") { word ->
-                                        word.lowercase().replaceFirstChar { c ->
-                                            if (c.isLowerCase()) c.titlecase() else c.toString()
+                            genres.forEach { rawTag ->
+                                val tag = rawTag.trim()
+                                val normalizedTag = tagCache.getOrPut(tag) {
+                                    val lowered = tag.lowercase()
+                                    val result = java.lang.StringBuilder(lowered.length)
+                                    var capitalizeNext = true
+                                    for (i in lowered.indices) {
+                                        val c = lowered[i]
+                                        if (c.isWhitespace()) {
+                                            capitalizeNext = true
+                                            result.append(c)
+                                        } else if (capitalizeNext) {
+                                            result.append(c.titlecaseChar())
+                                            capitalizeNext = false
+                                        } else {
+                                            result.append(c)
                                         }
                                     }
+                                    result.toString()
+                                }
                                 if (normalizedTag.isNotBlank()) {
                                     tagCounts[normalizedTag] = (tagCounts[normalizedTag] ?: 0) + 1
                                 }

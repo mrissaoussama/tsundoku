@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.ui.library
 
 import eu.kanade.tachiyomi.source.getNameForMangaInfo
-import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
 import tachiyomi.domain.library.model.LibraryManga
 import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.Injekt
@@ -18,7 +17,6 @@ data class LibraryItem(
 
     companion object {
         private val sourceManager: SourceManager by lazy { Injekt.get() }
-        private val getChaptersByMangaId: GetChaptersByMangaId by lazy { Injekt.get() }
     }
 
     /**
@@ -55,6 +53,7 @@ data class LibraryItem(
         searchByUrl: Boolean = false,
         useRegex: Boolean = false,
     ): Boolean {
+        val regexCache = if (useRegex) HashMap<String, Regex?>(4) else null
         val sourceName by lazy { sourceManager.getOrStub(libraryManga.manga.source).getNameForMangaInfo() }
 
         // Special prefixes for searching specific fields
@@ -63,15 +62,15 @@ data class LibraryItem(
         }
         if (constraint.startsWith("title:", true)) {
             val query = constraint.substringAfter("title:").trim()
-            return matchString(libraryManga.manga.title, query, useRegex)
+            return matchString(libraryManga.manga.title, query, useRegex, regexCache)
         }
         if (constraint.startsWith("author:", true)) {
             val query = constraint.substringAfter("author:").trim()
-            return libraryManga.manga.author?.let { matchString(it, query, useRegex) } ?: false
+            return libraryManga.manga.author?.let { matchString(it, query, useRegex, regexCache) } ?: false
         }
         if (constraint.startsWith("artist:", true)) {
             val query = constraint.substringAfter("artist:").trim()
-            return libraryManga.manga.artist?.let { matchString(it, query, useRegex) } ?: false
+            return libraryManga.manga.artist?.let { matchString(it, query, useRegex, regexCache) } ?: false
         }
         if (constraint.startsWith("desc:", true) || constraint.startsWith("description:", true)) {
             val query = if (constraint.startsWith("desc:")) {
@@ -79,7 +78,7 @@ data class LibraryItem(
             } else {
                 constraint.substringAfter("description:").trim()
             }
-            return libraryManga.manga.description?.let { matchString(it, query, useRegex) } ?: false
+            return libraryManga.manga.description?.let { matchString(it, query, useRegex, regexCache) } ?: false
         }
         if (constraint.startsWith("tag:", true) || constraint.startsWith("genre:", true)) {
             val query = if (constraint.startsWith("tag:")) {
@@ -87,15 +86,15 @@ data class LibraryItem(
             } else {
                 constraint.substringAfter("genre:").trim()
             }
-            return libraryManga.manga.genre?.any { matchString(it, query, useRegex) } ?: false
+            return libraryManga.manga.genre?.any { matchString(it, query, useRegex, regexCache) } ?: false
         }
         if (constraint.startsWith("source:", true)) {
             val query = constraint.substringAfter("source:").trim()
-            return matchString(sourceName, query, useRegex)
+            return matchString(sourceName, query, useRegex, regexCache)
         }
         if (constraint.startsWith("url:", true)) {
             val query = constraint.substringAfter("url:").trim()
-            return matchString(libraryManga.manga.url, query, useRegex)
+            return matchString(libraryManga.manga.url, query, useRegex, regexCache)
         }
         // Search for chapter names explicitly
         if (constraint.startsWith("chapter:", true)) {
@@ -103,15 +102,15 @@ data class LibraryItem(
         }
 
         // Default: search title, author, artist, description, source, tags, URL (if enabled), and optionally chapters
-        val basicMatch = matchString(libraryManga.manga.title, constraint, useRegex) ||
-            (libraryManga.manga.author?.let { matchString(it, constraint, useRegex) } ?: false) ||
-            (libraryManga.manga.artist?.let { matchString(it, constraint, useRegex) } ?: false) ||
-            (libraryManga.manga.description?.let { matchString(it, constraint, useRegex) } ?: false) ||
-            (searchByUrl && matchString(libraryManga.manga.url, constraint, useRegex)) ||
+        val basicMatch = matchString(libraryManga.manga.title, constraint, useRegex, regexCache) ||
+            (libraryManga.manga.author?.let { matchString(it, constraint, useRegex, regexCache) } ?: false) ||
+            (libraryManga.manga.artist?.let { matchString(it, constraint, useRegex, regexCache) } ?: false) ||
+            (libraryManga.manga.description?.let { matchString(it, constraint, useRegex, regexCache) } ?: false) ||
+            (searchByUrl && matchString(libraryManga.manga.url, constraint, useRegex, regexCache)) ||
             constraint.split(",").map { it.trim() }.all { subconstraint ->
                 checkNegatableConstraint(subconstraint) {
-                    matchString(sourceName, it, useRegex) ||
-                        (libraryManga.manga.genre?.any { genre -> matchString(genre, it, useRegex) } ?: false)
+                    matchString(sourceName, it, useRegex, regexCache) ||
+                        (libraryManga.manga.genre?.any { genre -> matchString(genre, it, useRegex, regexCache) } ?: false)
                 }
             }
 
@@ -130,6 +129,26 @@ data class LibraryItem(
                 // Invalid regex, fall back to simple contains
                 text.contains(query, ignoreCase = true)
             }
+        } else {
+            text.contains(query, ignoreCase = true)
+        }
+    }
+
+    private fun matchString(
+        text: String,
+        query: String,
+        useRegex: Boolean,
+        regexCache: MutableMap<String, Regex?>?,
+    ): Boolean {
+        return if (useRegex) {
+            val cachedRegex = regexCache?.getOrPut(query) {
+                try {
+                    Regex(query, RegexOption.IGNORE_CASE)
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            cachedRegex?.containsMatchIn(text) ?: text.contains(query, ignoreCase = true)
         } else {
             text.contains(query, ignoreCase = true)
         }

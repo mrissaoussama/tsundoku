@@ -1162,6 +1162,11 @@ object SettingsAdvancedScreen : SearchableSettings {
                     title = stringResource(MR.strings.pref_disallow_non_ascii_filenames),
                     subtitle = stringResource(MR.strings.pref_disallow_non_ascii_filenames_details),
                 ),
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = libraryPreferences.showMangaSourceName(),
+                    title = stringResource(TDMR.strings.pref_show_manga_source_name),
+                    subtitle = stringResource(TDMR.strings.pref_show_manga_source_name_summary),
+                ),
 
             ),
         )
