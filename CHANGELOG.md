@@ -11,6 +11,9 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - `Other` - for technical stuff.
 
 ## [Unreleased]
+
+
+## [v0.1.1] - 2026-03-17
 ### Improved
 - Optimized Novel Delay Sliders and expanded ranges [@Rojikku](https://github.com/Rojikku) [5e220d2](https://github.com/tsundoku-otaku/tsundoku/commit/5e220d284ed5e71d5c422c1577cfcb0c26c47ff3)
 - Database Maintenance can happen in background as WorkerManager job [@mrissaoussamau](https://github.com/mrissaoussama) [#32](https://github.com/tsundoku-otaku/tsundoku/pull/32)
@@ -54,7 +57,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - **Browse Screen Enhancements**: Jump-to-page, page range loading, back confirmation
 
 
-[Unreleased]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.0...main
+[Unreleased]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.1...main
+[v0.1.1]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.0...v0.1.1
 [v0.1.0]: https://github.com/tsundoku-otaku/tsundoku/compare/5b88f88...v0.1.0
 
 ## [Mihon]
