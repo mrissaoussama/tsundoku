@@ -486,7 +486,6 @@ data class BrowseSourceScreen(
                     // Initiated from the context of [dialog.target] so we show [dialog.current].
                     onClickTitle = { navigator.push(MangaScreen(dialog.current.id)) },
                     onDismissRequest = onDismissRequest,
-                    showQuickOption = true,
                 )
             }
             is BrowseSourceScreenModel.Dialog.RemoveManga -> {

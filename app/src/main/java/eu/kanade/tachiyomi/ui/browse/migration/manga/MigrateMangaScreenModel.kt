@@ -36,6 +36,9 @@ class MigrateMangaScreenModel(
     private val getFavorites: GetFavorites = Injekt.get(),
     private val updateManga: UpdateManga = Injekt.get(),
     private val getMangaByUrlAndSourceId: GetMangaByUrlAndSourceId = Injekt.get(),
+    private val getCategories: tachiyomi.domain.category.interactor.GetCategories = Injekt.get(),
+    private val createCategoryWithName: tachiyomi.domain.category.interactor.CreateCategoryWithName = Injekt.get(),
+    private val setMangaCategories: tachiyomi.domain.category.interactor.SetMangaCategories = Injekt.get(),
 ) : StateScreenModel<MigrateMangaScreenModel.State>(State()) {
 
     private val _events: Channel<MigrationMangaEvent> = Channel()
@@ -109,7 +112,8 @@ class MigrateMangaScreenModel(
                 var skipCount = 0
                 for (manga in selectedManga) {
                     try {
-                        val existing = getMangaByUrlAndSourceId.await(manga.url, targetSourceId)
+                        val newUrl = if (!manga.url.startsWith("/")) "/${manga.url}" else manga.url
+                        val existing = getMangaByUrlAndSourceId.await(newUrl, targetSourceId)
                         if (existing?.favorite == true) {
                             skipCount++
                         }
@@ -121,6 +125,7 @@ class MigrateMangaScreenModel(
                     it.copy(
                         dialog = Dialog.QuickMigrateConfirm(
                             targetSourceId = targetSourceId,
+                            sourceName = sourceManager.getOrStub(sourceId).name,
                             targetSourceName = sourceManager.getOrStub(targetSourceId).name,
                             totalCount = selectedManga.size,
                             skipCount = skipCount,
@@ -134,21 +139,41 @@ class MigrateMangaScreenModel(
         }
     }
 
-    fun executeQuickMigrate(targetSourceId: Long) {
+    fun executeQuickMigrate(targetSourceId: Long, categoryName: String?) {
         screenModelScope.launchIO {
             try {
                 val selectedManga = state.value.titles.filter { it.id in state.value.selection }
                 var migrated = 0
+                val migratedIds = mutableListOf<Long>()
                 for (manga in selectedManga) {
                     try {
-                        val existing = getMangaByUrlAndSourceId.await(manga.url, targetSourceId)
+                        val newUrl = if (!manga.url.startsWith("/")) "/${manga.url}" else manga.url
+                        val existing = getMangaByUrlAndSourceId.await(newUrl, targetSourceId)
                         if (existing?.favorite == true) continue
+                        updateManga.await(MangaUpdate(id = manga.id, source = targetSourceId, url = newUrl))
+                        migrated++
+                        migratedIds.add(manga.id)
                     } catch (_: Exception) {
                         // If check fails, proceed with migration
                     }
-                    updateManga.await(MangaUpdate(id = manga.id, source = targetSourceId))
-                    migrated++
                 }
+
+                if (migratedIds.isNotEmpty() && !categoryName.isNullOrBlank()) {
+                    var categoryId: Long? = null
+                    val existingCategory = getCategories.await().find { it.name.equals(categoryName, ignoreCase = true) }
+                    if (existingCategory != null) {
+                        categoryId = existingCategory.id
+                    } else {
+                        val result = createCategoryWithName.await(categoryName)
+                        if (result is tachiyomi.domain.category.interactor.CreateCategoryWithName.Result.Success) {
+                            categoryId = getCategories.await().find { it.name.equals(categoryName, ignoreCase = true) }?.id
+                        }
+                    }
+                    if (categoryId != null) {
+                        setMangaCategories.await(mangaIds = migratedIds, categoryIds = listOf(categoryId))
+                    }
+                }
+
                 mutableState.update { it.copy(dialog = null, selection = emptySet()) }
                 _events.send(MigrationMangaEvent.QuickMigrateComplete(migrated))
             } catch (e: Exception) {
@@ -183,6 +208,7 @@ class MigrateMangaScreenModel(
         data object QuickMigrateSourcePicker : Dialog
         data class QuickMigrateConfirm(
             val targetSourceId: Long,
+            val sourceName: String,
             val targetSourceName: String,
             val totalCount: Int,
             val skipCount: Int,

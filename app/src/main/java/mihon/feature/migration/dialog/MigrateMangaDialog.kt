@@ -49,7 +49,6 @@ internal fun Screen.MigrateMangaDialog(
     onClickTitle: () -> Unit,
     onDismissRequest: () -> Unit,
     onComplete: () -> Unit = onDismissRequest,
-    showQuickOption: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -101,18 +100,6 @@ internal fun Screen.MigrateMangaDialog(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                if (showQuickOption) {
-                    TextButton(
-                        onClick = {
-                            scope.launchIO {
-                                screenModel.quickMigrate()
-                                withUIContext { onComplete() }
-                            }
-                        },
-                    ) {
-                        Text(text = stringResource(MR.strings.action_quick_migrate))
-                    }
-                }
                 TextButton(
                     onClick = {
                         scope.launchIO {

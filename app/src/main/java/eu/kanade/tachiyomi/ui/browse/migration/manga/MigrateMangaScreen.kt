@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.FlashOn
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material3.Icon
@@ -20,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -82,10 +84,26 @@ data class MigrateMangaScreen(
                     actionModeCounter = state.selection.size,
                     onCancelActionMode = { screenModel.clearSelection() },
                     actionModeActions = {
+                        var showMenu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
                         IconButton(onClick = { screenModel.selectAll() }) {
                             Icon(
                                 imageVector = Icons.Outlined.SelectAll,
                                 contentDescription = stringResource(MR.strings.action_select_all),
+                            )
+                        }
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(imageVector = Icons.Default.MoreVert, contentDescription = "More")
+                        }
+                        androidx.compose.material3.DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                        ) {
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(text = stringResource(MR.strings.action_quick_migrate)) },
+                                onClick = {
+                                    showMenu = false
+                                    screenModel.showQuickMigrateDialog()
+                                },
                             )
                         }
                     },
@@ -93,38 +111,22 @@ data class MigrateMangaScreen(
                 )
             },
             floatingActionButton = {
-                Column(horizontalAlignment = Alignment.End) {
-                    SmallExtendedFloatingActionButton(
-                        text = { Text(text = stringResource(MR.strings.action_quick_migrate)) },
-                        icon = {
-                            Icon(imageVector = Icons.Outlined.FlashOn, contentDescription = null)
-                        },
-                        onClick = { screenModel.showQuickMigrateDialog() },
-                        expanded = lazyListState.shouldExpandFAB(),
-                        modifier = Modifier
-                            .padding(bottom = 8.dp)
-                            .animateFloatingActionButton(
-                                visible = state.selectionMode,
-                                alignment = Alignment.BottomEnd,
-                            ),
-                    )
-                    SmallExtendedFloatingActionButton(
-                        text = { Text(text = stringResource(MR.strings.migrationConfigScreen_continueButtonText)) },
-                        icon = {
-                            Icon(imageVector = Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null)
-                        },
-                        onClick = {
-                            val selection = state.selection
-                            screenModel.clearSelection()
-                            navigator.push(MigrationConfigScreen(selection))
-                        },
-                        expanded = lazyListState.shouldExpandFAB(),
-                        modifier = Modifier.animateFloatingActionButton(
-                            visible = state.selectionMode,
-                            alignment = Alignment.BottomEnd,
-                        ),
-                    )
-                }
+                SmallExtendedFloatingActionButton(
+                    text = { Text(text = stringResource(MR.strings.migrationConfigScreen_continueButtonText)) },
+                    icon = {
+                        Icon(imageVector = Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null)
+                    },
+                    onClick = {
+                        val selection = state.selection
+                        screenModel.clearSelection()
+                        navigator.push(MigrationConfigScreen(selection))
+                    },
+                    expanded = lazyListState.shouldExpandFAB(),
+                    modifier = Modifier.animateFloatingActionButton(
+                        visible = state.selectionMode,
+                        alignment = Alignment.BottomEnd,
+                    ),
+                )
             },
         ) { contentPadding ->
             if (state.isEmpty) {
@@ -155,10 +157,11 @@ data class MigrateMangaScreen(
             }
             is MigrateMangaScreenModel.Dialog.QuickMigrateConfirm -> {
                 QuickMigrateConfirmDialog(
+                    sourceName = dialog.sourceName,
                     targetSourceName = dialog.targetSourceName,
                     totalCount = dialog.totalCount,
                     skipCount = dialog.skipCount,
-                    onConfirm = { screenModel.executeQuickMigrate(dialog.targetSourceId) },
+                    onConfirm = { screenModel.executeQuickMigrate(dialog.targetSourceId, it) },
                     onDismissRequest = { screenModel.dismissDialog() },
                 )
             }
