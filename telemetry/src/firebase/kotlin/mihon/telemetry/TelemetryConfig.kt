@@ -1,11 +1,13 @@
-package mihon.telemetry
+package tsundoku.telemetry
 
 import android.content.Context
+import android.util.Log
 import com.google.firebase.FirebaseApp
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 
 object TelemetryConfig {
+    private const val TAG: String = "Telemetry"
     private var analytics: FirebaseAnalytics? = null
     private var crashlytics: FirebaseCrashlytics? = null
 
@@ -27,8 +29,10 @@ object TelemetryConfig {
     }
 
     private fun Context.isTsundokuProductionApp(): Boolean {
+        Log.d(TAG, "Checking packageName: $packageName")
         if (packageName !in TSUNDOKU_PACKAGES) return false
 
+        Log.d(TAG, "Checking Signature")
         return packageManager.getPackageInfo(packageName, SignatureFlags)
             .getCertificateFingerprints()
             .any { it == TSUNDOKU_CERTIFICATE_FINGERPRINT }

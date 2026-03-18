@@ -1,4 +1,4 @@
-package mihon.telemetry
+package tsundoku.telemetry
 
 import android.content.Context
 
