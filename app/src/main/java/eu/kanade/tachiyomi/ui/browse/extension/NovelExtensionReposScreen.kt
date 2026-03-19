@@ -23,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -125,6 +126,7 @@ class NovelExtensionReposScreen(
                         ) { repo ->
                             NovelRepoListItem(
                                 repo = repo,
+                                onSetEnabled = { enabled -> screenModel.setJsRepoEnabled(repo.url, enabled) },
                                 onDelete = { screenModel.showDialog(NovelRepoDialog.DeleteJs(repo)) },
                             )
                         }
@@ -148,6 +150,8 @@ class NovelExtensionReposScreen(
                         ) { repo ->
                             KotlinRepoListItem(
                                 repo = repo,
+                                enabled = repo.baseUrl !in successState.disabledKotlinRepos,
+                                onSetEnabled = { enabled -> screenModel.setKotlinRepoEnabled(repo.baseUrl, enabled) },
                                 onDelete = { screenModel.showDialog(NovelRepoDialog.DeleteKotlin(repo.baseUrl)) },
                             )
                         }
@@ -212,6 +216,7 @@ class NovelExtensionReposScreen(
 @Composable
 private fun NovelRepoListItem(
     repo: JsPluginRepository,
+    onSetEnabled: (Boolean) -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -240,8 +245,23 @@ private fun NovelRepoListItem(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = MaterialTheme.padding.small),
+            ) {
+                Text(
+                    text = stringResource(if (repo.enabled) TDMR.strings.novel_enabled else TDMR.strings.novel_disabled),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Switch(
+                    checked = repo.enabled,
+                    onCheckedChange = onSetEnabled,
+                )
+            }
+
             IconButton(onClick = {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(repo.url))
                 context.startActivity(intent)
@@ -344,6 +364,8 @@ private fun NovelRepoDeleteDialog(
 @Composable
 private fun KotlinRepoListItem(
     repo: mihon.domain.extensionrepo.model.ExtensionRepo,
+    enabled: Boolean,
+    onSetEnabled: (Boolean) -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -380,8 +402,23 @@ private fun KotlinRepoListItem(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = MaterialTheme.padding.small),
+            ) {
+                Text(
+                    text = stringResource(if (enabled) TDMR.strings.novel_enabled else TDMR.strings.novel_disabled),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = onSetEnabled,
+                )
+            }
+
             IconButton(onClick = {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(repo.baseUrl))
                 context.startActivity(intent)
