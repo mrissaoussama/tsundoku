@@ -12,6 +12,7 @@ import androidx.compose.ui.util.fastMap
 import eu.kanade.presentation.category.visualName
 import eu.kanade.presentation.more.settings.Preference
 import eu.kanade.presentation.more.settings.widget.TriStateListDialog
+import eu.kanade.domain.base.BasePreferences
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.collections.immutable.toImmutableMap
@@ -48,51 +49,39 @@ object SettingsDownloadScreen : SearchableSettings {
         val allCategories by getCategories.subscribe().collectAsState(initial = emptyList())
 
         val downloadPreferences = remember { Injekt.get<DownloadPreferences>() }
+        val basePreferences = remember { Injekt.get<BasePreferences>() }
+        val hideMangaUi by basePreferences.hideMangaUi().collectAsState()
         val parallelSourceLimit by downloadPreferences.parallelSourceLimit().collectAsState()
         val parallelPageLimit by downloadPreferences.parallelPageLimit().collectAsState()
-        val epubCompressionLevel by downloadPreferences.epubCompressionLevel().collectAsState()
         return listOf(
             Preference.PreferenceItem.SwitchPreference(
                 preference = downloadPreferences.downloadOnlyOverWifi(),
                 title = stringResource(MR.strings.connected_to_wifi),
             ),
-            Preference.PreferenceItem.SwitchPreference(
-                preference = downloadPreferences.saveChaptersAsCBZ(),
-                title = stringResource(MR.strings.save_chapter_as_cbz),
-            ),
-            Preference.PreferenceItem.SwitchPreference(
-                preference = downloadPreferences.splitTallImages(),
-                title = stringResource(MR.strings.split_tall_images),
-                subtitle = stringResource(MR.strings.split_tall_images_summary),
-            ),
-            Preference.PreferenceItem.SliderPreference(
-                value = parallelSourceLimit,
-                valueRange = 1..15,
-                title = stringResource(MR.strings.pref_download_concurrent_sources),
-                onValueChanged = { downloadPreferences.parallelSourceLimit().set(it) },
-            ),
-            Preference.PreferenceItem.SliderPreference(
-                value = parallelPageLimit,
-                valueRange = 1..15,
-                title = stringResource(MR.strings.pref_download_concurrent_pages),
-                subtitle = stringResource(MR.strings.pref_download_concurrent_pages_summary),
-                onValueChanged = { downloadPreferences.parallelPageLimit().set(it) },
-            ),
-            Preference.PreferenceItem.SliderPreference(
-                value = epubCompressionLevel + 1, // shift -1..9 to 0..10 for slider
-                valueRange = 0..10,
-                title = stringResource(MR.strings.pref_epub_compression_level),
-                subtitle = when (epubCompressionLevel) {
-                    -1 -> stringResource(MR.strings.pref_epub_compression_default)
-                    0 -> stringResource(MR.strings.pref_epub_compression_none)
-                    in 1..3 -> stringResource(MR.strings.pref_epub_compression_low)
-                    in 4..6 -> stringResource(MR.strings.pref_epub_compression_medium)
-                    in 7..9 -> stringResource(MR.strings.pref_epub_compression_high)
-                    else -> stringResource(MR.strings.pref_epub_compression_level_label, epubCompressionLevel)
-                },
-                valueString = if (epubCompressionLevel == -1) stringResource(MR.strings.pref_epub_compression_default_label) else "$epubCompressionLevel",
-                onValueChanged = { downloadPreferences.epubCompressionLevel().set(it - 1) },
-            ),
+            *listOfNotNull(
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = downloadPreferences.saveChaptersAsCBZ(),
+                    title = stringResource(MR.strings.save_chapter_as_cbz),
+                ).takeUnless { hideMangaUi },
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = downloadPreferences.splitTallImages(),
+                    title = stringResource(MR.strings.split_tall_images),
+                    subtitle = stringResource(MR.strings.split_tall_images_summary),
+                ).takeUnless { hideMangaUi },
+                Preference.PreferenceItem.SliderPreference(
+                    value = parallelSourceLimit,
+                    valueRange = 1..15,
+                    title = stringResource(MR.strings.pref_download_concurrent_sources),
+                    onValueChanged = { downloadPreferences.parallelSourceLimit().set(it) },
+                ).takeUnless { hideMangaUi },
+                Preference.PreferenceItem.SliderPreference(
+                    value = parallelPageLimit,
+                    valueRange = 1..15,
+                    title = stringResource(MR.strings.pref_download_concurrent_pages),
+                    subtitle = stringResource(MR.strings.pref_download_concurrent_pages_summary),
+                    onValueChanged = { downloadPreferences.parallelPageLimit().set(it) },
+                ).takeUnless { hideMangaUi },
+            ).toTypedArray(),
             getDeleteChaptersGroup(
                 downloadPreferences = downloadPreferences,
                 categories = allCategories,

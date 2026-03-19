@@ -15,6 +15,7 @@ import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import eu.kanade.presentation.components.TabbedScreen
 import eu.kanade.presentation.util.Tab
+import eu.kanade.domain.base.BasePreferences
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.ui.browse.extension.ExtensionsScreenModel
 import eu.kanade.tachiyomi.ui.browse.extension.NovelExtensionsScreenModel
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.domain.library.service.LibraryPreferences
 
 data object BrowseTab : Tab {
 
@@ -61,6 +63,11 @@ data object BrowseTab : Tab {
     @Composable
     override fun Content() {
         val context = LocalContext.current
+        val basePreferences = remember { Injekt.get<BasePreferences>() }
+        val libraryPreferences = remember { Injekt.get<LibraryPreferences>() }
+        val hideMangaUi by basePreferences.hideMangaUi().collectAsState()
+        val isJoined by libraryPreferences.joinedLibrary().collectAsState()
+        val hideMangaBrowseTabs = hideMangaUi || isJoined
 
         // Hoisted for extensions tab's search bar
         val extensionsScreenModel = rememberScreenModel { ExtensionsScreenModel() }
@@ -69,14 +76,25 @@ data object BrowseTab : Tab {
         val novelExtensionsScreenModel = rememberScreenModel { NovelExtensionsScreenModel() }
         val novelExtensionsState by novelExtensionsScreenModel.state.collectAsState()
 
-        val tabs = persistentListOf(
-            novelSourcesTab(),
-            sourcesTab(),
-            novelExtensionsTab(novelExtensionsScreenModel),
-            extensionsTab(extensionsScreenModel),
-            novelMigrateSourceTab(),
-            migrateSourceTab(),
-        )
+        val tabs = if (hideMangaBrowseTabs) {
+            persistentListOf(
+                novelSourcesTab(),
+                novelExtensionsTab(novelExtensionsScreenModel),
+                novelMigrateSourceTab(),
+            )
+        } else {
+            persistentListOf(
+                novelSourcesTab(),
+                sourcesTab(),
+                novelExtensionsTab(novelExtensionsScreenModel),
+                extensionsTab(extensionsScreenModel),
+                novelMigrateSourceTab(),
+                migrateSourceTab(),
+            )
+        }
+
+        val novelExtensionsTabIndex = if (hideMangaBrowseTabs) 1 else 2
+        val mangaExtensionsTabIndex = if (hideMangaBrowseTabs) null else 3
 
         val state = rememberPagerState { tabs.size }
 
@@ -85,20 +103,22 @@ data object BrowseTab : Tab {
             tabs = tabs,
             state = state,
             searchQuery = when (state.currentPage) {
-                2 -> novelExtensionsState.searchQuery
-                3 -> extensionsState.searchQuery
+                novelExtensionsTabIndex -> novelExtensionsState.searchQuery
+                mangaExtensionsTabIndex -> extensionsState.searchQuery
                 else -> null
             },
             onChangeSearchQuery = { query ->
                 when (state.currentPage) {
-                    2 -> novelExtensionsScreenModel.search(query)
-                    3 -> extensionsScreenModel.search(query)
+                    novelExtensionsTabIndex -> novelExtensionsScreenModel.search(query)
+                    mangaExtensionsTabIndex -> extensionsScreenModel.search(query)
                 }
             },
         )
         LaunchedEffect(Unit) {
             switchToExtensionTabChannel.receiveAsFlow()
-                .collectLatest { state.scrollToPage(3) }
+                .collectLatest {
+                    state.scrollToPage(if (hideMangaBrowseTabs) novelExtensionsTabIndex else 3)
+                }
         }
 
         LaunchedEffect(Unit) {
