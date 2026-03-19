@@ -71,6 +71,7 @@ import eu.kanade.tachiyomi.data.updater.AppUpdateChecker
 import eu.kanade.tachiyomi.data.updater.RELEASE_URL
 import eu.kanade.tachiyomi.extension.api.ExtensionApi
 import eu.kanade.tachiyomi.ui.base.activity.BaseActivity
+import eu.kanade.tachiyomi.ui.browse.extension.NovelExtensionReposScreen
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
 import eu.kanade.tachiyomi.ui.deeplink.DeepLinkScreen
@@ -447,6 +448,13 @@ class MainActivity : BaseActivity() {
                     intent.data?.getQueryParameter("url")?.let { repoUrl ->
                         navigator.popUntilRoot()
                         navigator.push(ExtensionReposScreen(repoUrl))
+                    }
+                }
+                // Deep link to add LNReader JS repo
+                else if (intent.scheme == "lnreader" && intent.data?.host == "repo" && intent.data?.path == "/add") {
+                    intent.data?.getQueryParameter("url")?.let { repoUrl ->
+                        navigator.popUntilRoot()
+                        navigator.push(NovelExtensionReposScreen(repoUrl))
                     }
                 }
                 null

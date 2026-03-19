@@ -26,6 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,13 +49,20 @@ import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.screens.EmptyScreen
 import tachiyomi.presentation.core.screens.LoadingScreen
 
-class NovelExtensionReposScreen : Screen() {
+class NovelExtensionReposScreen(
+    private val url: String? = null,
+) : Screen() {
 
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val screenModel = rememberScreenModel { NovelExtensionReposScreenModel() }
         val state by screenModel.state.collectAsState()
+
+        LaunchedEffect(url) {
+            val repoUrl = url ?: return@LaunchedEffect
+            screenModel.createJsRepo(repoUrl, repoUrl)
+        }
 
         Scaffold(
             topBar = {
