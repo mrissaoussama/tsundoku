@@ -54,6 +54,12 @@ class JsPluginManager(
     // Storage directories
     private val pluginsDir: UniFile?
         get() = storageManager.getLNReaderPluginsDirectory()
+            ?: run {
+                // SAF/base storage may be unavailable on some devices/configurations.
+                // Fall back to app-private storage so plugin install/import still works.
+                val fallbackDir = File(context.filesDir, "lnreader_plugins").apply { mkdirs() }
+                UniFile.fromFile(fallbackDir)
+            }
 
     private val cacheDir: File = File(context.cacheDir, "lnreader_plugins_cache")
 
