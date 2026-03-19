@@ -427,16 +427,6 @@ private fun ExtensionItemContent(
                     )
                 }
 
-                if (extension is Extension.JsPlugin) {
-                    if (hasAlreadyShownAnElement) DotSeparatorNoSpaceText()
-                    hasAlreadyShownAnElement = true
-                    Text(
-                        text = "JS",
-                        color = Color.Yellow,
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                    )
-                }
-
                 if (!installStep.isCompleted()) {
                     DotSeparatorNoSpaceText()
                     Text(
