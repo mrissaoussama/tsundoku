@@ -60,7 +60,7 @@ class LibraryPreferences(
 
     fun autoUpdateThrottle() = preferenceStore.getInt("pref_library_update_throttle_ms", 3000)
 
-    fun joinedLibrary() = preferenceStore.getBoolean("pref_joined_library", false)
+    fun joinedLibrary() = preferenceStore.getBoolean("pref_joined_library", true)
 
     fun showContinueReadingButton() = preferenceStore.getBoolean(
         "display_continue_reading_button",
