@@ -35,13 +35,13 @@ class StorageManager(
             .onEach { uri ->
                 baseDir = getBaseDir(uri)
                 baseDir?.let { parent ->
-                    parent.createDirectory(AUTOMATIC_BACKUPS_PATH)
-                    parent.createDirectory(LOCAL_SOURCE_PATH)
-                    parent.createDirectory(LOCAL_NOVEL_SOURCE_PATH)
-                    parent.createDirectory(LNREADER_PLUGINS_PATH)
-                    parent.createDirectory(FONTS_PATH)
-                    parent.createDirectory(TRANSLATIONS_PATH)
-                    parent.createDirectory(DOWNLOADS_PATH).also {
+                    getOrCreateDirectory(parent, AUTOMATIC_BACKUPS_PATH)
+                    getOrCreateDirectory(parent, LOCAL_SOURCE_PATH)
+                    getOrCreateDirectory(parent, LOCAL_NOVEL_SOURCE_PATH)
+                    getOrCreateDirectory(parent, LNREADER_PLUGINS_PATH)
+                    getOrCreateDirectory(parent, FONTS_PATH)
+                    getOrCreateDirectory(parent, TRANSLATIONS_PATH)
+                    getOrCreateDirectory(parent, DOWNLOADS_PATH).also {
                         DiskUtil.createNoMediaFile(it, context)
                     }
                 }
@@ -55,36 +55,43 @@ class StorageManager(
             .takeIf { it?.exists() == true }
     }
 
+    private fun getOrCreateDirectory(parent: UniFile?, name: String): UniFile? {
+        parent ?: return null
+        val existing = parent.findFile(name)
+        if (existing?.isDirectory == true) return existing
+        return parent.createDirectory(name)
+    }
+
     fun getAutomaticBackupsDirectory(): UniFile? {
-        return baseDir?.createDirectory(AUTOMATIC_BACKUPS_PATH)
+        return getOrCreateDirectory(baseDir, AUTOMATIC_BACKUPS_PATH)
     }
 
     fun getDownloadsDirectory(): UniFile? {
-        return baseDir?.createDirectory(DOWNLOADS_PATH)
+        return getOrCreateDirectory(baseDir, DOWNLOADS_PATH)
     }
 
     fun getLocalSourceDirectory(): UniFile? {
-        return baseDir?.createDirectory(LOCAL_SOURCE_PATH)
+        return getOrCreateDirectory(baseDir, LOCAL_SOURCE_PATH)
     }
 
     fun getLocalNovelSourceDirectory(): UniFile? {
-        return baseDir?.createDirectory(LOCAL_NOVEL_SOURCE_PATH)
+        return getOrCreateDirectory(baseDir, LOCAL_NOVEL_SOURCE_PATH)
     }
 
     fun getLNReaderPluginsDirectory(): UniFile? {
-        return baseDir?.createDirectory(LNREADER_PLUGINS_PATH)
+        return getOrCreateDirectory(baseDir, LNREADER_PLUGINS_PATH)
     }
 
     fun getFontsDirectory(): UniFile? {
-        return baseDir?.createDirectory(FONTS_PATH)
+        return getOrCreateDirectory(baseDir, FONTS_PATH)
     }
 
     fun getTranslationsDirectory(): UniFile? {
-        return baseDir?.createDirectory(TRANSLATIONS_PATH)
+        return getOrCreateDirectory(baseDir, TRANSLATIONS_PATH)
     }
 
     fun getMassImportDirectory(): UniFile? {
-        return baseDir?.createDirectory(MASS_IMPORT_PATH)
+        return getOrCreateDirectory(baseDir, MASS_IMPORT_PATH)
     }
 }
 

@@ -131,6 +131,16 @@ object SettingsDataScreen : SearchableSettings {
             contract = ActivityResultContracts.OpenDocumentTree(),
         ) { uri ->
             if (uri != null) {
+                val normalizedUri = runCatching {
+                    val authority = uri.authority
+                    val treeId = DocumentsContract.getTreeDocumentId(uri)
+                    if (authority != null && treeId.isNotBlank()) {
+                        DocumentsContract.buildTreeDocumentUri(authority, treeId)
+                    } else {
+                        uri
+                    }
+                }.getOrDefault(uri)
+
                 val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
@@ -140,14 +150,14 @@ object SettingsDataScreen : SearchableSettings {
                 // This also holds for some Samsung devices. Thus, we simply execute inside of a try-catch block and
                 // ignore the exception if it is thrown.
                 try {
-                    context.contentResolver.takePersistableUriPermission(uri, flags)
+                    context.contentResolver.takePersistableUriPermission(normalizedUri, flags)
                 } catch (e: SecurityException) {
                     logcat(LogPriority.ERROR, e)
                     context.toast(MR.strings.file_picker_uri_permission_unsupported)
                 }
 
-                UniFile.fromUri(context, uri)?.let {
-                    storageDirPref.set(it.uri.toString())
+                UniFile.fromUri(context, normalizedUri)?.let {
+                    storageDirPref.set(normalizedUri.toString())
                 }
             }
         }
@@ -172,20 +182,28 @@ object SettingsDataScreen : SearchableSettings {
                 null
             }
 
-            // Parse the SAF document ID to produce a human-readable /storage/… path.
+            // Parse common SAF document IDs to produce a human-readable /storage path.
             if (displayPath == null || displayPath.startsWith("content://")) {
-                if (uri.authority == "com.android.externalstorage.documents") {
-                    try {
-                        val docId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
-                            ?: runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
-                        if (docId != null) {
-                            val parts = docId.split(":", limit = 2)
-                            if (parts.size == 2) {
-                                val root = if (parts[0] == "primary") "/storage/emulated/0" else "/storage/${parts[0]}"
-                                displayPath = if (parts[1].isEmpty()) root else "$root/${parts[1]}"
+                try {
+                    val docId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+                        ?: runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+                    if (!docId.isNullOrBlank()) {
+                        val decodedDocId = Uri.decode(docId)
+                        when {
+                            decodedDocId.startsWith("raw:") -> {
+                                displayPath = decodedDocId.removePrefix("raw:")
+                            }
+                            uri.authority == "com.android.externalstorage.documents" -> {
+                                val parts = decodedDocId.split(":", limit = 2)
+                                if (parts.size == 2) {
+                                    val root = if (parts[0] == "primary") "/storage/emulated/0" else "/storage/${parts[0]}"
+                                    displayPath = if (parts[1].isEmpty()) root else "$root/${parts[1]}"
+                                }
                             }
                         }
-                    } catch (_: Exception) { }
+                    }
+                } catch (_: Exception) {
+                    // Ignore and fall back below.
                 }
             }
             displayPath
