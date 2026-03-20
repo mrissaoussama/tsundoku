@@ -205,11 +205,18 @@ actual class LocalNovelSource(
     override suspend fun getChapterList(manga: SManga): List<SChapter> = withIOContext {
         val allChapters = mutableListOf<SChapter>()
 
-        fileSystem.getFilesInNovelDirectory(manga.url)
+        val chapterFiles = fileSystem.getFilesInNovelDirectory(manga.url)
             // Only keep supported formats
             .filterNot { it.name.orEmpty().startsWith('.') }
             .filter { isChapterSupported(it) }
-            .forEach { chapterFile ->
+            .sortedWith { f1, f2 ->
+                f1.name.orEmpty().compareToCaseInsensitiveNaturalOrder(f2.name.orEmpty())
+            }
+
+        val hasMultipleEpubFiles = chapterFiles.count { it.extension.equals("epub", true) } > 1
+        var orderedTocChapterNumber = 0
+
+        chapterFiles.forEachIndexed { fileIndex, chapterFile ->
                 // Check if this is a multi-chapter EPUB
                 if (chapterFile.extension.equals("epub", true)) {
                     try {
@@ -244,24 +251,25 @@ actual class LocalNovelSource(
 
                             // If EPUB has multiple TOC entries, create separate chapters
                             if (tocChapters.size > 1) {
-                                tocChapters.forEach { tocEntry ->
+                                tocChapters.forEachIndexed { tocIndex, tocEntry ->
+                                    orderedTocChapterNumber += 1
+                                    val chapterDisplayName = if (hasMultipleEpubFiles) {
+                                        "${chapterFile.nameWithoutExtension.orEmpty()} - ${tocEntry.title}"
+                                    } else {
+                                        tocEntry.title
+                                    }
+
                                     allChapters.add(
                                         SChapter.create().apply {
                                             // URL format: novelDir/epubFile.epub#chapterHref
                                             url = "${manga.url}/${chapterFile.name}#${tocEntry.href}"
-                                            name = tocEntry.title
+                                            name = chapterDisplayName
                                             date_upload = chapterFile.lastModified()
-                                            chapter_number = ChapterRecognition
-                                                .parseChapterNumber(
-                                                    manga.title,
-                                                    tocEntry.title,
-                                                    tocEntry.order.toDouble(),
-                                                )
-                                                .toFloat()
+                                            chapter_number = orderedTocChapterNumber.toFloat()
                                         },
                                     )
                                 }
-                                return@forEach // Don't add the EPUB as a single chapter
+                                return@forEachIndexed // Don't add the EPUB as a single chapter
                             }
 
                             // Single chapter EPUB - treat as before
@@ -289,7 +297,10 @@ actual class LocalNovelSource(
             }
 
         allChapters.sortedWith { c1, c2 ->
-            c2.name.compareToCaseInsensitiveNaturalOrder(c1.name)
+            when {
+                c1.chapter_number != c2.chapter_number -> c2.chapter_number.compareTo(c1.chapter_number)
+                else -> c2.name.compareToCaseInsensitiveNaturalOrder(c1.name)
+            }
         }
     }
 
