@@ -318,10 +318,9 @@ class LibraryScreenModel(
 
         val isNotLoggedInAnyTrack = trackingFilter.isEmpty()
 
-        val excludedTracks = trackingFilter.mapNotNull { if (it.value == TriState.ENABLED_NOT) it.key else null }
-        val includedTracks = trackingFilter.mapNotNull { if (it.value == TriState.ENABLED_IS) it.key else null }
+        val excludedTracks = trackingFilter.mapNotNullTo(HashSet()) { if (it.value == TriState.ENABLED_NOT) it.key else null }
+        val includedTracks = trackingFilter.mapNotNullTo(HashSet()) { if (it.value == TriState.ENABLED_IS) it.key else null }
         val trackFiltersIsIgnored = includedTracks.isEmpty() && excludedTracks.isEmpty()
-
         val tagIncluded = preferences.includedTags
         val tagExcluded = preferences.excludedTags
         val tagCaseSensitive = preferences.tagCaseSensitive
@@ -362,9 +361,9 @@ class LibraryScreenModel(
             val trackingPasses = if (isNotLoggedInAnyTrack || trackFiltersIsIgnored) {
                 true
             } else {
-                val mangaTracks = trackMap[it.id].orEmpty().map { track -> track.trackerId }
-                val isExcluded = excludedTracks.isNotEmpty() && mangaTracks.fastAny { trackId -> trackId in excludedTracks }
-                val isIncluded = includedTracks.isEmpty() || mangaTracks.fastAny { trackId -> trackId in includedTracks }
+                val mangaTracks = trackMap[it.id].orEmpty()
+                val isExcluded = excludedTracks.isNotEmpty() && mangaTracks.fastAny { track -> track.trackerId in excludedTracks }
+                val isIncluded = includedTracks.isEmpty() || mangaTracks.fastAny { track -> track.trackerId in includedTracks }
                 !isExcluded && isIncluded
             }
             if (!trackingPasses) return@fastFilter false
@@ -459,12 +458,10 @@ class LibraryScreenModel(
         }
 
         val defaultTrackerScoreSortValue = -1.0
-        val sourceNameCache = HashMap<Long, String>()
-        
-        // Compute tracker scores once, not per-category
-        val trackerScores = if (loggedInTrackerIds.isEmpty()) {
-            emptyMap()
-        } else {
+        val needsSourceName = keys.any { it.sort.type == LibrarySort.Type.SourceName }
+        val needsTrackerMean = keys.any { it.sort.type == LibrarySort.Type.TrackerMean }
+        val sourceNameCache = if (needsSourceName) HashMap<Long, String>() else null
+        val trackerScores = if (needsTrackerMean) {
             val trackerMap = trackerManager.getAll(loggedInTrackerIds).associateBy { e -> e.id }
             trackMap.mapValues { entry ->
                 when {
@@ -475,6 +472,8 @@ class LibraryScreenModel(
                             .average()
                 }
             }
+        } else {
+            emptyMap()
         }
 
         fun LibrarySort.comparator(): Comparator<LibraryItem> = Comparator { manga1, manga2 ->
@@ -516,7 +515,7 @@ class LibraryScreenModel(
                     item1Score.compareTo(item2Score)
                 }
                 LibrarySort.Type.SourceName -> {
-                    val sourceName1 = sourceNameCache.getOrPut(manga1.libraryManga.manga.source) {
+                    val sourceName1 = sourceNameCache!!.getOrPut(manga1.libraryManga.manga.source) {
                         sourceManager.getOrStub(manga1.libraryManga.manga.source).name
                     }
                     val sourceName2 = sourceNameCache.getOrPut(manga2.libraryManga.manga.source) {
