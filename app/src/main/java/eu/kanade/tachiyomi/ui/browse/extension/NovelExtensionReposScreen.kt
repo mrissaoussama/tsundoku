@@ -236,11 +236,19 @@ private fun NovelRepoListItem(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(imageVector = Icons.AutoMirrored.Outlined.Label, contentDescription = null)
-            Text(
-                text = repo.name,
+            androidx.compose.foundation.layout.Column(
                 modifier = Modifier.padding(start = MaterialTheme.padding.medium),
-                style = MaterialTheme.typography.titleMedium,
-            )
+            ) {
+                Text(
+                    text = repo.name,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = repo.url,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         Row(
