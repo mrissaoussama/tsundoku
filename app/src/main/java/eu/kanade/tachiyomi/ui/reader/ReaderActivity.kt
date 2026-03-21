@@ -723,10 +723,6 @@ class ReaderActivity : BaseActivity() {
                     val viewer = state.viewer
                     if (viewer is NovelWebViewViewer) {
                         viewer.toggleEditMode(isEditing)
-                    } else if (viewer is NovelViewer) {
-                        viewer.toggleEditMode(isEditing)
-                    }
-                },
 
                 isWebView = state.viewer is NovelWebViewViewer,
                 bottomBarItems = bottomBarItems,

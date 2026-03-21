@@ -488,7 +488,7 @@ internal fun bottomBarItemInfo(
     BottomBarItem.TTS -> Icons.Outlined.RecordVoiceOver to stringResource(TDMR.strings.pref_novel_tts)
     BottomBarItem.ORIENTATION -> orientation.icon to stringResource(MR.strings.rotation_type)
     BottomBarItem.SETTINGS -> Icons.Outlined.Settings to stringResource(MR.strings.action_settings)
-    BottomBarItem.EDIT -> Icons.Outlined.Edit to "Edit" // Need to add translation later if required
+    BottomBarItem.EDIT -> Icons.Outlined.Edit to stringResource(MR.strings.action_edit)
 }
 
 @Composable

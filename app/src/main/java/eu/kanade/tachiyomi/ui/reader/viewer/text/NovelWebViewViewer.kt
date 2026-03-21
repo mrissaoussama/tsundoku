@@ -1539,16 +1539,34 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         val designMode = if (isEditing) "on" else "off"
         
         val script = """
-            if (document.body) {
-                document.body.contentEditable = '$editable';
-            }
-            document.designMode = '$designMode';
-        """.trimIndent()
-        
-        webView.evaluateJavascript(script, null)
-    }
+            (function() {
+                function enableEdit() {
+                    document.designMode = '$designMode';
+                    if (document.body) {
+                        document.body.contentEditable = '$editable';
+                    }
+                    var styleId = 'edit-mode-style';
+                    if ('$isEditing' === 'true') {
+                        if (!document.getElementById(styleId)) {
+                            var style = document.createElement('style');
+                            style.id = styleId;
+                            style.innerHTML = 'body, p, div { -webkit-user-select: text !important; user-select: text !important; pointer-events: auto !important; }';
+                            document.head.appendChild(style);
+                        }
+                    } else {
+                        var style = document.getElementById(styleId);
+                        if (style) {
+                            style.parentNode.removeChild(style);
+                        }
+                    }
+                }
 
-    override fun handleGenericMotionEvent(event: MotionEvent): Boolean = false
+                if (document.readyState === 'complete') {
+                    enableEdit();
+                } else {
+                    window.addEventListener('load', enableEdit);
+                }
+            })();
 
     /**
      * JavaScript interface for communication from WebView
