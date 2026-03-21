@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.VerticalAlignTop
@@ -120,6 +121,9 @@ fun NovelReaderAppBars(
     isTtsPaused: Boolean,
     onToggleTts: () -> Unit,
     onLongPressTts: () -> Unit,
+
+    isEditing: Boolean = false,
+    onToggleEdit: () -> Unit = {},
 
     // Toolbar customization
     bottomBarItems: List<BottomBarItemState>,
@@ -206,6 +210,8 @@ fun NovelReaderAppBars(
                     isTtsPaused = isTtsPaused,
                     onToggleTts = onToggleTts,
                     onLongPressTts = onLongPressTts,
+                    isEditing = isEditing,
+                    onToggleEdit = onToggleEdit,
                 )
             }
         }
@@ -334,6 +340,8 @@ private fun NovelReaderBottomBar(
     isTtsPaused: Boolean,
     onToggleTts: () -> Unit,
     onLongPressTts: () -> Unit,
+    isEditing: Boolean,
+    onToggleEdit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showEditor by remember { mutableStateOf(false) }
@@ -447,6 +455,19 @@ private fun NovelReaderBottomBar(
                             contentDescription = stringResource(MR.strings.action_settings),
                         )
                     }
+
+                    // Edit
+                    BottomBarItem.EDIT -> IconButton(onClick = onToggleEdit) {
+                        Icon(
+                            Icons.Outlined.Edit,
+                            contentDescription = "Edit",
+                            tint = if (isEditing) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                        )
+                    }
                 }
             }
     }
@@ -478,6 +499,7 @@ internal fun bottomBarItemInfo(
     BottomBarItem.TTS -> Icons.Outlined.RecordVoiceOver to stringResource(TDMR.strings.pref_novel_tts)
     BottomBarItem.ORIENTATION -> orientation.icon to stringResource(MR.strings.rotation_type)
     BottomBarItem.SETTINGS -> Icons.Outlined.Settings to stringResource(MR.strings.action_settings)
+    BottomBarItem.EDIT -> Icons.Outlined.Edit to "Edit" // Need to add translation later if required
 }
 
 @Composable

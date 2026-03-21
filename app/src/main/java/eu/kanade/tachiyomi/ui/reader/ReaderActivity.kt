@@ -599,6 +599,7 @@ class ReaderActivity : BaseActivity() {
 
             val bottomBarItems by viewModel.bottomBarItems.collectAsState()
             var showBottomBarEditor by remember { mutableStateOf(false) }
+            var isEditing by remember { mutableStateOf(false) }
 
             NovelReaderAppBars(
                 visible = state.menuVisible,
@@ -715,6 +716,18 @@ class ReaderActivity : BaseActivity() {
                         else -> {}
                     }
                 },
+                
+                isEditing = isEditing,
+                onToggleEdit = { 
+                    isEditing = !isEditing
+                    val viewer = state.viewer
+                    if (viewer is NovelWebViewViewer) {
+                        viewer.toggleEditMode(isEditing)
+                    } else if (viewer is NovelViewer) {
+                        viewer.toggleEditMode(isEditing)
+                    }
+                },
+
                 bottomBarItems = bottomBarItems,
                 onItemsChange = { viewModel.saveBottomBarItems(it) },
             )

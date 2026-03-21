@@ -1526,6 +1526,11 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         return false
     }
 
+    fun toggleEditMode(isEditing: Boolean) {
+        val editable = if (isEditing) "true" else "false"
+        webView.evaluateJavascript("document.body.contentEditable = '$editable';", null)
+    }
+
     override fun handleGenericMotionEvent(event: MotionEvent): Boolean = false
 
     /**

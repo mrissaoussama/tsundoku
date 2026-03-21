@@ -2029,6 +2029,14 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         return false
     }
 
+    fun toggleEditMode(isEditing: Boolean) {
+        if (isEditing) {
+            activity.runOnUiThread {
+                android.widget.Toast.makeText(activity, "Edit mode is only supported in WebView mode", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     override fun handleGenericMotionEvent(event: MotionEvent): Boolean {
         return false
     }

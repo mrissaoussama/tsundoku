@@ -19,6 +19,7 @@ enum class BottomBarItem(val id: String) {
     TTS("tts"),
     ORIENTATION("orientation"),
     SETTINGS("settings"),
+    EDIT("edit"),
 }
 
 data class BottomBarItemState(
@@ -35,6 +36,7 @@ val DefaultBottomBarItems = listOf(
     BottomBarItemState(BottomBarItem.TTS),
     BottomBarItemState(BottomBarItem.ORIENTATION),
     BottomBarItemState(BottomBarItem.SETTINGS),
+    BottomBarItemState(BottomBarItem.EDIT),
     BottomBarItemState(BottomBarItem.NEXT_CHAPTER),
 )
 
