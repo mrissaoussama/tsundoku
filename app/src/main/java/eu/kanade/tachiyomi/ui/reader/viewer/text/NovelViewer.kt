@@ -1674,8 +1674,16 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                 null
             }
 
+            // Strip style and script tags entirely before rendering
+            var cleanHtmlContent = processedContent
+            try {
+                val doc = org.jsoup.Jsoup.parse(cleanHtmlContent)
+                doc.select("style, script").remove()
+                cleanHtmlContent = doc.body()?.html() ?: cleanHtmlContent
+            } catch (_: Exception) {}
+
             val spanned = withContext(Dispatchers.Default) {
-                Html.fromHtml(processedContent, Html.FROM_HTML_MODE_LEGACY, imageGetter, null)
+                Html.fromHtml(cleanHtmlContent, Html.FROM_HTML_MODE_LEGACY, imageGetter, null)
             }
 
             // Apply custom paragraph spacing and indent using spans

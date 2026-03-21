@@ -25,6 +25,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Improved novel edit UI [@Rojikku](https://github.com/Rojikku) [#72](https://github.com/tsundoku-otaku/tsundoku/pull/72)
 - Add `.nomedia` file to `localnovels` and `lnreader_plugins` dirs [@mrissaoussamau](https://github.com/mrissaoussama) [#75](https://github.com/tsundoku-otaku/tsundoku/pull/75)
 - Decode HTML entities in JS manga title/descriptions `I&#x27;m` > `I'm` [@mrissaoussamau](https://github.com/mrissaoussama) [#76](https://github.com/tsundoku-otaku/tsundoku/pull/76)
+- Fix whiteflashes with webview on older android [@mrissaoussamau](https://github.com/mrissaoussama) [#77](https://github.com/tsundoku-otaku/tsundoku/pull/77)
+- EPUB improvements - CSS/JS Support, details.json, description/genre parsing [@mrissaoussamau](https://github.com/mrissaoussama) [#77](https://github.com/tsundoku-otaku/tsundoku/pull/77)
 
 ### Added
 - Toggle under settings > Appearance that hides most manga UI elements[@mrissaoussamau](https://github.com/mrissaoussama) [#48](https://github.com/tsundoku-otaku/tsundoku/pull/48)

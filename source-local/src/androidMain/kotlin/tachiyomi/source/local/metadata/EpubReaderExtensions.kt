@@ -25,6 +25,26 @@ fun EpubReader.fillMetadata(manga: SManga, chapter: SChapter) {
     val publisher = doc.getElementsByTag("dc:publisher").firstOrNull()
     val creator = doc.getElementsByTag("dc:creator").firstOrNull()
     var description = doc.getElementsByTag("dc:description").firstOrNull()?.text()
+    if (description.isNullOrBlank()) {
+        description = doc.select("dc\\:description").firstOrNull()?.text()
+    }
+    
+    val subjects = doc.getElementsByTag("dc:subject").map { it.text() }
+    val mappedSubjects = if (subjects.isEmpty()) {
+        doc.select("dc\\:subject").map { it.text() }
+    } else {
+        subjects
+    }
+    
+    val collection = doc.select("meta[property=belongs-to-collection]").firstOrNull()?.text()
+    
+    val currentTitle = runCatching { manga.title }.getOrNull()
+    if (!collection.isNullOrBlank() && currentTitle.isNullOrBlank()) {
+        manga.title = collection
+    } else if (!title.isNullOrBlank() && currentTitle.isNullOrBlank()) {
+        manga.title = title
+    }
+
     var date = doc.getElementsByTag("dc:date").firstOrNull()
     if (date == null) {
         date = doc.select("meta[property=dcterms:modified]").firstOrNull()
@@ -32,6 +52,12 @@ fun EpubReader.fillMetadata(manga: SManga, chapter: SChapter) {
 
     creator?.text()?.let { manga.author = it }
     description?.let { if (it.isNotBlank()) manga.description = it }
+    
+    if (mappedSubjects.isNotEmpty()) {
+        val currentGenres = manga.genre?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+        val allGenres = (currentGenres + mappedSubjects).distinct()
+        manga.genre = allGenres.joinToString(", ")
+    }
 
     title?.let { if (it.isNotBlank()) chapter.name = it }
 

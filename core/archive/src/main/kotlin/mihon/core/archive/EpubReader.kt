@@ -143,7 +143,10 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
             document.allElements.forEach {
                 when (it.tagName()) {
                     "img" -> result.add(resolveZipPath(imageBasePath, it.attr("src")))
-                    "image" -> result.add(resolveZipPath(imageBasePath, it.attr("xlink:href")))
+                    "image" -> {
+                        val href = it.attr("xlink:href").takeIf { it.isNotBlank() } ?: it.attr("href")
+                        if (href.isNotBlank()) result.add(resolveZipPath(imageBasePath, href))
+                    }
                 }
             }
         }
@@ -171,19 +174,29 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
         if (relativePath.startsWith("http://") || relativePath.startsWith("https://")) {
             return relativePath
         }
-        if (relativePath.startsWith(pathSeparator)) {
-            // Path is absolute, so return as-is.
-            return relativePath
+        
+        val separator = pathSeparator
+        val fullPath = if (relativePath.startsWith(separator)) {
+            relativePath
+        } else if (basePath.isEmpty()) {
+            relativePath
+        } else {
+            "$basePath$separator$relativePath"
         }
-
-        var fixedBasePath = basePath.replace(pathSeparator, File.separator)
-        if (!fixedBasePath.startsWith(File.separator)) {
-            fixedBasePath = "${File.separator}$fixedBasePath"
+        
+        val segments = fullPath.split(separator)
+        val resolved = mutableListOf<String>()
+        
+        for (segment in segments) {
+            if (segment == "." || segment.isEmpty()) continue
+            if (segment == "..") {
+                if (resolved.isNotEmpty()) resolved.removeLast()
+            } else {
+                resolved.add(segment)
+            }
         }
-
-        val fixedRelativePath = relativePath.replace(pathSeparator, File.separator)
-        val resolvedPath = File(fixedBasePath, fixedRelativePath).canonicalPath
-        return resolvedPath.replace(File.separator, pathSeparator).substring(1)
+        
+        return resolved.joinToString(separator)
     }
 
     /**
@@ -363,12 +376,12 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
 
             // Inline EPUB-internal media so viewers can render img and svg/image refs.
             val imageBasePath = getParentDirectory(entryPath)
-            document.select("img[src], image[xlink\\:href], image[href], image[*|href]").forEach { img ->
+            document.select("img, image").forEach { img ->
                 val rawSrc = when {
                     img.hasAttr("src") -> img.attr("src")
                     img.hasAttr("xlink:href") -> img.attr("xlink:href")
                     img.hasAttr("href") -> img.attr("href")
-                    else -> ""
+                    else -> return@forEach
                 }
 
                 val src = rawSrc.substringBefore("#").trim()
@@ -406,7 +419,7 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
             // TextView-based rendering doesn't reliably support SVG nodes.
             // Convert simple SVG image containers to regular <img> tags.
             document.select("svg").forEach { svg ->
-                val svgImage = svg.selectFirst("image[xlink\\:href], image[href], image[*|href]") ?: return@forEach
+                val svgImage = svg.select("image").firstOrNull { it.hasAttr("xlink:href") || it.hasAttr("href") } ?: return@forEach
                 val imageSrc = when {
                     svgImage.hasAttr("xlink:href") -> svgImage.attr("xlink:href")
                     svgImage.hasAttr("href") -> svgImage.attr("href")
@@ -420,7 +433,78 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
                 svg.replaceWith(imgElement)
             }
 
-            document.body()?.html() ?: document.outerHtml()
+            // Inline EPUB CSS
+            document.select("link[rel=stylesheet]").forEach { link ->
+                val href = link.attr("href")
+                if (href.isNotBlank()) {
+                    val cssPath = resolveZipPath(imageBasePath, href)
+                    try {
+                        getInputStream(cssPath)?.use { stream ->
+                            var cssText = stream.reader().readText()
+                            
+                            // Let's resolve uris in url(...) inside the CSS too
+                            val urlRegex = Regex("""url\(['"]?(.*?)['"]?\)""")
+                            cssText = urlRegex.replace(cssText) { match ->
+                                val assetUrl = match.groupValues[1]
+                                if (assetUrl.startsWith("data:") || assetUrl.startsWith("http")) return@replace match.value
+                                
+                                val cssDir = getParentDirectory(cssPath)
+                                val assetPath = resolveZipPath(cssDir, assetUrl.substringBefore("?").substringBefore("#"))
+                                try {
+                                    getInputStream(assetPath)?.use { assetStream ->
+                                        val bytes = assetStream.readBytes()
+                                        val base64 = java.util.Base64.getEncoder().encodeToString(bytes)
+                                        val mimeType = when (assetPath.substringAfterLast('.', "").lowercase()) {
+                                            "png" -> "image/png"
+                                            "jpg", "jpeg" -> "image/jpeg"
+                                            "gif" -> "image/gif"
+                                            "svg" -> "image/svg+xml"
+                                            "ttf" -> "font/ttf"
+                                            "otf" -> "font/otf"
+                                            "woff" -> "font/woff"
+                                            "woff2" -> "font/woff2"
+                                            else -> "application/octet-stream"
+                                        }
+                                        "url('data:$mimeType;base64,$base64')"
+                                    } ?: match.value
+                                } catch (e: Exception) {
+                                    match.value
+                                }
+                            }
+
+                            val style = org.jsoup.nodes.Element("style")
+                            style.attr("data-epub-css", "true")
+                            style.attr("data-file", href.substringAfterLast('/'))
+                            style.text(cssText)
+                            link.replaceWith(style)
+                        }
+                    } catch (_: Exception) { }
+                }
+            }
+
+            // Inline EPUB JS
+            document.select("script[src]").forEach { script ->
+                val src = script.attr("src")
+                if (src.isNotBlank() && !src.startsWith("http") && !src.startsWith("//")) {
+                    val jsPath = resolveZipPath(imageBasePath, src)
+                    try {
+                        getInputStream(jsPath)?.use { stream ->
+                            val jsText = stream.reader().readText()
+                            val inlineScript = org.jsoup.nodes.Element("script")
+                            inlineScript.attr("data-epub-js", "true")
+                            inlineScript.attr("data-file", src.substringAfterLast('/'))
+                            // Using dataNode for plain text in script to avoid weird HTML escaping
+                            inlineScript.appendChild(org.jsoup.nodes.DataNode(jsText))
+                            script.replaceWith(inlineScript)
+                        }
+                    } catch (_: Exception) { }
+                }
+            }
+
+            // Remove title to prevent bleeding into text viewers
+            document.getElementsByTag("title").remove()
+
+            document.outerHtml()
         } ?: ""
     }
 }

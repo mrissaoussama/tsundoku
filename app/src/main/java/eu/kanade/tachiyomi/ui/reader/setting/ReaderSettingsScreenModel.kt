@@ -27,4 +27,12 @@ class ReaderSettingsScreenModel(
         .map { it.manga }
         .distinctUntilChanged()
         .stateIn(ioCoroutineScope, SharingStarted.Lazily, null)
+
+    val isEpubFlow = readerState
+        .map { state ->
+            val url = state.viewerChapters?.currChapter?.chapter?.url ?: ""
+            url.contains(".epub", ignoreCase = true)
+        }
+        .distinctUntilChanged()
+        .stateIn(ioCoroutineScope, SharingStarted.Lazily, false)
 }

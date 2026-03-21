@@ -200,6 +200,10 @@ class ReaderPreferences(
     // Rendering mode: "default" = TextView, "webview" = WebView rendering
     fun novelRenderingMode() = preferenceStore.getString("pref_novel_rendering_mode", "default")
 
+    // EPUB specific toggles
+    fun enableEpubStyles() = preferenceStore.getBoolean("pref_novel_enable_epub_css", true)
+    fun enableEpubJs() = preferenceStore.getBoolean("pref_novel_enable_epub_js", false)
+
     // Custom CSS/JS stored as JSON array of {title, code} objects
     fun novelCustomCss() = preferenceStore.getString("pref_novel_custom_css", "")
     fun novelCustomJs() = preferenceStore.getString("pref_novel_custom_js", "")
