@@ -1,6 +1,7 @@
 package eu.kanade.presentation.library.components
 
 import android.net.Uri
+import eu.kanade.tachiyomi.util.system.toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -78,6 +79,8 @@ data class EpubFileInfo(
     val author: String?,
     val description: String?,
     val coverUri: Uri? = null,
+    val collection: String? = null,
+    val genres: String? = null,
 )
 
 data class ImportProgress(
@@ -219,9 +222,14 @@ fun ImportEpubDialog(
                                 author = manga.author,
                                 description = manga.description,
                                 coverUri = coverUri,
+                                collection = runCatching { manga.title }.getOrNull()?.takeIf { it.isNotBlank() },
+                                genres = manga.genre,
                             )
                         } catch (e: Exception) {
                             logcat(LogPriority.ERROR, e) { "Failed to parse EPUB: $uri" }
+                            withContext<Unit>(Dispatchers.Main) {
+                                context.toast("Failed to parse EPUB: ${e.message}")
+                            }
                             null
                         }
                     }
@@ -231,8 +239,14 @@ fun ImportEpubDialog(
                 if (fileInfos.size == 1) {
                     customTitle = fileInfos.first().title
                 } else if (fileInfos.size > 1) {
-                    // For combine mode, default title to first selected epub filename (without extension).
-                    customTitle = fileInfos.first().fileName.substringBeforeLast('.', fileInfos.first().fileName)
+                    // Check if they share the same collection
+                    val commonCollection = fileInfos.mapNotNull { it.collection }.distinct()
+                    if (commonCollection.size == 1) {
+                        customTitle = commonCollection.first()
+                    } else {
+                        // For combine mode, default title to first selected epub filename (without extension).
+                        customTitle = fileInfos.first().fileName.substringBeforeLast('.', fileInfos.first().fileName)
+                    }
                 }
                 isLoadingFiles = false
             }
@@ -566,6 +580,30 @@ private suspend fun importEpubFiles(
                         logcat(LogPriority.DEBUG, e) { "Failed to copy cover for combined novel" }
                     }
                 }
+                
+                // Write details.json if metadata exists
+                val combinedDescription = files.mapNotNull { it.description }.firstOrNull { it.isNotBlank() }
+                val combinedGenres = files.mapNotNull { it.genres }.flatMap { it.split(",") }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+                val author = files.firstOrNull()?.author
+                if (combinedDescription != null || combinedGenres.isNotEmpty() || author != null) {
+                    try {
+                        val detailsFile = novelDir.createFile("details.json")
+                        val jsonStr = buildString {
+                            append("{")
+                            append("\"title\":\"${novelTitle.replace("\"", "\\\"")}\"")
+                            if (author != null) append(",\"author\":\"${author.replace("\"", "\\\"")}\"")
+                            if (combinedDescription != null) append(",\"description\":\"${combinedDescription.replace("\"", "\\\"").replace("\n", "\\n")}\"")
+                            if (combinedGenres.isNotEmpty()) {
+                                append(",\"genre\":[${combinedGenres.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }}]")
+                            }
+                            append("}")
+                        }
+                        detailsFile?.openOutputStream()?.use { it.write(jsonStr.toByteArray()) }
+                    } catch (e: Exception) {
+                        logcat(LogPriority.DEBUG, e) { "Failed to write details.json" }
+                    }
+                }
+                
                 successCount = 1
             }
         } catch (e: Exception) {
@@ -618,6 +656,29 @@ private suspend fun importEpubFiles(
                                 }
                             } catch (e: Exception) {
                                 logcat(LogPriority.DEBUG, e) { "Failed to copy cover for: ${file.fileName}" }
+                            }
+                        }
+
+                        // Write metadata
+                        val description = file.description
+                        val genres = file.genres?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+                        val author = file.author
+                        if (!description.isNullOrBlank() || genres.isNotEmpty() || !author.isNullOrBlank()) {
+                            try {
+                                val detailsFile = novelDir.createFile("details.json")
+                                val jsonStr = buildString {
+                                    append("{")
+                                    append("\"title\":\"${novelTitle.replace("\"", "\\\"")}\"")
+                                    if (!author.isNullOrBlank()) append(",\"author\":\"${author!!.replace("\"", "\\\"")}\"")
+                                    if (!description.isNullOrBlank()) append(",\"description\":\"${description!!.replace("\"", "\\\"").replace("\n", "\\n")}\"")
+                                    if (genres.isNotEmpty()) {
+                                        append(",\"genre\":[${genres.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }}]")
+                                    }
+                                    append("}")
+                                }
+                                detailsFile?.openOutputStream()?.use { it.write(jsonStr.toByteArray()) }
+                            } catch (e: Exception) {
+                                logcat(LogPriority.DEBUG, e) { "Failed to write details.json for: ${file.fileName}" }
                             }
                         }
 

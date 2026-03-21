@@ -52,6 +52,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -72,6 +73,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import tachiyomi.presentation.core.util.collectAsState
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.preference.Preference
 import tachiyomi.i18n.MR
@@ -625,6 +627,20 @@ internal fun ColumnScope.NovelAdvancedTab(screenModel: ReaderSettingsScreenModel
 
     if (renderingMode != "webview") {
         return
+    }
+
+    val isEpub by screenModel.isEpubFlow.collectAsState()
+
+    if (isEpub) {
+        CheckboxItem(
+            label = "Enable EPUB CSS",
+            pref = screenModel.preferences.enableEpubStyles()
+        )
+
+        CheckboxItem(
+            label = "Enable EPUB JS",
+            pref = screenModel.preferences.enableEpubJs()
+        )
     }
 
     val cssSnippetsJson by screenModel.preferences.novelCustomCssSnippets().collectAsState()

@@ -304,6 +304,14 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 false
             }
         }
+        
+        // Initial setup for background to avoid white flashes
+        val theme = preferences.novelTheme().get()
+        val backgroundColor = preferences.novelBackgroundColor().get()
+        val (themeBgColor, _) = getThemeColors(theme)
+        val finalBgColor = if (theme == "custom" && backgroundColor != 0) backgroundColor else themeBgColor
+        webView.setBackgroundColor(finalBgColor)
+        container.setBackgroundColor(finalBgColor)
 
         container.addView(webView, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
     }
@@ -390,6 +398,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         // Use 0 as default marker (not -1, since white = -1 as signed int)
         val finalBgColor = if (theme == "custom" && backgroundColor != 0) backgroundColor else themeBgColor
         val finalTextColor = if (fontColor != 0) fontColor else themeTextColor
+
+        webView.setBackgroundColor(finalBgColor)
+        container.setBackgroundColor(finalBgColor)
 
         val bgColorHex = String.format("#%06X", 0xFFFFFF and finalBgColor)
         val textColorHex = String.format("#%06X", 0xFFFFFF and finalTextColor)
@@ -1225,6 +1236,36 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
         // Build global JS variables for custom scripts
         val chapterMetaScript = buildChapterMetaScript()
+        
+        var finalContent = cleanContent
+        var epubHead = ""
+        
+        try {
+            val doc = org.jsoup.Jsoup.parse(finalContent)
+            
+            // Extract and filter EPUB styles
+            if (preferences.enableEpubStyles().get()) {
+                doc.select("style[data-epub-css]").forEach { style ->
+                    epubHead += "\n" + style.outerHtml()
+                }
+            }
+            doc.select("style[data-epub-css]").remove()
+            
+            // Extract and filter EPUB scripts
+            if (preferences.enableEpubJs().get()) {
+                doc.select("script[data-epub-js]").forEach { script ->
+                    epubHead += "\n" + script.outerHtml()
+                }
+            }
+            doc.select("script[data-epub-js]").remove()
+
+            val bodyNode = doc.body()
+            if (bodyNode != null && bodyNode.hasText()) {
+                finalContent = bodyNode.html()
+            } else if (bodyNode != null && bodyNode.children().isNotEmpty()) {
+                finalContent = bodyNode.html()
+            }
+        } catch (_: Exception) {}
 
         val html = """
             <!DOCTYPE html>
@@ -1262,11 +1303,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     }
                     $mediaBlockCss
                 </style>
+                $epubHead
                 <script>$chapterMetaScript</script>
             </head>
             <body>
                 $chapterDivider
-                $cleanContent
+                $finalContent
                 $chapterDividerEnd
             </body>
             </html>
@@ -1349,9 +1391,14 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     private fun showLoadingIndicator() {
         // Inject loading HTML instead of showing popup
         val theme = preferences.novelTheme().get()
+        val backgroundColor = preferences.novelBackgroundColor().get()
+        val fontColor = preferences.novelFontColor().get()
         val (themeBgColor, themeTextColor) = getThemeColors(theme)
-        val bgColorHex = String.format("#%06X", 0xFFFFFF and themeBgColor)
-        val textColorHex = String.format("#%06X", 0xFFFFFF and themeTextColor)
+        val finalBgColor = if (theme == "custom" && backgroundColor != 0) backgroundColor else themeBgColor
+        val finalTextColor = if (fontColor != 0) fontColor else themeTextColor
+        
+        val bgColorHex = String.format("#%06X", 0xFFFFFF and finalBgColor)
+        val textColorHex = String.format("#%06X", 0xFFFFFF and finalTextColor)
 
         val loadingHtml = """
             <!DOCTYPE html>
@@ -1387,6 +1434,15 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     }
 
     private fun displayError(error: Throwable) {
+        val theme = preferences.novelTheme().get()
+        val backgroundColor = preferences.novelBackgroundColor().get()
+        val fontColor = preferences.novelFontColor().get()
+        val (themeBgColor, themeTextColor) = getThemeColors(theme)
+        val finalBgColor = if (theme == "custom" && backgroundColor != 0) backgroundColor else themeBgColor
+        val finalTextColor = if (fontColor != 0) fontColor else themeTextColor
+        val bgColorHex = String.format("#%06X", 0xFFFFFF and finalBgColor)
+        val textColorHex = String.format("#%06X", 0xFFFFFF and finalTextColor)
+
         val escapedMessage = (error.message ?: "Unknown error")
             .replace("&", "&amp;")
             .replace("<", "&lt;")
@@ -1396,7 +1452,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         val errorHtml = """
             <!DOCTYPE html>
             <html>
-            <body style="display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0;">
+            <body style="display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: $bgColorHex; color: $textColorHex;">
                 <div style="text-align: center; color: #ff5555;">
                     <h2>Error loading chapter</h2>
                     <p>$escapedMessage</p>
