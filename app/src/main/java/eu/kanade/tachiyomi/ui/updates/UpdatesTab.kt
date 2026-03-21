@@ -64,9 +64,14 @@ data object UpdatesTab : Tab {
         val state by screenModel.state.collectAsState()
         val hideMangaUi by basePreferences.hideMangaUi().changes().collectAsState(initial = basePreferences.hideMangaUi().get())
 
+        LaunchedEffect(hideMangaUi) {
+            screenModel.syncFilterWithHideManga(hideMangaUi)
+        }
+
         UpdateScreen(
             state = state,
             snackbarHostState = screenModel.snackbarHostState,
+            showFilterChips = !hideMangaUi,
             lastUpdated = screenModel.lastUpdated,
             onClickCover = { item -> navigator.push(MangaScreen(item.update.mangaId)) },
             onSelectAll = screenModel::toggleAllSelection,

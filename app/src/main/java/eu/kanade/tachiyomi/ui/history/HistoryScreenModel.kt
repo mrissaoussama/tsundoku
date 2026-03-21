@@ -174,11 +174,11 @@ class HistoryScreenModel(
     fun syncFilterWithHideManga(hideMangaUi: Boolean) {
         if (!hideMangaUi) return
         mutableState.update { state ->
-            val nextFilter = when (state.filter) {
-                HistoryFilter.MANGA, HistoryFilter.ALL -> HistoryFilter.NOVELS
-                HistoryFilter.NOVELS -> HistoryFilter.NOVELS
+            if (state.filter == HistoryFilter.ALL) {
+                state
+            } else {
+                state.copy(filter = HistoryFilter.ALL, limit = HISTORY_PAGE_SIZE)
             }
-            if (nextFilter == state.filter) state else state.copy(filter = nextFilter, limit = HISTORY_PAGE_SIZE)
         }
     }
 

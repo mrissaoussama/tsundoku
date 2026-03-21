@@ -621,9 +621,13 @@ class UpdatesScreenModel(
     }
 
     fun syncFilterWithHideManga(hideMangaUi: Boolean) {
-        if (!hideMangaUi) return
-        if (state.value.filter == UpdatesFilter.NOVELS) return
-        setFilter(UpdatesFilter.NOVELS)
+        if (!hideMangaUi || state.value.filter == UpdatesFilter.ALL) return
+
+        mutableState.update { it.copy(filter = UpdatesFilter.ALL) }
+        mutableState.update {
+            it.copy(items = latestUpdates.toUpdateItems().toPersistentList())
+        }
+        currentLimit.value = GetUpdates.PAGE_SIZE
     }
 
     sealed interface Dialog {
