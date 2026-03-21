@@ -163,18 +163,18 @@ fun UpdateScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     if (showAllFilter) {
-                                    FilterChip(
-                                        selected = state.filter == UpdatesFilter.ALL,
-                                        onClick = { onFilterSelected(UpdatesFilter.ALL) },
-                                        label = { Text(stringResource(MR.strings.all)) },
-                                    )
+                                        FilterChip(
+                                            selected = state.filter == UpdatesFilter.ALL,
+                                            onClick = { onFilterSelected(UpdatesFilter.ALL) },
+                                            label = { Text(stringResource(MR.strings.all)) },
+                                        )
                                     }
                                     if (showMangaFilter) {
-                                    FilterChip(
-                                        selected = state.filter == UpdatesFilter.MANGA,
-                                        onClick = { onFilterSelected(UpdatesFilter.MANGA) },
-                                        label = { Text(stringResource(TDMR.strings.label_manga)) },
-                                    )
+                                        FilterChip(
+                                            selected = state.filter == UpdatesFilter.MANGA,
+                                            onClick = { onFilterSelected(UpdatesFilter.MANGA) },
+                                            label = { Text(stringResource(TDMR.strings.label_manga)) },
+                                        )
                                     }
                                     FilterChip(
                                         selected = state.filter == UpdatesFilter.NOVELS,

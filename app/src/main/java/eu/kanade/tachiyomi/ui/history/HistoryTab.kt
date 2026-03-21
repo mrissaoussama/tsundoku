@@ -17,6 +17,7 @@ import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.navigator.currentOrThrow
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.TabOptions
+import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.category.components.ChangeCategoryDialog
 import eu.kanade.presentation.history.HistoryScreen
 import eu.kanade.presentation.history.components.HistoryDeleteAllDialog
@@ -33,10 +34,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
 import mihon.feature.migration.dialog.MigrateMangaDialog
-import eu.kanade.domain.base.BasePreferences
+import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.i18n.MR
-import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.presentation.core.i18n.stringResource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get

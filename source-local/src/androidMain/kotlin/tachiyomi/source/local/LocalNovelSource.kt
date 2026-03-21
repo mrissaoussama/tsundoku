@@ -217,84 +217,84 @@ actual class LocalNovelSource(
         var orderedTocChapterNumber = 0
 
         chapterFiles.forEachIndexed { fileIndex, chapterFile ->
-                // Check if this is a multi-chapter EPUB
-                if (chapterFile.extension.equals("epub", true)) {
-                    try {
-                        chapterFile.epubReader(context).use { epub ->
-                            // Try to find and set the cover image if not set yet
-                            if (coverManager.find(manga.url) == null) {
-                                try {
-                                    val cover = epub.getCoverImage()
-                                    if (cover != null) {
-                                        if (cover.startsWith("http://") || cover.startsWith("https://")) {
-                                            downloadCoverBytes(cover)?.let { bytes ->
-                                                logcat(LogPriority.INFO) {
-                                                    "LocalNovelSource: Downloaded external cover $cover"
-                                                }
-                                                coverManager.update(manga, ByteArrayInputStream(bytes))
+            // Check if this is a multi-chapter EPUB
+            if (chapterFile.extension.equals("epub", true)) {
+                try {
+                    chapterFile.epubReader(context).use { epub ->
+                        // Try to find and set the cover image if not set yet
+                        if (coverManager.find(manga.url) == null) {
+                            try {
+                                val cover = epub.getCoverImage()
+                                if (cover != null) {
+                                    if (cover.startsWith("http://") || cover.startsWith("https://")) {
+                                        downloadCoverBytes(cover)?.let { bytes ->
+                                            logcat(LogPriority.INFO) {
+                                                "LocalNovelSource: Downloaded external cover $cover"
                                             }
-                                        } else {
-                                            epub.getInputStream(cover)?.use { stream ->
-                                                logcat(LogPriority.INFO) {
-                                                    "LocalNovelSource: Extracted embedded cover $cover"
-                                                }
-                                                coverManager.update(manga, stream)
+                                            coverManager.update(manga, ByteArrayInputStream(bytes))
+                                        }
+                                    } else {
+                                        epub.getInputStream(cover)?.use { stream ->
+                                            logcat(LogPriority.INFO) {
+                                                "LocalNovelSource: Extracted embedded cover $cover"
                                             }
+                                            coverManager.update(manga, stream)
                                         }
                                     }
-                                } catch (e: Exception) {
-                                    logcat(LogPriority.ERROR, e) { "Error extracting cover from ${chapterFile.name}" }
                                 }
+                            } catch (e: Exception) {
+                                logcat(LogPriority.ERROR, e) { "Error extracting cover from ${chapterFile.name}" }
                             }
-
-                            val tocChapters = epub.getTableOfContents()
-
-                            // If EPUB has multiple TOC entries, create separate chapters
-                            if (tocChapters.size > 1) {
-                                tocChapters.forEachIndexed { tocIndex, tocEntry ->
-                                    orderedTocChapterNumber += 1
-                                    val chapterDisplayName = if (hasMultipleEpubFiles) {
-                                        "${chapterFile.nameWithoutExtension.orEmpty()} - ${tocEntry.title}"
-                                    } else {
-                                        tocEntry.title
-                                    }
-
-                                    allChapters.add(
-                                        SChapter.create().apply {
-                                            // URL format: novelDir/epubFile.epub#chapterHref
-                                            url = "${manga.url}/${chapterFile.name}#${tocEntry.href}"
-                                            name = chapterDisplayName
-                                            date_upload = chapterFile.lastModified()
-                                            chapter_number = orderedTocChapterNumber.toFloat()
-                                        },
-                                    )
-                                }
-                                return@forEachIndexed // Don't add the EPUB as a single chapter
-                            }
-
-                            // Single chapter EPUB - treat as before
-                            allChapters.add(
-                                SChapter.create().apply {
-                                    url = "${manga.url}/${chapterFile.name}"
-                                    name = chapterFile.nameWithoutExtension.orEmpty()
-                                    date_upload = chapterFile.lastModified()
-                                    chapter_number = ChapterRecognition
-                                        .parseChapterNumber(manga.title, this.name, this.chapter_number.toDouble())
-                                        .toFloat()
-                                    epub.fillMetadata(manga, this)
-                                },
-                            )
                         }
-                    } catch (e: Throwable) {
-                        logcat(LogPriority.ERROR, e) { "Error reading epub for ${chapterFile.name}" }
-                        // Fallback: add as single chapter
-                        allChapters.add(createSimpleChapter(manga, chapterFile))
+
+                        val tocChapters = epub.getTableOfContents()
+
+                        // If EPUB has multiple TOC entries, create separate chapters
+                        if (tocChapters.size > 1) {
+                            tocChapters.forEachIndexed { tocIndex, tocEntry ->
+                                orderedTocChapterNumber += 1
+                                val chapterDisplayName = if (hasMultipleEpubFiles) {
+                                    "${chapterFile.nameWithoutExtension.orEmpty()} - ${tocEntry.title}"
+                                } else {
+                                    tocEntry.title
+                                }
+
+                                allChapters.add(
+                                    SChapter.create().apply {
+                                        // URL format: novelDir/epubFile.epub#chapterHref
+                                        url = "${manga.url}/${chapterFile.name}#${tocEntry.href}"
+                                        name = chapterDisplayName
+                                        date_upload = chapterFile.lastModified()
+                                        chapter_number = orderedTocChapterNumber.toFloat()
+                                    },
+                                )
+                            }
+                            return@forEachIndexed // Don't add the EPUB as a single chapter
+                        }
+
+                        // Single chapter EPUB - treat as before
+                        allChapters.add(
+                            SChapter.create().apply {
+                                url = "${manga.url}/${chapterFile.name}"
+                                name = chapterFile.nameWithoutExtension.orEmpty()
+                                date_upload = chapterFile.lastModified()
+                                chapter_number = ChapterRecognition
+                                    .parseChapterNumber(manga.title, this.name, this.chapter_number.toDouble())
+                                    .toFloat()
+                                epub.fillMetadata(manga, this)
+                            },
+                        )
                     }
-                } else {
-                    // Non-EPUB file/directory
+                } catch (e: Throwable) {
+                    logcat(LogPriority.ERROR, e) { "Error reading epub for ${chapterFile.name}" }
+                    // Fallback: add as single chapter
                     allChapters.add(createSimpleChapter(manga, chapterFile))
                 }
+            } else {
+                // Non-EPUB file/directory
+                allChapters.add(createSimpleChapter(manga, chapterFile))
             }
+        }
 
         allChapters.sortedWith { c1, c2 ->
             when {

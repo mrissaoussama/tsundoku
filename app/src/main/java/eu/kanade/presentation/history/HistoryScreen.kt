@@ -98,18 +98,18 @@ fun HistoryScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (showAllFilter) {
-                    FilterChip(
-                        selected = state.filter == HistoryFilter.ALL,
-                        onClick = { onFilterSelected(HistoryFilter.ALL) },
-                        label = { Text(stringResource(MR.strings.all)) },
-                    )
+                        FilterChip(
+                            selected = state.filter == HistoryFilter.ALL,
+                            onClick = { onFilterSelected(HistoryFilter.ALL) },
+                            label = { Text(stringResource(MR.strings.all)) },
+                        )
                     }
                     if (showMangaFilter) {
-                    FilterChip(
-                        selected = state.filter == HistoryFilter.MANGA,
-                        onClick = { onFilterSelected(HistoryFilter.MANGA) },
-                        label = { Text(stringResource(TDMR.strings.label_manga)) },
-                    )
+                        FilterChip(
+                            selected = state.filter == HistoryFilter.MANGA,
+                            onClick = { onFilterSelected(HistoryFilter.MANGA) },
+                            label = { Text(stringResource(TDMR.strings.label_manga)) },
+                        )
                     }
                     FilterChip(
                         selected = state.filter == HistoryFilter.NOVELS,
