@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.reader.viewer.text
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.view.GestureDetector
@@ -8,6 +9,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -373,6 +375,17 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 }
         }
 
+        scope.launch {
+            preferences.novelForceTextLowercase().changes()
+                .drop(1)
+                .collect {
+                    currentChapters?.let {
+                        // Reload the current chapter to reapply string transformations
+                        setChapters(it)
+                    }
+                }
+        }
+
         // Observe block media preference
         scope.launch {
             preferences.novelBlockMedia().changes()
@@ -502,10 +515,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
         val js = """
             (function() {
-                var style = document.getElementById('mihon-custom-style');
+                var style = document.getElementById('tsundoku-custom-style');
                 if (!style) {
                     style = document.createElement('style');
-                    style.id = 'mihon-custom-style';
+                    style.id = 'tsundoku-custom-style';
                     document.head.appendChild(style);
                 }
                 style.textContent = `$css`;
@@ -524,6 +537,16 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     }
 
     private fun injectCustomScript() {
+        val variablesJs = """
+            window.TachiVariables = {
+                isEditMode: ${isEditingMode},
+                isInfScroll: ${preferences.novelInfiniteScroll().get()},
+                textSelectionBlocked: !${preferences.novelTextSelectable().get()},
+                forcedLowercase: ${preferences.novelForceTextLowercase().get()}
+            };
+        """.trimIndent()
+        evaluateJavascriptSafe(variablesJs, null)
+
         val customJs = preferences.novelCustomJs().get()
         if (customJs.isNotBlank()) {
             evaluateJavascriptSafe(customJs, null)
@@ -585,21 +608,21 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         val effectiveThreshold = if (autoLoadThreshold > 0) autoLoadThreshold / 100.0 else 0.95
         val scrollTrackingScript = """
             (function() {
-                if (window.__mihonInfiniteScrollInstalled) {
+                if (window.__tsundokuInfiniteScrollInstalled) {
                     return;
                 }
-                window.__mihonInfiniteScrollInstalled = true;
+                window.__tsundokuInfiniteScrollInstalled = true;
 
                 var lastProgress = 0;
                 var saveTimeout = null;
-                window.__mihonLoadingNext = window.__mihonLoadingNext || false;
-                window.__mihonSetLoadingNext = function(v) { window.__mihonLoadingNext = !!v; };
+                window.__tsundokuLoadingNext = window.__tsundokuLoadingNext || false;
+                window.__tsundokuSetLoadingNext = function(v) { window.__tsundokuLoadingNext = !!v; };
                 var infiniteScrollEnabled = $infiniteScrollActuallyEnabled;
                 var loadThreshold = $effectiveThreshold;
 
                 // Track chapter boundaries for multi-chapter infinite scroll
                 window.chapterBoundaries = window.chapterBoundaries || [];
-                window.__mihonLastBoundaryUpdate = window.__mihonLastBoundaryUpdate || 0;
+                window.__tsundokuLastBoundaryUpdate = window.__tsundokuLastBoundaryUpdate || 0;
 
                 window.addEventListener('scroll', function() {
                     // Keep chapter boundaries in sync with actual DOM markers.
@@ -608,8 +631,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                         var dividers = document.querySelectorAll('.chapter-divider');
                         if (!window.chapterBoundaries || window.chapterBoundaries.length !== dividers.length) {
                             window.updateChapterBoundaries();
-                        } else if (Date.now() - window.__mihonLastBoundaryUpdate > 1000) {
-                            window.__mihonLastBoundaryUpdate = Date.now();
+                        } else if (Date.now() - window.__tsundokuLastBoundaryUpdate > 1000) {
+                            window.__tsundokuLastBoundaryUpdate = Date.now();
                             window.updateChapterBoundaries();
                         }
                     }
@@ -665,15 +688,15 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                             shouldLoadNext = progress >= loadThreshold;
                         }
                     }
-                    if (shouldLoadNext && !window.__mihonLoadingNext) {
+                    if (shouldLoadNext && !window.__tsundokuLoadingNext) {
                         console.log('Infinite scroll: Loading next chapter at progress ' + currentChapterProgress + ' (threshold: ' + loadThreshold + ')');
-                        window.__mihonLoadingNext = true;
+                        window.__tsundokuLoadingNext = true;
                         try {
                             Android.loadNextChapter();
                             console.log('Infinite scroll: Successfully called loadNextChapter()');
                         } catch(e) {
                             console.error('Infinite scroll: Error calling loadNextChapter:', e);
-                            window.__mihonLoadingNext = false; // Reset immediately on error
+                            window.__tsundokuLoadingNext = false; // Reset immediately on error
                         }
                     }
                 });
@@ -703,7 +726,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                         });
                     });
                     window.chapterBoundaries = boundaries;
-                    window.__mihonLastBoundaryUpdate = Date.now();
+                    window.__tsundokuLastBoundaryUpdate = Date.now();
                 };
 
                 // Initialize boundaries on first load.
@@ -1364,6 +1387,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             window.__TSUNDOKU_CHAPTER_NUMBER = $chapterNumber;
             window.__TSUNDOKU_CHAPTER_URL = "$chapterUrl";
             window.__TSUNDOKU_NOVEL_URL = "$novelUrl";
+            window.__TSUNDOKU_IS_EDIT_MODE = ${isEditingMode};
+            window.__TSUNDOKU_IS_INF_SCROLL = ${preferences.novelInfiniteScroll().get()};
+            window.__TSUNDOKU_TEXT_SELECTION_BLOCKED = ${!preferences.novelTextSelectable().get()};
+            window.__TSUNDOKU_FORCED_LOWERCASE = ${preferences.novelForceTextLowercase().get()};
         """.trimIndent()
     }
 
@@ -1533,30 +1560,102 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         return false
     }
 
-    fun toggleEditMode(isEditing: Boolean) {
+    fun toggleEditMode(isEditing: Boolean, save: Boolean = true) {
+        if (!isEditing && !save) {
+            this.isEditingMode = false
+            webView.clearFocus()
+            val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.hideSoftInputFromWindow(webView.windowToken, 0)
+
+            // Reload chapter to discard edits
+            activity.viewModel.reloadChapter(fromSource = false)
+            return
+        }
+
         this.isEditingMode = isEditing
-        val editable = if (isEditing) "true" else "false"
-        val designMode = if (isEditing) "on" else "off"
-        
+        injectCustomScript()
+        updateChapterMetaJs()
+
+        if (isEditing) {
+            webView.post {
+                activity.window.decorView.clearFocus()
+                webView.requestFocus()
+                webView.requestFocusFromTouch()
+                val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                imm?.showSoftInput(webView, 0)
+                webView.postDelayed({
+                    imm?.showSoftInput(webView, 0)
+                }, 120)
+
+            }
+        } else {
+            webView.clearFocus()
+            val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.hideSoftInputFromWindow(webView.windowToken, 0)
+
+        }
+
         val script = """
             (function() {
                 function enableEdit() {
-                    document.designMode = '$designMode';
-                    if (document.body) {
-                        document.body.contentEditable = '$editable';
-                    }
+                    document.designMode = 'off';
                     var styleId = 'edit-mode-style';
                     if ('$isEditing' === 'true') {
                         if (!document.getElementById(styleId)) {
                             var style = document.createElement('style');
                             style.id = styleId;
-                            style.innerHTML = 'body, p, div { -webkit-user-select: text !important; user-select: text !important; pointer-events: auto !important; }';
+                            style.innerHTML = '.chapter-content, [data-tsundoku-editable="1"], body { -webkit-user-select: text !important; user-select: text !important; pointer-events: auto !important; -webkit-tap-highlight-color: transparent; outline: none; }';
                             document.head.appendChild(style);
+                        }
+
+                        var editTargets = document.querySelectorAll('.chapter-content');
+                        if (editTargets.length === 0 && document.body) {
+                            document.body.setAttribute('contenteditable', 'true');
+                            document.body.setAttribute('data-tsundoku-editable', '1');
+                            document.body.setAttribute('tabindex', '0');
+                        } else {
+                            for (var i = 0; i < editTargets.length; i++) {
+                                editTargets[i].setAttribute('contenteditable', 'true');
+                                editTargets[i].setAttribute('data-tsundoku-editable', '1');
+                                editTargets[i].setAttribute('tabindex', '0');
+                            }
+                        }
+
+                        if (!window.__tsundokuEditInputBound) {
+                            window.__tsundokuEditInputBound = true;
+                            document.addEventListener('input', function(e) {
+                                if (window.Android && window.Android.onContentEdited) {
+                                    window.Android.onContentEdited();
+                                }
+                            });
                         }
                     } else {
                         var style = document.getElementById(styleId);
                         if (style) {
                             style.parentNode.removeChild(style);
+                        }
+
+                        var editableNodes = document.querySelectorAll('[data-tsundoku-editable="1"]');
+                        for (var j = 0; j < editableNodes.length; j++) {
+                            editableNodes[j].removeAttribute('contenteditable');
+                            editableNodes[j].removeAttribute('data-tsundoku-editable');
+                            editableNodes[j].removeAttribute('tabindex');
+                        }
+
+                        var contents = [];
+                        var nodes = document.querySelectorAll('.chapter-content');
+                        if (nodes.length > 0) {
+                            for (var i = 0; i < nodes.length; i++) {
+                                var html = nodes[i].innerHTML;
+                                var chapterId = nodes[i].getAttribute('data-chapter-id');
+                                contents.push({id: chapterId, content: html});
+                            }
+                        } else if (document.body) {
+                            var currentId = '${currentChapters?.currChapter?.chapter?.id ?: -1}';
+                            contents.push({id: currentId, content: document.body.innerHTML});
+                        }
+                        if (window.Android && window.Android.onSaveEditedContent) {
+                            window.Android.onSaveEditedContent(JSON.stringify(contents));
                         }
                     }
                 }
@@ -1567,12 +1666,29 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     window.addEventListener('load', enableEdit);
                 }
             })();
+        """.trimIndent()
+
+        webView.evaluateJavascript(script, null)
+    }
+
+    override fun handleGenericMotionEvent(event: MotionEvent): Boolean = false
 
     /**
      * JavaScript interface for communication from WebView
      */
     @Keep
     inner class WebViewInterface {
+        @JavascriptInterface
+        fun onContentEdited() {
+            activity.viewModel.setHasUnsavedChanges(true)
+        }
+
+        @JavascriptInterface
+        fun onSaveEditedContent(json: String) {
+            logcat(LogPriority.DEBUG) { "NovelWebViewViewer: onSaveEditedContent(length=${json.length})" }
+            activity.viewModel.saveEditedChapterContent(json)
+        }
+
         @JavascriptInterface
         fun onScrollProgress(progress: Float) {
             activity.runOnUiThread {
@@ -1646,7 +1762,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     private fun setJsLoadingNext(isLoading: Boolean) {
         val flag = if (isLoading) "true" else "false"
         evaluateJavascriptSafe(
-            "(function(){ if (window.__mihonSetLoadingNext) window.__mihonSetLoadingNext($flag); })();",
+            "(function(){ if (window.__tsundokuSetLoadingNext) window.__tsundokuSetLoadingNext($flag); })();",
             null,
         )
     }

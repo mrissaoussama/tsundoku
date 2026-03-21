@@ -599,6 +599,7 @@ class ReaderActivity : BaseActivity() {
 
             val bottomBarItems by viewModel.bottomBarItems.collectAsState()
             var showBottomBarEditor by remember { mutableStateOf(false) }
+            var showEditSaveDialog by remember { mutableStateOf(false) }
             var isEditing by remember { mutableStateOf(false) }
 
             NovelReaderAppBars(
@@ -716,17 +717,58 @@ class ReaderActivity : BaseActivity() {
                         else -> {}
                     }
                 },
-                
+
                 isEditing = isEditing,
-                onToggleEdit = { 
-                    isEditing = !isEditing
+                onToggleEdit = {
                     val viewer = state.viewer
-                    if (viewer is NovelWebViewViewer) {
-                        viewer.toggleEditMode(isEditing)
+                    if (isEditing) {
+                        if (state.hasUnsavedChanges) {
+                            showEditSaveDialog = true
+                        } else {
+                            isEditing = false
+                            (viewer as? NovelWebViewViewer)?.toggleEditMode(isEditing = false, save = false)
+                        }
+                    } else {
+                        isEditing = true
+                        if (viewer is NovelWebViewViewer) {
+                            viewer.toggleEditMode(true)
+                        }
+                    }
+                },
 
                 isWebView = state.viewer is NovelWebViewViewer,
                 bottomBarItems = bottomBarItems,
             )
+
+            androidx.activity.compose.BackHandler(enabled = isEditing && state.hasUnsavedChanges) {
+                showEditSaveDialog = true
+            }
+
+            if (showEditSaveDialog) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showEditSaveDialog = false },
+                    title = { androidx.compose.material3.Text("Save changes?") },
+                    text = { androidx.compose.material3.Text("Do you want to save your edits to this chapter?") },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            showEditSaveDialog = false
+                            isEditing = false
+                            (state.viewer as? NovelWebViewViewer)?.toggleEditMode(isEditing = false, save = true)
+                        }) {
+                            androidx.compose.material3.Text("Save")
+                        }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            showEditSaveDialog = false
+                            isEditing = false
+                            (state.viewer as? NovelWebViewViewer)?.toggleEditMode(isEditing = false, save = false)
+                        }) {
+                            androidx.compose.material3.Text("Discard")
+                        }
+                    }
+                )
+            }
 
             if (showBottomBarEditor) {
                 BottomBarEditorSheet(

@@ -55,22 +55,20 @@ object NovelViewerTextUtils {
 
     /**
      * Strips the chapter title from the beginning of the content.
-     * Searches within the first ~500 characters for chapter title or name matches.
+     * Searches within the first ~3000 characters for chapter title or name matches.
      */
     fun stripChapterTitle(content: String, chapterName: String): String {
         val normalizedChapterName = chapterName.trim().lowercase()
-        // Search within first 500 chars for title (to handle leading whitespace/tags)
-        val searchArea = content.take(500)
+        // Search within first 3000 chars for title (to handle leading whitespace/tags/extra prefixes)
+        val searchArea = content.take(3000)
 
-        // Try to remove first heading (H1-H6) anywhere in search area
+        // Try to remove first heading (H1-H6) anywhere in search area unconditionally first to match WebView behavior
         val headingRegex = """<h[1-6][^>]*>(.*?)</h[1-6]>""".toRegex(RegexOption.IGNORE_CASE)
         val headingMatch = headingRegex.find(searchArea)
         if (headingMatch != null) {
-            val headingText = headingMatch.groupValues[1].replace(Regex("<[^>]+>"), "").trim().lowercase()
-            if (isTitleMatch(headingText, normalizedChapterName)) {
-                return content.substring(0, headingMatch.range.first) +
-                    content.substring(headingMatch.range.last + 1)
-            }
+            // Unconditionally hide the first heading like in WebView
+            return content.substring(0, headingMatch.range.first) +
+                content.substring(headingMatch.range.last + 1)
         }
 
         // Try to remove first strong/b/em tag if it looks like a title

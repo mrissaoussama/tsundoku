@@ -1399,6 +1399,7 @@ class ReaderViewModel @JvmOverloads constructor(
         val viewer: Viewer? = null,
         val dialog: Dialog? = null,
         val menuVisible: Boolean = false,
+        val hasUnsavedChanges: Boolean = false,
         @IntRange(from = -100, to = 100) val brightnessOverlayValue: Int = 0,
     ) {
         val currentChapter: ReaderChapter?
@@ -1418,8 +1419,86 @@ class ReaderViewModel @JvmOverloads constructor(
             initialValue = readerPreferences.novelBottomBarItems().get().deserializeBottomBarItems(),
         )
 
+    fun setHasUnsavedChanges(hasUnsaved: Boolean) {
+        mutableState.update { it.copy(hasUnsavedChanges = hasUnsaved) }
+    }
+
     fun saveBottomBarItems(items: List<BottomBarItemState>) {
         readerPreferences.novelBottomBarItems().set(items.serialize())
+    }
+
+    fun saveEditedChapterContent(json: String) {
+        viewModelScope.launchIO {
+            try {
+                val array = kotlinx.serialization.json.Json.decodeFromString<kotlinx.serialization.json.JsonArray>(json)
+                val m = manga ?: return@launchIO
+                val s = sourceManager.getOrStub(m.source)
+
+                for (item in array) {
+                    val jsonObj = item as? kotlinx.serialization.json.JsonObject ?: continue
+                    val idStr = (jsonObj["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                    if (idStr == "-1") continue
+                    val id = idStr?.toLongOrNull() ?: continue
+                    val htmlContent = (jsonObj["content"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: continue
+
+                    val chapter = chapterList.find { it.chapter.id == id }?.chapter?.toDomainChapter() ?: continue
+
+                    val isDownloaded = downloadManager.isChapterDownloaded(chapter.name, chapter.scanlator, chapter.url, m.title, m.source)
+                    var chapterDir: com.hippo.unifile.UniFile? = if (isDownloaded) {
+                        downloadProvider.findChapterDir(chapter.name, chapter.scanlator, chapter.url, m.title, s)
+                    } else {
+                        downloadProvider.getMangaDir(m.title, s).getOrNull()?.let { mangaDir ->
+                            val validName = downloadProvider.getValidChapterDirNames(chapter.name, chapter.scanlator, chapter.url).first()
+                            if (downloadPreferences.saveChaptersAsCBZ().get()) {
+                                mangaDir.createFile("$validName.cbz")
+                            } else {
+                                mangaDir.createDirectory(validName)
+                            }
+                        }
+                    }
+
+                    if (chapterDir != null) {
+                        try {
+                            val mangaDir = downloadProvider.getMangaDir(m.title, s).getOrNull()
+                            val validName = downloadProvider.getValidChapterDirNames(chapter.name, chapter.scanlator, chapter.url).first()
+
+                            if (downloadPreferences.saveChaptersAsCBZ().get()) {
+                                if (chapterDir.isDirectory) {
+                                    chapterDir.delete()
+                                    chapterDir = mangaDir?.createFile("$validName.cbz")
+                                }
+                                val targetFile = if (chapterDir?.name?.endsWith(".cbz") == true) chapterDir else mangaDir?.createFile("$validName.cbz")
+                                targetFile?.openOutputStream()?.let { os ->
+                                    java.util.zip.ZipOutputStream(os).use { zos ->
+                                        zos.putNextEntry(java.util.zip.ZipEntry("001.html"))
+                                        zos.write(htmlContent.toByteArray())
+                                        zos.closeEntry()
+                                    }
+                                }
+                            } else {
+                                if (chapterDir.isFile) {
+                                    chapterDir.delete()
+                                    chapterDir = mangaDir?.createDirectory(validName)
+                                }
+                                val targetDir = if (chapterDir?.isDirectory == true) chapterDir else mangaDir?.createDirectory(validName)
+                                val targetFile = targetDir?.findFile("001.html") ?: targetDir?.createFile("001.html")
+                                targetFile?.openOutputStream()?.bufferedWriter()?.use { it.write(htmlContent) }
+                            }
+
+                            if (!isDownloaded && mangaDir != null) {
+                                val dlCache: eu.kanade.tachiyomi.data.download.DownloadCache = uy.kohesive.injekt.Injekt.get()
+                                dlCache.addChapter(validName, mangaDir, m)
+                            }
+                        } catch (e: Exception) {
+                            logcat(logcat.LogPriority.ERROR, e) { "Failed to save edited chapter" }
+                        }
+                    }
+                }
+                setHasUnsavedChanges(false)
+            } catch (e: Exception) {
+                logcat(logcat.LogPriority.ERROR, e) { "Failed to decode edited content json" }
+            }
+        }
     }
 
     sealed interface Dialog {

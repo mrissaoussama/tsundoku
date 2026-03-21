@@ -9,6 +9,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -383,23 +384,25 @@ private fun NovelReaderBottomBar(
                     }
 
                     // Translation toggle - tap for quick translate, long-press for language picker
-                    BottomBarItem.TRANSLATE -> Box(
-                        modifier = Modifier.combinedClickable(
-                            onClick = onToggleTranslation,
-                            onLongClick = onLongPressTranslation,
-                        ),
-                        contentAlignment = Alignment.Center,
+                    BottomBarItem.TRANSLATE -> androidx.compose.material3.Surface(
+                        modifier = Modifier.padding(4.dp),
+                        shape = MaterialTheme.shapes.small,
+                        color = if (isTranslating) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Translate,
-                            contentDescription = stringResource(TDMR.strings.action_translate),
-                            tint = if (isTranslating) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                            modifier = Modifier.size(48.dp).padding(12.dp),
-                        )
+                        Box(
+                            modifier = Modifier.combinedClickable(
+                                onClick = onToggleTranslation,
+                                onLongClick = onLongPressTranslation,
+                            ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Translate,
+                                contentDescription = stringResource(TDMR.strings.action_translate),
+                                tint = if (isTranslating) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(40.dp).padding(8.dp),
+                            )
+                        }
                     }
                     // Auto-scroll toggle
                     BottomBarItem.AUTO_SCROLL -> IconButton(onClick = onToggleAutoScroll) {
@@ -455,16 +458,19 @@ private fun NovelReaderBottomBar(
                     }
 
                     // Edit
-                    BottomBarItem.EDIT -> IconButton(onClick = onToggleEdit) {
-                        Icon(
-                            Icons.Outlined.Edit,
-                            contentDescription = "Edit",
-                            tint = if (isEditing) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                        )
+                    BottomBarItem.EDIT -> androidx.compose.material3.Surface(
+                        modifier = Modifier.padding(4.dp),
+                        shape = MaterialTheme.shapes.small,
+                        color = if (isEditing) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                        border = if (isEditing) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+                    ) {
+                        IconButton(onClick = onToggleEdit) {
+                            Icon(
+                                Icons.Outlined.Edit,
+                                contentDescription = "Edit",
+                                tint = if (isEditing) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                 }
             }
