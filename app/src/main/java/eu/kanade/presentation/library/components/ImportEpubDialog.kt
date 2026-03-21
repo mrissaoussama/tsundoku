@@ -1,7 +1,6 @@
 package eu.kanade.presentation.library.components
 
 import android.net.Uri
-import eu.kanade.tachiyomi.util.system.toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -40,9 +39,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.hippo.unifile.UniFile
+import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.presentation.category.visualName
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.util.system.toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -107,7 +108,7 @@ fun ImportEpubDialog(
     var selectedFiles = remember { mutableStateListOf<EpubFileInfo>() }
     var customTitle by remember { mutableStateOf("") }
     var combineAsOneNovel by remember { mutableStateOf(false) }
-    var autoAddToLibrary by remember { mutableStateOf(false) }
+    var autoAddToLibrary by remember { mutableStateOf(true) }
     var selectedCategoryId by remember { mutableStateOf<Long?>(null) }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
     var categories by remember { mutableStateOf<List<Category>>(emptyList()) }
@@ -580,7 +581,7 @@ private suspend fun importEpubFiles(
                         logcat(LogPriority.DEBUG, e) { "Failed to copy cover for combined novel" }
                     }
                 }
-                
+
                 // Write details.json if metadata exists
                 val combinedDescription = files.mapNotNull { it.description }.firstOrNull { it.isNotBlank() }
                 val combinedGenres = files.mapNotNull { it.genres }.flatMap { it.split(",") }.map { it.trim() }.filter { it.isNotBlank() }.distinct()
@@ -603,7 +604,7 @@ private suspend fun importEpubFiles(
                         logcat(LogPriority.DEBUG, e) { "Failed to write details.json" }
                     }
                 }
-                
+
                 successCount = 1
             }
         } catch (e: Exception) {
@@ -715,8 +716,14 @@ private suspend fun registerImportedLocalNovels(
     val getLibraryManga = Injekt.get<GetLibraryManga>()
     val mangaRepository = Injekt.get<MangaRepository>()
     val setMangaCategories = Injekt.get<SetMangaCategories>()
+    val sourceManager = Injekt.get<tachiyomi.domain.source.service.SourceManager>()
+    val updateManga = Injekt.get<eu.kanade.domain.manga.interactor.UpdateManga>()
+    val syncChaptersWithSource = Injekt.get<eu.kanade.domain.chapter.interactor.SyncChaptersWithSource>()
 
     val errors = mutableListOf<String>()
+    val source = sourceManager.get(LocalNovelSource.ID) ?: run {
+        return listOf("Local novel source not found")
+    }
 
     importedNovelUrls.forEach { localUrl ->
         try {
@@ -729,6 +736,7 @@ private suspend fun registerImportedLocalNovels(
                 networkToLocalManga(placeholder.toDomainManga(LocalNovelSource.ID, isNovel = true))
             }
 
+            // Mark as favorite before fetching so the library shows it
             mangaRepository.update(
                 MangaUpdate(
                     id = manga.id,
@@ -738,8 +746,19 @@ private suspend fun registerImportedLocalNovels(
                 ),
             )
 
-            // UI updates immediately.
-            getLibraryManga.addToLibrary(manga.id)
+            // Fetch details — this reads details.json and cover from disk
+            val networkManga = source.getMangaDetails(manga.toSManga())
+            updateManga.awaitUpdateFromSource(manga, networkManga, manualFetch = true)
+
+            // Sync chapters from disk
+            val chapters = source.getChapterList(manga.toSManga())
+            syncChaptersWithSource.await(chapters, manga, source, manualFetch = true)
+
+
+            // Re-fetch the updated manga from DB so the library cache has fresh data including cover
+            val updatedManga = mangaRepository.getMangaById(manga.id)
+            getLibraryManga.addToLibrary(updatedManga.id)
+            getLibraryManga.applyMangaDetailUpdate(updatedManga.id) { updatedManga }
 
             if (categoryId != null && categoryId != 0L) {
                 setMangaCategories.await(manga.id, listOf(categoryId))
