@@ -46,6 +46,7 @@ import java.time.LocalDate
 fun HistoryScreen(
     state: HistoryScreenModel.State,
     snackbarHostState: SnackbarHostState,
+    showFilterChips: Boolean = true,
     onSearchQueryChange: (String?) -> Unit,
     onClickCover: (mangaId: Long) -> Unit,
     onClickResume: (mangaId: Long, chapterId: Long) -> Unit,
@@ -54,6 +55,8 @@ fun HistoryScreen(
     onFilterSelected: (HistoryFilter) -> Unit,
     onGroupByNovelChanged: (Boolean) -> Unit,
     onLoadNextPage: () -> Unit,
+    showAllFilter: Boolean = true,
+    showMangaFilter: Boolean = true,
 ) {
     Scaffold(
         topBar = { scrollBehavior ->
@@ -87,28 +90,33 @@ fun HistoryScreen(
         Column(
             modifier = Modifier.padding(contentPadding),
         ) {
-            // Always show filter chips
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FilterChip(
-                    selected = state.filter == HistoryFilter.ALL,
-                    onClick = { onFilterSelected(HistoryFilter.ALL) },
-                    label = { Text(stringResource(MR.strings.all)) },
-                )
-                FilterChip(
-                    selected = state.filter == HistoryFilter.MANGA,
-                    onClick = { onFilterSelected(HistoryFilter.MANGA) },
-                    label = { Text(stringResource(TDMR.strings.label_manga)) },
-                )
-                FilterChip(
-                    selected = state.filter == HistoryFilter.NOVELS,
-                    onClick = { onFilterSelected(HistoryFilter.NOVELS) },
-                    label = { Text(stringResource(TDMR.strings.label_novels)) },
-                )
+            if (showFilterChips) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (showAllFilter) {
+                    FilterChip(
+                        selected = state.filter == HistoryFilter.ALL,
+                        onClick = { onFilterSelected(HistoryFilter.ALL) },
+                        label = { Text(stringResource(MR.strings.all)) },
+                    )
+                    }
+                    if (showMangaFilter) {
+                    FilterChip(
+                        selected = state.filter == HistoryFilter.MANGA,
+                        onClick = { onFilterSelected(HistoryFilter.MANGA) },
+                        label = { Text(stringResource(TDMR.strings.label_manga)) },
+                    )
+                    }
+                    FilterChip(
+                        selected = state.filter == HistoryFilter.NOVELS,
+                        onClick = { onFilterSelected(HistoryFilter.NOVELS) },
+                        label = { Text(stringResource(TDMR.strings.label_novels)) },
+                    )
+                }
             }
 
             state.list.let {
@@ -209,6 +217,7 @@ internal fun HistoryScreenPreviews(
             onFilterSelected = {},
             onGroupByNovelChanged = {},
             onLoadNextPage = {},
+            showMangaFilter = true,
         )
     }
 }

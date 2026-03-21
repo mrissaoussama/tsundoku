@@ -8,6 +8,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
@@ -26,11 +27,14 @@ import eu.kanade.tachiyomi.ui.main.MainActivity
 import eu.kanade.tachiyomi.ui.manga.MangaScreen
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import eu.kanade.tachiyomi.ui.updates.UpdatesScreenModel.Event
+import eu.kanade.domain.base.BasePreferences
 import kotlinx.coroutines.flow.collectLatest
 import mihon.feature.upcoming.UpcomingScreen
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 data object UpdatesTab : Tab {
 
@@ -56,11 +60,18 @@ data object UpdatesTab : Tab {
         val navigator = LocalNavigator.currentOrThrow
         val screenModel = rememberScreenModel { UpdatesScreenModel() }
         val settingsScreenModel = rememberScreenModel { UpdatesSettingsScreenModel() }
+        val basePreferences = remember { Injekt.get<BasePreferences>() }
         val state by screenModel.state.collectAsState()
+        val hideMangaUi by basePreferences.hideMangaUi().changes().collectAsState(initial = basePreferences.hideMangaUi().get())
+
+        LaunchedEffect(hideMangaUi) {
+            screenModel.syncFilterWithHideManga(hideMangaUi)
+        }
 
         UpdateScreen(
             state = state,
             snackbarHostState = screenModel.snackbarHostState,
+            showFilterChips = !hideMangaUi,
             lastUpdated = screenModel.lastUpdated,
             onClickCover = { item -> navigator.push(MangaScreen(item.update.mangaId)) },
             onSelectAll = screenModel::toggleAllSelection,
@@ -79,10 +90,16 @@ data object UpdatesTab : Tab {
             onFilterSelected = screenModel::setFilter,
             onFilterClicked = screenModel::showFilterDialog,
             hasActiveFilters = state.hasActiveFilters,
+            showAllFilter = !hideMangaUi,
+            showMangaFilter = !hideMangaUi,
             onToggleGroupByNovel = screenModel::toggleGroupByNovel,
             onClickNovelGroup = { mangaId -> navigator.push(MangaScreen(mangaId)) },
             onLoadMore = screenModel::loadMore,
         )
+
+        LaunchedEffect(hideMangaUi) {
+            screenModel.syncFilterWithHideManga(hideMangaUi)
+        }
 
         val onDismissDialog = { screenModel.setDialog(null) }
         when (val dialog = state.dialog) {

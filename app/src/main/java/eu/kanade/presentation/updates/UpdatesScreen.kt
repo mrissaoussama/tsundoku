@@ -60,6 +60,7 @@ import kotlin.time.Duration.Companion.seconds
 fun UpdateScreen(
     state: UpdatesScreenModel.State,
     snackbarHostState: SnackbarHostState,
+    showFilterChips: Boolean = true,
     lastUpdated: Long,
     onClickCover: (UpdatesItem) -> Unit,
     onSelectAll: (Boolean) -> Unit,
@@ -75,6 +76,8 @@ fun UpdateScreen(
     onFilterSelected: (UpdatesFilter) -> Unit = {},
     onFilterClicked: () -> Unit,
     hasActiveFilters: Boolean,
+    showAllFilter: Boolean = true,
+    showMangaFilter: Boolean = true,
     onToggleGroupByNovel: () -> Unit = {},
     onClickNovelGroup: (Long) -> Unit = {},
     onLoadMore: () -> Unit = {},
@@ -151,29 +154,34 @@ fun UpdateScreen(
                         contentPadding = contentPadding,
                         state = lazyListState,
                     ) {
-                        // Filter chips row
-                        item(key = "filter_chips") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                FilterChip(
-                                    selected = state.filter == UpdatesFilter.ALL,
-                                    onClick = { onFilterSelected(UpdatesFilter.ALL) },
-                                    label = { Text(stringResource(MR.strings.all)) },
-                                )
-                                FilterChip(
-                                    selected = state.filter == UpdatesFilter.MANGA,
-                                    onClick = { onFilterSelected(UpdatesFilter.MANGA) },
-                                    label = { Text(stringResource(TDMR.strings.label_manga)) },
-                                )
-                                FilterChip(
-                                    selected = state.filter == UpdatesFilter.NOVELS,
-                                    onClick = { onFilterSelected(UpdatesFilter.NOVELS) },
-                                    label = { Text(stringResource(TDMR.strings.label_novels)) },
-                                )
+                        if (showFilterChips) {
+                            item(key = "filter_chips") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    if (showAllFilter) {
+                                    FilterChip(
+                                        selected = state.filter == UpdatesFilter.ALL,
+                                        onClick = { onFilterSelected(UpdatesFilter.ALL) },
+                                        label = { Text(stringResource(MR.strings.all)) },
+                                    )
+                                    }
+                                    if (showMangaFilter) {
+                                    FilterChip(
+                                        selected = state.filter == UpdatesFilter.MANGA,
+                                        onClick = { onFilterSelected(UpdatesFilter.MANGA) },
+                                        label = { Text(stringResource(TDMR.strings.label_manga)) },
+                                    )
+                                    }
+                                    FilterChip(
+                                        selected = state.filter == UpdatesFilter.NOVELS,
+                                        onClick = { onFilterSelected(UpdatesFilter.NOVELS) },
+                                        label = { Text(stringResource(TDMR.strings.label_novels)) },
+                                    )
+                                }
                             }
                         }
 
