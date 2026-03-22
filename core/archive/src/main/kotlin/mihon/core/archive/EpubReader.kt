@@ -230,9 +230,9 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
                 val imageBasePath = getParentDirectory(entryPath)
                 document.select("img[src], image[xlink:href]").forEach { img ->
                     val src = if (img.hasAttr("src")) img.attr("src") else img.attr("xlink:href")
-                    if (!src.startsWith("http") && !src.startsWith("data:") && !src.startsWith("tachiyomi-novel-image://")) {
+                    if (!src.startsWith("http") && !src.startsWith("data:") && !src.startsWith("tsundoku-novel-image://")) {
                         val imagePath = resolveZipPath(imageBasePath, src)
-                        val novelUrl = "tachiyomi-novel-image://${java.net.URLEncoder.encode(imagePath, "UTF-8")}"
+                        val novelUrl = "tsundoku-novel-image://${java.net.URLEncoder.encode(imagePath, "UTF-8")}"
                         if (img.hasAttr("src")) {
                             img.attr("src", novelUrl)
                         } else {
@@ -370,12 +370,12 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
                 }
 
                 val src = rawSrc.substringBefore("#").trim()
-                if (src.isBlank() || src.startsWith("http") || src.startsWith("//") || src.startsWith("data:") || src.startsWith("tachiyomi-novel-image://")) {
+                if (src.isBlank() || src.startsWith("http") || src.startsWith("//") || src.startsWith("data:") || src.startsWith("tsundoku-novel-image://")) {
                     return@forEach
                 }
 
                 val imagePath = resolveZipPath(imageBasePath, src)
-                val novelUrl = "tachiyomi-novel-image://${java.net.URLEncoder.encode(imagePath, "UTF-8")}"
+                val novelUrl = "tsundoku-novel-image://${java.net.URLEncoder.encode(imagePath, "UTF-8")}"
                 when {
                     img.hasAttr("src") -> img.attr("src", novelUrl)
                     img.hasAttr("xlink:href") -> img.attr("xlink:href", novelUrl)

@@ -65,7 +65,7 @@ class ChapterImageEmbedder(
         var imageCounter = 0
         for (imageUrl in imageUrls) {
             // Already local or data URI, do not process
-            if (imageUrl.startsWith("tachiyomi-novel-image://") || imageUrl.startsWith("file://") || imageUrl.startsWith("data:")) {
+            if (imageUrl.startsWith("tsundoku-novel-image://") || imageUrl.startsWith("file://") || imageUrl.startsWith("data:")) {
                 continue
             }
             try {
@@ -90,7 +90,7 @@ class ChapterImageEmbedder(
                         } while (tmpDir.findFile(filename) != null)
                         
                         tmpDir.createFile(filename)?.openOutputStream()?.use { it.write(imageBytes) }
-                        "tachiyomi-novel-image://$filename"
+                        "tsundoku-novel-image://$filename"
                     } else {
                         // Fallback to base64 if not actively zipping
                         val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)

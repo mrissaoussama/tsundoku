@@ -300,8 +300,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(view: WebView?, request: android.webkit.WebResourceRequest?): android.webkit.WebResourceResponse? {
                     val url = request?.url?.toString() ?: return null
-                    if (url.startsWith("tachiyomi-novel-image://")) {
-                        val imagePath = android.net.Uri.decode(url.removePrefix("tachiyomi-novel-image://"))
+                    if (url.startsWith("tsundoku-novel-image://")) {
+                        val imagePath = android.net.Uri.decode(url.removePrefix("tsundoku-novel-image://"))
                         val loader = activity.viewModel.state.value.viewerChapters?.currChapter?.pageLoader
                         if (loader != null) {
                             val stream = kotlinx.coroutines.runBlocking { loader.getPageDataStream(imagePath) }

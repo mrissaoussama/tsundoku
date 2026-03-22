@@ -197,10 +197,10 @@ private class CoilImageGetter(
             return wrapper
         }
 
-        if (source.startsWith("tachiyomi-novel-image://")) {
+        if (source.startsWith("tsundoku-novel-image://")) {
             scope.launch(Dispatchers.IO) {
                 try {
-                    val imagePath = android.net.Uri.decode(source.removePrefix("tachiyomi-novel-image://"))
+                    val imagePath = android.net.Uri.decode(source.removePrefix("tsundoku-novel-image://"))
                     val loader = activity.viewModel.state.value.viewerChapters?.currChapter?.pageLoader
                     val stream = loader?.getPageDataStream(imagePath) ?: return@launch
                     val bytes = stream.readBytes()
