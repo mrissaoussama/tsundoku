@@ -1563,11 +1563,14 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     fun toggleEditMode(isEditing: Boolean, save: Boolean = true) {
         if (!isEditing && !save) {
             this.isEditingMode = false
+            webView.evaluateJavascript("(function() { window.getSelection().removeAllRanges(); document.activeElement.blur(); })();", null)
             webView.clearFocus()
             val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
             imm?.hideSoftInputFromWindow(webView.windowToken, 0)
 
             // Reload chapter to discard edits
+            loadedChapterIds.clear()
+            loadedChapters.clear()
             activity.viewModel.reloadChapter(fromSource = false)
             return
         }
@@ -1588,6 +1591,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 }, 120)
             }
         } else {
+            webView.evaluateJavascript("(function() { window.getSelection().removeAllRanges(); document.activeElement.blur(); })();", null)
             webView.clearFocus()
             val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
             imm?.hideSoftInputFromWindow(webView.windowToken, 0)
