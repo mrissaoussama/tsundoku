@@ -16,6 +16,7 @@ import uy.kohesive.injekt.api.get
 import java.io.ByteArrayOutputStream
 import java.net.URL
 import java.util.regex.Pattern
+import coil3.imageLoader
 
 /**
  * Utility class for extracting image URLs from HTML and embedding them as base64.
@@ -51,7 +52,7 @@ class ChapterImageEmbedder(
      * @param baseUrl The base URL of the chapter for resolving relative URLs
      * @return Processed HTML with embedded images
      */
-    suspend fun processHtml(html: String, baseUrl: String?): String = withContext(Dispatchers.IO) {
+    suspend fun processHtml(html: String, baseUrl: String?, tmpDir: com.hippo.unifile.UniFile? = null): String = withContext(Dispatchers.IO) {
         if (!novelDownloadPreferences.downloadChapterImages().get()) {
             return@withContext html
         }
@@ -61,14 +62,43 @@ class ChapterImageEmbedder(
 
         logcat { "ChapterImageEmbedder: Found ${imageUrls.size} images to process" }
 
+        var imageCounter = 0
         for (imageUrl in imageUrls) {
+            // Already local or data URI, do not process
+            if (imageUrl.startsWith("tachiyomi-novel-image://") || imageUrl.startsWith("file://") || imageUrl.startsWith("data:")) {
+                continue
+            }
             try {
                 val absoluteUrl = resolveUrl(imageUrl, baseUrl)
-                val base64Data = downloadAndEncodeImage(absoluteUrl)
+                val imageResponse = downloadAndEncodeImage(absoluteUrl)
 
-                if (base64Data != null) {
-                    // Replace the URL with base64 data URI
-                    processedHtml = processedHtml.replace(imageUrl, base64Data)
+                if (imageResponse != null) {
+                    val (imageBytes, mimeType) = imageResponse
+                    val finalUrl = if (tmpDir != null) {
+                        // Save image to chapter's zip as a local file
+                        val extension = when (mimeType) {
+                            "image/png" -> "png"
+                            "image/gif" -> "gif"
+                            "image/webp" -> "webp"
+                            "image/svg+xml" -> "svg"
+                            "image/avif" -> "avif"
+                            else -> "jpg"
+                        }
+                        var filename: String
+                        do {
+                            filename = "image_${imageCounter++}.$extension"
+                        } while (tmpDir.findFile(filename) != null)
+                        
+                        tmpDir.createFile(filename)?.openOutputStream()?.use { it.write(imageBytes) }
+                        "tachiyomi-novel-image://$filename"
+                    } else {
+                        // Fallback to base64 if not actively zipping
+                        val base64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+                        "data:$mimeType;base64,$base64"
+                    }
+
+                    // Replace the URL with local path or base64
+                    processedHtml = processedHtml.replace(imageUrl, finalUrl)
                     logcat { "ChapterImageEmbedder: Embedded image $imageUrl" }
                 }
             } catch (e: Exception) {
@@ -149,48 +179,79 @@ class ChapterImageEmbedder(
     /**
      * Download an image and encode it as base64 data URI.
      */
-    private suspend fun downloadAndEncodeImage(url: String): String? = withContext(Dispatchers.IO) {
+    private suspend fun downloadAndEncodeImage(url: String): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
         try {
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build()
+            var imageBytes: ByteArray? = null
+            var mimeType = "image/jpeg"
 
-            val response = client.newCall(request).execute()
-            response.use { resp ->
-                if (!resp.isSuccessful) {
-                    logcat(LogPriority.WARN) { "ChapterImageEmbedder: Failed to download $url - ${resp.code}" }
-                    return@withContext null
+            try {
+                val context = Injekt.get<android.app.Application>() as android.content.Context
+                val diskCache = context.imageLoader.diskCache
+                val snapshot = diskCache?.openSnapshot(url)
+                if (snapshot != null) {
+                    snapshot.use { snap ->
+                        val bytes = okio.FileSystem.SYSTEM.read(snap.data) { readByteArray() }
+                        imageBytes = bytes
+                        if (bytes.size > 12) {
+                            mimeType = when {
+                                bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() -> "image/png"
+                                bytes[0] == 0x47.toByte() && bytes[1] == 0x49.toByte() -> "image/gif"
+                                bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() -> "image/jpeg"
+                                bytes[0] == 0x52.toByte() && bytes[1] == 0x49.toByte() && bytes[8] == 0x57.toByte() && bytes[9] == 0x45.toByte() -> "image/webp"
+                                else -> "image/jpeg"
+                            }
+                        }
+                        logcat { "ChapterImageEmbedder: Loaded image from Coil cache: $url" }
+                    }
                 }
-
-                val contentType = resp.header("Content-Type") ?: "image/jpeg"
-                val mimeType = when {
-                    contentType.contains("png") -> "image/png"
-                    contentType.contains("gif") -> "image/gif"
-                    contentType.contains("webp") -> "image/webp"
-                    contentType.contains("svg") -> "image/svg+xml"
-                    else -> "image/jpeg"
-                }
-
-                val imageBytes = resp.body.bytes()
-
-                // Check if compression is needed
-                val maxSizeKb = novelDownloadPreferences.maxImageSizeKb().get()
-                val compressionQuality = novelDownloadPreferences.imageCompressionQuality().get()
-
-                val finalBytes = if (maxSizeKb > 0 && imageBytes.size > maxSizeKb * 1024 &&
-                    mimeType != "image/svg+xml"
-                ) {
-                    compressImage(imageBytes, compressionQuality, maxSizeKb)
-                } else {
-                    imageBytes
-                }
-
-                val base64 = Base64.encodeToString(finalBytes, Base64.NO_WRAP)
-                val finalMimeType = if (finalBytes !== imageBytes) "image/jpeg" else mimeType
-
-                "data:$finalMimeType;base64,$base64"
+            } catch(e: Exception) {
+                logcat(LogPriority.DEBUG) { "ChapterImageEmbedder: Not found in Coil cache or error reading, fetching from network..." }
             }
+
+            if (imageBytes == null) {
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .build()
+
+                val response = client.newCall(request).execute()
+                response.use { resp ->
+                    if (!resp.isSuccessful) {
+                        logcat(LogPriority.WARN) { "ChapterImageEmbedder: Failed to download $url - ${resp.code}" }
+                        return@withContext null
+                    }
+
+                    val contentType = resp.header("Content-Type") ?: "image/jpeg"
+                    mimeType = when {
+                        contentType.contains("png") -> "image/png"
+                        contentType.contains("gif") -> "image/gif"
+                        contentType.contains("webp") -> "image/webp"
+                        contentType.contains("svg") -> "image/svg+xml"
+                        contentType.contains("avif") -> "image/avif"
+                        else -> "image/jpeg"
+                    }
+
+                    imageBytes = resp.body.bytes()
+                }
+            }
+
+            val validImageBytes = imageBytes ?: return@withContext null
+
+            // Check if compression is needed
+            val maxSizeKb = novelDownloadPreferences.maxImageSizeKb().get()
+            val compressionQuality = novelDownloadPreferences.imageCompressionQuality().get()
+
+            val finalBytes = if (maxSizeKb > 0 && validImageBytes.size > maxSizeKb * 1024 &&
+                mimeType != "image/svg+xml"
+            ) {
+                compressImage(validImageBytes, compressionQuality, maxSizeKb)
+            } else {
+                validImageBytes
+            }
+
+            val finalMimeType = if (finalBytes !== validImageBytes) "image/jpeg" else mimeType
+
+            Pair(finalBytes, finalMimeType)
         } catch (e: Exception) {
             logcat(LogPriority.WARN, e) { "ChapterImageEmbedder: Error downloading image $url" }
             null

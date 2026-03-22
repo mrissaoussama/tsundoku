@@ -664,7 +664,7 @@ class Downloader(
                     ?: (download.source as? HttpSource)?.baseUrl
                     ?: (download.source as? JsSource)?.baseUrl
                 val embedder = ChapterImageEmbedder()
-                embedder.processHtml(page.text!!, baseUrl)
+                embedder.processHtml(page.text!!, baseUrl, tmpDir)
             } else {
                 page.text!!
             }

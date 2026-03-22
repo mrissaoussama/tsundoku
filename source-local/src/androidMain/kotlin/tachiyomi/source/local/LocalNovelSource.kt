@@ -415,6 +415,38 @@ actual class LocalNovelSource(
         }
     }
 
+    suspend fun getChapterImage(chapter: SChapter, imagePath: String): java.io.InputStream? = withIOContext {
+        try {
+            val urlParts = chapter.url.split("#", limit = 2)
+            val filePath = urlParts[0]
+            val (novelDirName, chapterName) = filePath.split('/', limit = 2)
+            val chapterFile = fileSystem.getBaseDirectory()
+                ?.findFile(novelDirName)
+                ?.findFile(chapterName)
+                ?: return@withIOContext null
+
+            when {
+                chapterFile.isDirectory -> {
+                    chapterFile.findFile(imagePath)?.openInputStream()?.readBytes()?.let { java.io.ByteArrayInputStream(it) }
+                }
+                chapterFile.extension.equals("epub", true) -> {
+                    chapterFile.epubReader(context).use { epub ->
+                        epub.getInputStream(imagePath)?.readBytes()?.let { java.io.ByteArrayInputStream(it) }
+                    }
+                }
+                isArchiveSupported(chapterFile) -> {
+                    chapterFile.archiveReader(context).use { reader ->
+                        reader.getInputStream(imagePath)?.readBytes()?.let { java.io.ByteArrayInputStream(it) }
+                    }
+                }
+                else -> null
+            }
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Error fetching image $imagePath for ${chapter.url}" }
+            null
+        }
+    }
+
     private fun isTextFile(file: UniFile): Boolean {
         val ext = file.extension?.lowercase() ?: return false
         return ext in TEXT_EXTENSIONS

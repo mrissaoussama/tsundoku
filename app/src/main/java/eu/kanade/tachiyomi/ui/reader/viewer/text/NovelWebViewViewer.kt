@@ -298,6 +298,30 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             }
 
             webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(view: WebView?, request: android.webkit.WebResourceRequest?): android.webkit.WebResourceResponse? {
+                    val url = request?.url?.toString() ?: return null
+                    if (url.startsWith("tachiyomi-novel-image://")) {
+                        val imagePath = android.net.Uri.decode(url.removePrefix("tachiyomi-novel-image://"))
+                        val loader = activity.viewModel.state.value.viewerChapters?.currChapter?.pageLoader
+                        if (loader != null) {
+                            val stream = kotlinx.coroutines.runBlocking { loader.getPageDataStream(imagePath) }
+                            if (stream != null) {
+                                val mimeType = when (imagePath.substringAfterLast('.', "").lowercase()) {
+                                    "png" -> "image/png"
+                                    "jpg", "jpeg" -> "image/jpeg"
+                                    "gif" -> "image/gif"
+                                    "svg" -> "image/svg+xml"
+                                    "webp" -> "image/webp"
+                                    "avif" -> "image/avif"
+                                    else -> "image/jpeg"
+                                }
+                                return android.webkit.WebResourceResponse(mimeType, "UTF-8", stream)
+                            }
+                        }
+                    }
+                    return super.shouldInterceptRequest(view, request)
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     hideLoadingIndicator()
@@ -1338,6 +1362,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                         height: auto;
                         display: block;
                         margin: 8px auto;
+                        min-height: 100px;
+                        background: rgba(150, 150, 150, 0.2) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 50 50"><circle cx="25" cy="25" r="20" fill="none" stroke="%23888" stroke-width="5" stroke-dasharray="31.4 31.4"><animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite"/></circle></svg>') no-repeat center center;
                     }
                     video {
                         max-width: 100%;
