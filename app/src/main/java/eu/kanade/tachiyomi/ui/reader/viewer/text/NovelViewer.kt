@@ -441,6 +441,17 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         }
 
         scrollView.addView(contentContainer)
+
+        // Allow descendants to receive focus so TextView text selection works.
+        // The reader container typically sets FOCUS_BLOCK_DESCENDANTS which prevents
+        // the TextView's Editor from initializing properly for selection.
+        container.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                (container.parent as? ViewGroup)?.descendantFocusability =
+                    ViewGroup.FOCUS_AFTER_DESCENDANTS
+            }
+            override fun onViewDetachedFromWindow(v: View) {}
+        })
     }
 
     private fun setupScrollListener() {
@@ -868,6 +879,15 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                     }
                 }
         }
+
+        // In observePreferences(), add:
+        scope.launch {
+            preferences.novelTextSelectable().changes()
+                .drop(1)
+                .collectLatest {
+                    reloadContent()
+                }
+        }
     }
 
     private fun createSelectableTextView(): TextView {
@@ -876,11 +896,19 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
-            // Text selection is not supported in the native text viewer.
-            // Use the WebView reader for copy/selection functionality.
-            setTextIsSelectable(false)
-            linksClickable = false
-            movementMethod = LinkOnlyMovementMethod
+            applyTextSelectionPreference(this)
+        }
+    }
+
+    private fun applyTextSelectionPreference(textView: TextView) {
+        val selectable = preferences.novelTextSelectable().get()
+        textView.setTextIsSelectable(selectable)
+        textView.linksClickable = false
+        if (!selectable) {
+            textView.movementMethod = LinkOnlyMovementMethod
+        } else {
+            // Explicitly set the movement method required for text selection
+            textView.movementMethod = android.text.method.ArrowKeyMovementMethod.getInstance()
         }
     }
 
