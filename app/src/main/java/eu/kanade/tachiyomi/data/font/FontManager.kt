@@ -101,15 +101,12 @@ class FontManager(
             val sourceFile = UniFile.fromUri(context, uri)
                 ?: return@withContext Result.failure(Exception("Cannot access source file"))
 
-            val fileName = sourceFile.name
-                ?: return@withContext Result.failure(Exception("Cannot determine file name"))
-
-            // Validate file extension
-            if (!fileName.endsWith(".ttf", ignoreCase = true) &&
-                !fileName.endsWith(".otf", ignoreCase = true)
-            ) {
+            val sourceName = sourceFile.name ?: "font"
+            val inferredExt = inferFontExtension(uri, sourceName)
+            if (inferredExt == null) {
                 return@withContext Result.failure(Exception("Invalid font format. Only TTF and OTF are supported."))
             }
+            val fileName = normalizeFontFileName(sourceName, inferredExt)
 
             // Check if font already exists
             val targetFile = fontsDir.createFile(fileName)
@@ -145,6 +142,42 @@ class FontManager(
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e) { "Failed to import font" }
             Result.failure(e)
+        }
+    }
+
+    private fun normalizeFontFileName(name: String, extension: String): String {
+        val base = name.substringBeforeLast('.', name)
+            .ifBlank { "font" }
+            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        return "$base.$extension"
+    }
+
+    private fun inferFontExtension(uri: Uri, fileName: String): String? {
+        val lowerName = fileName.lowercase()
+        if (lowerName.endsWith(".ttf")) return "ttf"
+        if (lowerName.endsWith(".otf")) return "otf"
+
+        val mime = context.contentResolver.getType(uri)?.lowercase().orEmpty()
+        if (mime.contains("otf") || mime.contains("opentype")) return "otf"
+        if (mime.contains("ttf") || mime.contains("truetype") || mime.contains("font-sfnt")) return "ttf"
+
+        return context.contentResolver.openInputStream(uri)?.use { input ->
+            val header = ByteArray(4)
+            val read = input.read(header)
+            if (read < 4) return@use null
+
+            // OTF starts with 'OTTO', TTF with 00 01 00 00
+            if (header[0] == 'O'.code.toByte() && header[1] == 'T'.code.toByte() &&
+                header[2] == 'T'.code.toByte() && header[3] == 'O'.code.toByte()
+            ) {
+                "otf"
+            } else if (header[0] == 0.toByte() && header[1] == 1.toByte() &&
+                header[2] == 0.toByte() && header[3] == 0.toByte()
+            ) {
+                "ttf"
+            } else {
+                null
+            }
         }
     }
 

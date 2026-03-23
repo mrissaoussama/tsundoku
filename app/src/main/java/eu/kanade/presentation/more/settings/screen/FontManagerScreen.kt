@@ -244,7 +244,16 @@ class FontManagerScreen : Screen {
                             .clickable {
                                 showAddFontSheet = false
                                 fontPickerLauncher.launch(
-                                    arrayOf("font/*", "application/x-font-ttf", "application/x-font-opentype"),
+                                    arrayOf(
+                                        "font/ttf",
+                                        "font/otf",
+                                        "font/*",
+                                        "application/font-sfnt",
+                                        "application/x-font-ttf",
+                                        "application/x-font-opentype",
+                                        "application/octet-stream",
+                                        "*/*",
+                                    ),
                                 )
                             },
                         colors = CardDefaults.cardColors(
