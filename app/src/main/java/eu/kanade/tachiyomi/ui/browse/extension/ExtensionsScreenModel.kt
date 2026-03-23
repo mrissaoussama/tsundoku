@@ -63,20 +63,34 @@ class ExtensionsScreenModel(
                 currentDownloads,
                 getExtensions.subscribe(),
             ) { predicate, downloads, (_updates, _installed, _available, _untrusted) ->
+                val hasSearchQuery = state.value.searchQuery?.isNotBlank() == true
+                val seenPkgNames = mutableSetOf<String>()
                 buildMap {
                     val updates = _updates.filter {
                         !it.isNovel
-                    }.filter(predicate).map(extensionMapper(downloads))
+                    }.filter(predicate)
+                        .let { exts ->
+                            if (hasSearchQuery) exts.filter { seenPkgNames.add(it.pkgName) } else exts
+                        }
+                        .map(extensionMapper(downloads))
                     if (updates.isNotEmpty()) {
                         put(ExtensionUiModel.Header.Resource(MR.strings.ext_updates_pending), updates)
                     }
 
                     val installed = _installed.filter {
                         !it.isNovel
-                    }.filter(predicate).map(extensionMapper(downloads))
+                    }.filter(predicate)
+                        .let { exts ->
+                            if (hasSearchQuery) exts.filter { seenPkgNames.add(it.pkgName) } else exts
+                        }
+                        .map(extensionMapper(downloads))
                     val untrusted = _untrusted.filter {
                         !it.isNovel
-                    }.filter(predicate).map(extensionMapper(downloads))
+                    }.filter(predicate)
+                        .let { exts ->
+                            if (hasSearchQuery) exts.filter { seenPkgNames.add(it.pkgName) } else exts
+                        }
+                        .map(extensionMapper(downloads))
                     if (installed.isNotEmpty() || untrusted.isNotEmpty()) {
                         put(ExtensionUiModel.Header.Resource(MR.strings.ext_installed), installed + untrusted)
                     }
@@ -84,6 +98,9 @@ class ExtensionsScreenModel(
                     val languagesWithExtensions = _available
                         .filter { !it.isNovel }
                         .filter(predicate)
+                        .let { exts ->
+                            if (hasSearchQuery) exts.filter { seenPkgNames.add(it.pkgName) } else exts
+                        }
                         .groupBy { it.lang }
                         .toSortedMap(LocaleHelper.comparator)
                         .map { (lang, exts) ->

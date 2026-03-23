@@ -43,6 +43,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import logcat.LogPriority
 import logcat.logcat
@@ -377,12 +378,11 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 preferences.novelBackgroundColor().changes(),
                 preferences.novelParagraphIndent().changes(),
                 preferences.novelParagraphSpacing().changes(),
-                preferences.novelCustomCss().changes(),
                 preferences.novelCustomCssSnippets().changes(),
                 preferences.novelUseOriginalFonts().changes(),
                 preferences.novelHideChapterTitle().changes(),
                 preferences.novelTextSelectable().changes(),
-            ).drop(20) // Drop initial emissions from all 20 preferences
+            ).drop(19) // Drop initial emissions from all 19 preferences
                 .collect {
                     injectCustomStyles()
                 }
@@ -391,9 +391,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         // Observe JS changes separately to re-inject scripts
         scope.launch {
             merge(
-                preferences.novelCustomJs().changes(),
                 preferences.novelCustomJsSnippets().changes(),
-            ).drop(2)
+            ).drop(1)
                 .collect {
                     injectCustomScript()
                 }
@@ -403,10 +402,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             preferences.novelForceTextLowercase().changes()
                 .drop(1)
                 .collect {
-                    currentChapters?.let {
-                        // Reload the current chapter to reapply string transformations
-                        setChapters(it)
-                    }
+                    applyLiveTextTransformations()
                 }
         }
 
@@ -429,7 +425,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             preferences.novelRegexReplacements().changes()
                 .drop(1)
                 .collect {
-                    currentChapters?.let { setChapters(it) }
+                    applyLiveTextTransformations()
                 }
         }
     }
@@ -461,7 +457,6 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         val bgColorHex = String.format("#%06X", 0xFFFFFF and finalBgColor)
         val textColorHex = String.format("#%06X", 0xFFFFFF and finalTextColor)
 
-        val customCss = preferences.novelCustomCss().get()
         val useOriginalFonts = preferences.novelUseOriginalFonts().get()
 
         // Collect enabled CSS snippets
@@ -515,25 +510,28 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         val css = """
             $fontFaceDeclaration
             body {
-                font-size: ${fontSize}px;
+                font-size: ${fontSize}px !important;
                 $fontFamilyCss
-                line-height: $lineHeight;
+                line-height: $lineHeight !important;
                 margin: ${marginTop}px ${marginRight}px ${marginBottom}px ${marginLeft}px;
                 color: $textColorHex !important;
                 background-color: $bgColorHex !important;
-                text-align: $textAlign;
+                text-align: $textAlign !important;
                 -webkit-user-select: ${if (preferences.novelTextSelectable().get()) "text" else "none"};
                 user-select: ${if (preferences.novelTextSelectable().get()) "text" else "none"};
             }
+            body *:not(script):not(style):not(noscript) {
+                font-size: inherit !important;
+                line-height: inherit !important;
+                color: inherit !important;
+                text-align: inherit !important;
+            }
+            ${if (!useOriginalFonts) "body *:not(script):not(style):not(noscript) { font-family: inherit !important; }" else ""}
             p {
                 text-indent: ${paragraphIndent}em;
                 margin-top: ${paragraphSpacing}em;
                 margin-bottom: ${paragraphSpacing}em;
             }
-            * {
-                color: inherit !important;
-            }
-            $customCss
             $enabledSnippetsCss
         """.trimIndent().replace("\n", " ")
 
@@ -582,10 +580,19 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         """.trimIndent()
         evaluateJavascriptSafe(script, null)
 
-        val customJs = preferences.novelCustomJs().get()
-        if (customJs.isNotBlank()) {
-            evaluateJavascriptSafe(customJs, null)
+        val jsSnippetsJson = preferences.novelCustomJsSnippets().get()
+        val enabledSnippets = try {
+            val snippets = Json.decodeFromString<List<CodeSnippet>>(jsSnippetsJson)
+            snippets.filter { it.enabled }
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR) { "Failed to parse JS snippets: ${e.message}" }
+            emptyList()
         }
+        enabledSnippets.forEach { snippet ->
+            evaluateJavascriptSafe(snippet.code, null)
+        }
+
+        applyLiveTextTransformations()
     }
 
     /**
@@ -1196,6 +1203,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                         window.scrollTo(0, oldScrollY + diff);
                     }
 
+                    if (typeof window.__tsundokuApplyTextTransforms === 'function') {
+                        window.__tsundokuApplyTextTransforms(contentDiv);
+                    }
+
                     // Update chapter boundaries after DOM update
                     if (typeof window.updateChapterBoundaries === 'function') {
                         window.updateChapterBoundaries();
@@ -1245,6 +1256,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
                 // Update chapter boundaries after DOM update
                 setTimeout(function() {
+                    if (typeof window.__tsundokuApplyTextTransforms === 'function') {
+                        window.__tsundokuApplyTextTransforms(contentDiv);
+                    }
                     if (typeof window.updateChapterBoundaries === 'function') {
                         window.updateChapterBoundaries();
                     }
@@ -1383,6 +1397,70 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         """.trimIndent()
 
         webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+    }
+
+    private fun applyLiveTextTransformations() {
+        val rules = try {
+            Json.decodeFromString<List<RegexReplacement>>(preferences.novelRegexReplacements().get())
+                .filter { it.enabled && it.pattern.isNotBlank() }
+        } catch (e: Exception) {
+            logcat(LogPriority.WARN) { "Failed to parse regex replacements for live apply: ${e.message}" }
+            emptyList()
+        }
+        val rulesJson = Json.encodeToString(rules).jsEscape()
+        val forceLowercase = preferences.novelForceTextLowercase().get()
+
+        val js = """
+            (function() {
+                try {
+                    var rules = JSON.parse("$rulesJson");
+                    var forceLower = $forceLowercase;
+
+                    function applyRule(text, rule) {
+                        if (!rule || !rule.pattern) return text;
+                        try {
+                            if (rule.isRegex) {
+                                var rx = new RegExp(rule.pattern, 'g');
+                                return text.replace(rx, rule.replacement || '');
+                            }
+                            var replacement = rule.replacement || '';
+                            return text.split(rule.pattern).join(replacement);
+                        } catch (_) {
+                            return text;
+                        }
+                    }
+
+                    function applyTransforms(root) {
+                        if (!root) return;
+                        var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+                        var node;
+                        while ((node = walker.nextNode())) {
+                            if (!node.parentElement) continue;
+                            var tag = node.parentElement.tagName;
+                            if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') continue;
+
+                            if (node.__tsundokuOriginalText === undefined) {
+                                node.__tsundokuOriginalText = node.nodeValue;
+                            }
+
+                            var value = node.__tsundokuOriginalText || '';
+                            for (var i = 0; i < rules.length; i++) {
+                                value = applyRule(value, rules[i]);
+                            }
+                            if (forceLower) {
+                                value = value.toLowerCase();
+                            }
+                            node.nodeValue = value;
+                        }
+                    }
+
+                    window.__tsundokuApplyTextTransforms = applyTransforms;
+                    applyTransforms(document.body);
+                } catch (_) {}
+            })();
+        """.trimIndent()
+
+        evaluateJavascriptSafe(js, null)
     }
 
     private fun stripMediaTags(content: String): String {

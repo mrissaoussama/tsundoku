@@ -99,6 +99,8 @@ class NovelExtensionsScreenModel(
                 jsPluginManager.installedPlugins,
             ) { query, downloads, (_updates, _installed, _available, _untrusted), jsAvailable, jsInstalled ->
                 val searchQuery = query ?: ""
+                val hasSearchQuery = searchQuery.isNotBlank()
+                val seenPkgNames = mutableSetOf<String>()
                 // Respect language filter for JS plugins (same as KT extensions)
                 val enabledLanguages = preferences.enabledLanguages().get()
 
@@ -172,7 +174,11 @@ class NovelExtensionsScreenModel(
                     val jsAvailableExt = allJsExtensions.filter { !it.isInstalled && it.lang in enabledLanguages }
 
                     val updates = (_updates.filter { it.isNovel } + jsUpdates)
-                        .filter(queryFilter(searchQuery)).map(extensionMapper(downloads))
+                        .filter(queryFilter(searchQuery))
+                        .let { exts ->
+                            if (hasSearchQuery) exts.filter { seenPkgNames.add(it.pkgName) } else exts
+                        }
+                        .map(extensionMapper(downloads))
                     if (updates.isNotEmpty()) {
                         put(ExtensionUiModel.Header.Resource(MR.strings.ext_updates_pending), updates)
                     }
@@ -181,10 +187,18 @@ class NovelExtensionsScreenModel(
                         _installed.filter {
                             it.isNovel
                         } + jsInstalledExt
-                        ).filter(queryFilter(searchQuery)).map(extensionMapper(downloads))
+                        ).filter(queryFilter(searchQuery))
+                        .let { exts ->
+                            if (hasSearchQuery) exts.filter { seenPkgNames.add(it.pkgName) } else exts
+                        }
+                        .map(extensionMapper(downloads))
                     val untrusted = _untrusted.filter {
                         it.isNovel
-                    }.filter(queryFilter(searchQuery)).map(extensionMapper(downloads))
+                    }.filter(queryFilter(searchQuery))
+                        .let { exts ->
+                            if (hasSearchQuery) exts.filter { seenPkgNames.add(it.pkgName) } else exts
+                        }
+                        .map(extensionMapper(downloads))
                     if (installed.isNotEmpty() || untrusted.isNotEmpty()) {
                         put(ExtensionUiModel.Header.Resource(MR.strings.ext_installed), installed + untrusted)
                     }
@@ -194,6 +208,9 @@ class NovelExtensionsScreenModel(
                             .filter { it.isNovel } + jsAvailableExt
                         )
                         .filter(queryFilter(searchQuery))
+                        .let { exts ->
+                            if (hasSearchQuery) exts.filter { seenPkgNames.add(it.pkgName) } else exts
+                        }
                         .groupBy { it.lang }
                         .toSortedMap(LocaleHelper.comparator)
                         .map { (lang, extensions) ->
