@@ -546,11 +546,11 @@ private suspend fun importEpubFiles(
             val sanitizedTitle = sanitizeFileName(novelTitle)
 
             // Create novel folder
-            val novelDir = localNovelsDir.createDirectory(sanitizedTitle)
+            val (novelFolderName, novelDir) = createUniqueNovelDirectory(localNovelsDir, sanitizedTitle)
             if (novelDir == null) {
                 errors.add("Failed to create directory for: $novelTitle")
             } else {
-                importedNovelUrls.add(sanitizedTitle)
+                importedNovelUrls.add(novelFolderName)
                 // Copy each file as a chapter
                 files.forEachIndexed { index, file ->
                     val chapterFileName = "Chapter ${index + 1} - ${file.fileName}"
@@ -624,15 +624,12 @@ private suspend fun importEpubFiles(
                 val sanitizedTitle = sanitizeFileName(novelTitle)
 
                 // Create novel folder
-                var novelDir = localNovelsDir.findFile(sanitizedTitle)
-                if (novelDir == null) {
-                    novelDir = localNovelsDir.createDirectory(sanitizedTitle)
-                }
+                val (novelFolderName, novelDir) = createUniqueNovelDirectory(localNovelsDir, sanitizedTitle)
 
                 if (novelDir == null) {
                     errors.add("Failed to create directory for: ${file.fileName}")
                 } else {
-                    importedNovelUrls.add(sanitizedTitle)
+                    importedNovelUrls.add(novelFolderName)
                     // Copy the epub file
                     val destFile = novelDir.createFile(file.fileName)
                     if (destFile != null) {
@@ -772,4 +769,20 @@ private suspend fun registerImportedLocalNovels(
 
 private fun sanitizeFileName(name: String): String {
     return name.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(200)
+}
+
+private fun createUniqueNovelDirectory(
+    localNovelsDir: UniFile,
+    baseFolderName: String,
+): Pair<String, UniFile?> {
+    val safeBase = if (baseFolderName.isBlank()) "Imported Novel" else baseFolderName
+    var candidate = safeBase
+    var index = 2
+
+    while (localNovelsDir.findFile(candidate) != null) {
+        candidate = "$safeBase ($index)"
+        index++
+    }
+
+    return candidate to localNovelsDir.createDirectory(candidate)
 }
