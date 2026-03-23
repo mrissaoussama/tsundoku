@@ -11,23 +11,25 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - `Other` - for technical stuff.
 
 ## [Unreleased]
+
+
+## [v0.1.2] - 2026-03-22
 ### Changed
-- Retry in reader now redownloads image ([@AntsyLich](https://github.com/AntsyLich)) ([#3089](https://github.com/mihonapp/mihon/pull/3089))
+- Decode HTML entities in JS manga title/descriptions `I&#x27;m` > `I'm` [@mrissaoussamau](https://github.com/mrissaoussama) [#76](https://github.com/tsundoku-otaku/tsundoku/pull/76)
+- Support for text selection in TextView [@Rojikku](https://github.com/Rojikku) [@mrissaoussamau](https://github.com/mrissaoussama) [#95](https://github.com/tsundoku-otaku/tsundoku/pull/95)
 
 ### Improved
 - New sorting option based on source name [@mrissaoussamau](https://github.com/mrissaoussama) [#41](https://github.com/tsundoku-otaku/tsundoku/pull/41)
 - Duplicate finder now has category filter [@mrissaoussamau](https://github.com/mrissaoussama) [#41](https://github.com/tsundoku-otaku/tsundoku/pull/41)
-- Hid Quick migration, removed from unnecessary places, added category option (For migrating between KT and JS of same source) [@mrissaoussamau](https://github.com/mrissaoussama) [#43](https://github.com/tsundoku-otaku/tsundoku/pull/43)
+- Hid Quick migration, removed from unnecessary places, added category option [@mrissaoussamau](https://github.com/mrissaoussama) [#43](https://github.com/tsundoku-otaku/tsundoku/pull/43)
 - Improve library performance when using filters and sorters [@mrissaoussamau](https://github.com/mrissaoussama) [#55](https://github.com/tsundoku-otaku/tsundoku/pull/55)
 - Add Enable/Disable for Extension Repos [@mrissaoussamau](https://github.com/mrissaoussama) [#50](https://github.com/tsundoku-otaku/tsundoku/pull/50)
 - Improved novel reader settings UI [@Rojikku](https://github.com/Rojikku) [#49](https://github.com/tsundoku-otaku/tsundoku/pull/49)
 - Fix Epub import to add to library (Not just inside source) and add specific category to import [@mrissaoussamau](https://github.com/mrissaoussama) [#70](https://github.com/tsundoku-otaku/tsundoku/pull/70)
 - Improved novel edit UI [@Rojikku](https://github.com/Rojikku) [#72](https://github.com/tsundoku-otaku/tsundoku/pull/72)
 - Add `.nomedia` file to `localnovels` and `lnreader_plugins` dirs [@mrissaoussamau](https://github.com/mrissaoussama) [#75](https://github.com/tsundoku-otaku/tsundoku/pull/75)
-- Decode HTML entities in JS manga title/descriptions `I&#x27;m` > `I'm` [@mrissaoussamau](https://github.com/mrissaoussama) [#76](https://github.com/tsundoku-otaku/tsundoku/pull/76)
 - Fix whiteflashes with webview on older android [@mrissaoussamau](https://github.com/mrissaoussama) [#77](https://github.com/tsundoku-otaku/tsundoku/pull/77)
 - EPUB improvements - CSS/JS Support, details.json, description/genre parsing [@mrissaoussamau](https://github.com/mrissaoussama) [#77](https://github.com/tsundoku-otaku/tsundoku/pull/77)
-- Support for text selection in TextView [@Rojikku](https://github.com/Rojikku) [@mrissaoussamau](https://github.com/mrissaoussama) [#95](https://github.com/tsundoku-otaku/tsundoku/pull/95)
 
 ### Added
 - Toggle under settings > Appearance that hides most manga UI elements[@mrissaoussamau](https://github.com/mrissaoussama) [#48](https://github.com/tsundoku-otaku/tsundoku/pull/48)
@@ -91,7 +93,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - **Browse Screen Enhancements**: Jump-to-page, page range loading, back confirmation
 
 
-[Unreleased]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.1...main
+[Unreleased]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.2...main
+[v0.1.2]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.1...v0.1.2
 [v0.1.1]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.0...v0.1.1
 [v0.1.0]: https://github.com/tsundoku-otaku/tsundoku/compare/5b88f88...v0.1.0
 
@@ -100,7 +103,6 @@ This project was originally forked from Mihon, and, while we keep separate versi
 This project is greatly advantaged by building off all of their work, and their continued contributions!
 
 Merged from v0.19.4 [2f9edb5](https://github.com/mihonapp/mihon/commit/f6b2684323569ef0eb23e143cc5d65d7cc1aae3c)
-Merged from v0.19.4 [81871a3](https://github.com/mihonapp/mihon/commit/81871a34694c8e408d907731292b7266c5b993cc)  
 Merged from v0.19.4 [81871a3](https://github.com/mihonapp/mihon/commit/81871a34694c8e408d907731292b7266c5b993cc)  
 Forked from Mihon v0.19.3 [7161bc2](https://github.com/mihonapp/mihon/commit/7161bc2e825bdfd66a1829f7dce42bd0570b1008)
 
