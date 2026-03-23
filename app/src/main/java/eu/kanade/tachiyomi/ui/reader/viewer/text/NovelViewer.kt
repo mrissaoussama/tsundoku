@@ -142,6 +142,23 @@ private class CoilImageGetter(
 
     override fun getDrawable(source: String?): Drawable {
         val wrapper = DrawableWrapper()
+        
+        val contentWidth = textView.width - textView.paddingLeft - textView.paddingRight
+        val maxWidth = if (contentWidth > 0) {
+            contentWidth
+        } else {
+            activity.resources.displayMetrics.widthPixels
+        }
+
+        // Add a temporary loading placeholder taking full width to prevent inline stacking
+        val placeholder = android.graphics.drawable.ColorDrawable(android.graphics.Color.LTGRAY)
+        val placeholderHeight = (200 * activity.resources.displayMetrics.density).toInt()
+        
+        // Use maxWidth to force the placeholder onto its own line and prevent images stacking side-by-side
+        placeholder.setBounds(0, 0, maxWidth, placeholderHeight)
+        wrapper.innerDrawable = placeholder
+        wrapper.setBounds(0, 0, maxWidth, placeholderHeight)
+
         if (source.isNullOrBlank()) return wrapper
 
         // Handle base64 data URIs inline (EPUB downloads encode media as base64)
@@ -176,6 +193,60 @@ private class CoilImageGetter(
                 }
             } catch (e: Exception) {
                 logcat(LogPriority.DEBUG) { "Failed to decode base64 image: ${e.message}" }
+            }
+            return wrapper
+        }
+
+        if (source.startsWith("tsundoku-novel-image://")) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val imagePath = android.net.Uri.decode(source.removePrefix("tsundoku-novel-image://"))
+                    val loader = activity.viewModel.state.value.viewerChapters?.currChapter?.pageLoader
+                    val stream = loader?.getPageDataStream(imagePath) ?: return@launch
+                    val bytes = stream.readBytes()
+                    val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    if (bitmap != null) {
+                        val drawable = android.graphics.drawable.BitmapDrawable(activity.resources, bitmap)
+                        withContext(Dispatchers.Main) {
+                            val contentWidth = textView.width - textView.paddingLeft - textView.paddingRight
+                            val maxWidth = if (contentWidth > 0) {
+                                contentWidth
+                            } else {
+                                activity.resources.displayMetrics.widthPixels
+                            }
+                            val imgWidth = drawable.intrinsicWidth
+                            val imgHeight = drawable.intrinsicHeight
+
+                            if (imgWidth > 0 && imgHeight > 0) {
+                                val width = maxWidth.coerceAtLeast(1)
+                                val ratio = width.toFloat() / imgWidth.toFloat()
+                                val height = (imgHeight * ratio).toInt().coerceAtLeast(1)
+
+                                drawable.setBounds(0, 0, width, height)
+                                wrapper.innerDrawable = drawable
+                                wrapper.setBounds(0, 0, width, height)
+
+                                val text = textView.text
+                                if (text is android.text.Spannable) {
+                                    val spans = text.getSpans(0, text.length, android.text.style.ImageSpan::class.java)
+                                    val span = spans.firstOrNull { it.drawable === wrapper }
+                                    if (span != null) {
+                                        val start = text.getSpanStart(span)
+                                        val end = text.getSpanEnd(span)
+                                        val flags = text.getSpanFlags(span)
+                                        text.removeSpan(span)
+                                        text.setSpan(span, start, end, flags)
+                                    }
+                                }
+
+                                textView.invalidate()
+                                textView.requestLayout()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    logcat(LogPriority.DEBUG) { "Failed to load custom novel image: ${e.message}" }
+                }
             }
             return wrapper
         }
@@ -218,9 +289,22 @@ private class CoilImageGetter(
                 wrapper.innerDrawable = drawable
                 wrapper.setBounds(0, 0, width, height)
 
+                // Trigger TextView layout update without destroying selection
+                // By removing and re-adding the span, we force the StaticLayout to re-calculate line heights
+                val text = textView.text
+                if (text is android.text.Spannable) {
+                    val spans = text.getSpans(0, text.length, android.text.style.ImageSpan::class.java)
+                    val span = spans.firstOrNull { it.drawable === wrapper }
+                    if (span != null) {
+                        val start = text.getSpanStart(span)
+                        val end = text.getSpanEnd(span)
+                        val flags = text.getSpanFlags(span)
+                        text.removeSpan(span)
+                        text.setSpan(span, start, end, flags)
+                    }
+                }
+
                 // Force TextView to re-layout with the loaded image
-                // Use invalidate() + requestLayout() instead of re-assigning text
-                // to avoid breaking text selection state
                 textView.invalidate()
                 textView.requestLayout()
             } catch (e: Exception) {
@@ -880,7 +964,6 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                 }
         }
 
-        // In observePreferences(), add:
         scope.launch {
             preferences.novelTextSelectable().changes()
                 .drop(1)
@@ -1707,6 +1790,13 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             try {
                 val doc = org.jsoup.Jsoup.parse(cleanHtmlContent)
                 doc.select("style, script").remove()
+                // Force all images to be block-level by wrapping them in generic paragraphs
+                // This prevents `TextView` overlapping them if they appear inline without spaces
+                doc.select("img").forEach { img ->
+                    if (img.parent()?.tagName() != "p" && img.parent()?.tagName() != "div") {
+                        img.wrap("<p style=\"text-align:center;\"></p>")
+                    }
+                }
                 cleanHtmlContent = doc.body()?.html() ?: cleanHtmlContent
             } catch (_: Exception) {}
 
@@ -2027,6 +2117,14 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             }
         }
         return false
+    }
+
+    fun toggleEditMode(isEditing: Boolean) {
+        if (isEditing) {
+            activity.runOnUiThread {
+                android.widget.Toast.makeText(activity, "Edit mode is only supported in WebView mode", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     override fun handleGenericMotionEvent(event: MotionEvent): Boolean {

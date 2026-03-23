@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.automirrored.outlined.NavigateBefore
 import androidx.compose.material.icons.automirrored.outlined.NavigateNext
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.RecordVoiceOver
@@ -121,9 +123,12 @@ fun NovelReaderAppBars(
     onToggleTts: () -> Unit,
     onLongPressTts: () -> Unit,
 
+    isEditing: Boolean = false,
+    onToggleEdit: () -> Unit = {},
+    isWebView: Boolean = true,
+
     // Toolbar customization
     bottomBarItems: List<BottomBarItemState>,
-    onItemsChange: (List<BottomBarItemState>) -> Unit,
 ) {
     val backgroundColor = MaterialTheme.colorScheme
         .surfaceColorAtElevation(3.dp)
@@ -188,7 +193,6 @@ fun NovelReaderAppBars(
                         .fillMaxWidth()
                         .padding(horizontal = MaterialTheme.padding.small),
                     items = bottomBarItems,
-                    onItemsChange = onItemsChange,
                     onNextChapter = onNextChapter,
                     enabledNext = enabledNext,
                     onPreviousChapter = onPreviousChapter,
@@ -206,6 +210,9 @@ fun NovelReaderAppBars(
                     isTtsPaused = isTtsPaused,
                     onToggleTts = onToggleTts,
                     onLongPressTts = onLongPressTts,
+                    isEditing = isEditing,
+                    isWebView = isWebView,
+                    onToggleEdit = onToggleEdit,
                 )
             }
         }
@@ -316,7 +323,6 @@ private fun NovelReaderTopBar(
 @Composable
 private fun NovelReaderBottomBar(
     items: List<BottomBarItemState>,
-    onItemsChange: (List<BottomBarItemState>) -> Unit,
     onNextChapter: () -> Unit,
     enabledNext: Boolean,
     onPreviousChapter: () -> Unit,
@@ -334,10 +340,11 @@ private fun NovelReaderBottomBar(
     isTtsPaused: Boolean,
     onToggleTts: () -> Unit,
     onLongPressTts: () -> Unit,
+    isEditing: Boolean,
+    isWebView: Boolean,
+    onToggleEdit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var showEditor by remember { mutableStateOf(false) }
-
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -345,7 +352,7 @@ private fun NovelReaderBottomBar(
     ) {
         // Previous chapter - left position, left arrow icon
         items
-            .filter { it.enabled }
+            .filter { it.enabled && (isWebView || it.item != BottomBarItem.EDIT) }
             .forEach { itemState ->
                 when (itemState.item) {
                     BottomBarItem.PREV_CHAPTER -> IconButton(
@@ -377,23 +384,25 @@ private fun NovelReaderBottomBar(
                     }
 
                     // Translation toggle - tap for quick translate, long-press for language picker
-                    BottomBarItem.TRANSLATE -> Box(
-                        modifier = Modifier.combinedClickable(
-                            onClick = onToggleTranslation,
-                            onLongClick = onLongPressTranslation,
-                        ),
-                        contentAlignment = Alignment.Center,
+                    BottomBarItem.TRANSLATE -> androidx.compose.material3.Surface(
+                        modifier = Modifier.padding(4.dp),
+                        shape = MaterialTheme.shapes.small,
+                        color = if (isTranslating) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Translate,
-                            contentDescription = stringResource(TDMR.strings.action_translate),
-                            tint = if (isTranslating) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                            modifier = Modifier.size(48.dp).padding(12.dp),
-                        )
+                        Box(
+                            modifier = Modifier.combinedClickable(
+                                onClick = onToggleTranslation,
+                                onLongClick = onLongPressTranslation,
+                            ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Translate,
+                                contentDescription = stringResource(TDMR.strings.action_translate),
+                                tint = if (isTranslating) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(40.dp).padding(8.dp),
+                            )
+                        }
                     }
                     // Auto-scroll toggle
                     BottomBarItem.AUTO_SCROLL -> IconButton(onClick = onToggleAutoScroll) {
@@ -447,17 +456,24 @@ private fun NovelReaderBottomBar(
                             contentDescription = stringResource(MR.strings.action_settings),
                         )
                     }
+
+                    // Edit
+                    BottomBarItem.EDIT -> androidx.compose.material3.Surface(
+                        modifier = Modifier.padding(4.dp),
+                        shape = MaterialTheme.shapes.small,
+                        color = if (isEditing) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                        border = if (isEditing) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
+                    ) {
+                        IconButton(onClick = onToggleEdit) {
+                            Icon(
+                                Icons.Outlined.Edit,
+                                contentDescription = "Edit",
+                                tint = if (isEditing) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
                 }
             }
-    }
-
-    if (showEditor) {
-        BottomBarEditorSheet(
-            items = items,
-            onItemsChange = onItemsChange,
-            onDismiss = { showEditor = false },
-            itemInfo = { item -> bottomBarItemInfo(item, orientation, isAutoScrolling, isTtsActive, isTtsPaused) },
-        )
     }
 }
 
@@ -478,6 +494,7 @@ internal fun bottomBarItemInfo(
     BottomBarItem.TTS -> Icons.Outlined.RecordVoiceOver to stringResource(TDMR.strings.pref_novel_tts)
     BottomBarItem.ORIENTATION -> orientation.icon to stringResource(MR.strings.rotation_type)
     BottomBarItem.SETTINGS -> Icons.Outlined.Settings to stringResource(MR.strings.action_settings)
+    BottomBarItem.EDIT -> Icons.Outlined.Edit to stringResource(MR.strings.action_edit)
 }
 
 @Composable

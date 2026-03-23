@@ -38,6 +38,10 @@ internal class ArchivePageLoader(private val reader: ArchiveReader) : PageLoader
             .toList()
     }
 
+    override suspend fun getPageDataStream(url: String): java.io.InputStream? {
+        return reader.getInputStream(url)?.readBytes()?.let { java.io.ByteArrayInputStream(it) }
+    }
+
     override suspend fun loadPage(page: ReaderPage) {
         check(!isRecycled)
     }

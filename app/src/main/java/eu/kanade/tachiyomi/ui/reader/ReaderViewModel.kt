@@ -1,5 +1,8 @@
 package eu.kanade.tachiyomi.ui.reader
 
+import mihon.core.archive.archiveReader
+import mihon.core.archive.archiveReader
+
 import android.app.Application
 import android.net.Uri
 import androidx.annotation.IntRange
@@ -29,6 +32,7 @@ import eu.kanade.tachiyomi.data.saver.Location
 import eu.kanade.tachiyomi.data.translation.TranslationService
 import eu.kanade.tachiyomi.source.isNovelSource
 import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.reader.loader.ChapterLoader
 import eu.kanade.tachiyomi.ui.reader.loader.DownloadPageLoader
@@ -74,8 +78,10 @@ import tachiyomi.core.common.util.lang.launchNonCancellable
 import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.lang.withUIContext
 import tachiyomi.core.common.util.system.logcat
+import eu.kanade.tachiyomi.util.system.toast
 import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
 import tachiyomi.domain.chapter.interactor.UpdateChapter
+import tachiyomi.domain.chapter.model.Chapter as DomainChapter
 import tachiyomi.domain.chapter.model.ChapterUpdate
 import tachiyomi.domain.chapter.service.getChapterSort
 import tachiyomi.domain.download.service.DownloadPreferences
@@ -1399,6 +1405,7 @@ class ReaderViewModel @JvmOverloads constructor(
         val viewer: Viewer? = null,
         val dialog: Dialog? = null,
         val menuVisible: Boolean = false,
+        val hasUnsavedChanges: Boolean = false,
         @IntRange(from = -100, to = 100) val brightnessOverlayValue: Int = 0,
     ) {
         val currentChapter: ReaderChapter?
@@ -1418,8 +1425,130 @@ class ReaderViewModel @JvmOverloads constructor(
             initialValue = readerPreferences.novelBottomBarItems().get().deserializeBottomBarItems(),
         )
 
+    fun setHasUnsavedChanges(hasUnsaved: Boolean) {
+        mutableState.update { it.copy(hasUnsavedChanges = hasUnsaved) }
+    }
+
     fun saveBottomBarItems(items: List<BottomBarItemState>) {
         readerPreferences.novelBottomBarItems().set(items.serialize())
+    }
+
+    fun saveEditedChapterContent(json: String) {
+        viewModelScope.launchIO {
+            try {
+                val array = kotlinx.serialization.json.Json.decodeFromString<kotlinx.serialization.json.JsonArray>(json)
+                val m = manga ?: return@launchIO
+                val s = sourceManager.getOrStub(m.source)
+
+                for (item in array) {
+                    val jsonObj = item as? kotlinx.serialization.json.JsonObject ?: continue
+                    val idStr = (jsonObj["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                    if (idStr == "-1") continue
+                    val id = idStr?.toLongOrNull() ?: continue
+                    val htmlContent = (jsonObj["content"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: continue
+
+                    val chapter = chapterList.find { it.chapter.id == id }?.chapter?.toDomainChapter() ?: continue
+                    saveSingleChapterEdits(m, chapter, s, htmlContent)
+                }
+                setHasUnsavedChanges(false)
+            } catch (e: Exception) {
+                logcat(LogPriority.ERROR, e) { "Failed to decode edited content json" }
+                Injekt.get<Application>().let { app ->
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        app.toast(tachiyomi.i18n.novel.TDMR.strings.error_decoding_edits)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Replaces the local downloaded file for a given chapter with the specified edited [htmlContent].
+     * Supports both plain directory (.html) and CBZ packed (.cbz) chapter formats.
+     */
+    private suspend fun saveSingleChapterEdits(
+        m: Manga,
+        chapter: DomainChapter,
+        s: Source,
+        htmlContent: String,
+    ) {
+        val isDownloaded = downloadManager.isChapterDownloaded(chapter.name, chapter.scanlator, chapter.url, m.title, m.source)
+        val mangaDir = downloadProvider.getMangaDir(m.title, s).getOrNull() ?: return
+        val validName = downloadProvider.getValidChapterDirNames(chapter.name, chapter.scanlator, chapter.url).first()
+
+        try {
+            val tmpDir = mangaDir.createDirectory(validName + "_tmp") ?: return
+            val existingDir = if (isDownloaded) downloadProvider.findChapterDir(chapter.name, chapter.scanlator, chapter.url, m.title, s) else null
+            val context: android.app.Application = uy.kohesive.injekt.Injekt.get()
+
+            if (existingDir != null) {
+                if (existingDir.isFile) {
+                    existingDir.archiveReader(context).use { archiveReader ->
+                        archiveReader.useEntries { entries ->
+                            entries.filter { it.isFile && it.name?.endsWith(".html") == false }.forEach { entry ->
+                                tmpDir.createFile(entry.name)?.openOutputStream()?.use { os ->
+                                    archiveReader.getInputStream(entry.name)?.use { it.copyTo(os) }
+                                }
+                            }
+                        }
+                    }
+                } else if (existingDir.isDirectory) {
+                    existingDir.listFiles()?.filter { it.isFile && it.name?.endsWith(".html") == false }?.forEach { file ->
+                        tmpDir.createFile(file.name!!)?.openOutputStream()?.use { os ->
+                            file.openInputStream().use { it.copyTo(os) }
+                        }
+                    }
+                }
+            }
+
+            // Process HTML to include images
+            val embedder = eu.kanade.tachiyomi.util.chapter.ChapterImageEmbedder()
+            val baseUrl = (s as? eu.kanade.tachiyomi.source.online.HttpSource)?.baseUrl ?: chapter.url.takeIf { it.startsWith("http") }
+            val processedHtml = embedder.processHtml(htmlContent, baseUrl, tmpDir)
+
+            val targetFile = tmpDir.createFile("001.html") ?: return
+            targetFile.openOutputStream().bufferedWriter().use { it.write(processedHtml) }
+
+            if (downloadPreferences.saveChaptersAsCBZ().get()) {
+                val zip = mangaDir.createFile(validName + ".cbz.tmp")!!
+                val compressionLevel = if (m.isNovel) uy.kohesive.injekt.Injekt.get<tachiyomi.domain.download.service.NovelDownloadPreferences>().zipCompressionLevel().get() else 0
+                mihon.core.archive.ZipWriter(context, zip, compressionLevel).use { writer ->
+                    tmpDir.listFiles()?.forEach { file ->
+                        writer.write(file)
+                    }
+                }
+                
+                if (existingDir != null) {
+                    existingDir.delete()
+                }
+                
+                val currentCbz = mangaDir.findFile(validName + ".cbz")
+                currentCbz?.delete()
+                zip.renameTo(validName + ".cbz")
+                tmpDir.delete()
+            } else {
+                if (existingDir != null) {
+                    existingDir.delete()
+                }
+                val currentDir = mangaDir.findFile(validName)
+                if (currentDir != null && currentDir.isDirectory) {
+                    currentDir.delete()
+                }
+                tmpDir.renameTo(validName)
+            }
+
+            if (!isDownloaded) {
+                val dlCache: eu.kanade.tachiyomi.data.download.DownloadCache = uy.kohesive.injekt.Injekt.get()
+                dlCache.addChapter(validName, mangaDir, m)
+            }
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Failed to save edited chapter" }
+            Injekt.get<Application>().let { app ->
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    app.toast(tachiyomi.i18n.novel.TDMR.strings.error_saving_edits)
+                }
+            }
+        }
     }
 
     sealed interface Dialog {

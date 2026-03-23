@@ -226,32 +226,17 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
             getInputStream(entryPath)?.use { inputStream ->
                 val document = Jsoup.parse(inputStream, null, "")
 
-                // Inline images as Base64 to support NovelViewer
+                // Link images to standard schema to support NovelWebViewViewer
                 val imageBasePath = getParentDirectory(entryPath)
                 document.select("img[src], image[xlink:href]").forEach { img ->
                     val src = if (img.hasAttr("src")) img.attr("src") else img.attr("xlink:href")
-                    if (!src.startsWith("http") && !src.startsWith("data:")) {
+                    if (!src.startsWith("http") && !src.startsWith("data:") && !src.startsWith("tsundoku-novel-image://")) {
                         val imagePath = resolveZipPath(imageBasePath, src)
-                        try {
-                            getInputStream(imagePath)?.use { imgStream ->
-                                val bytes = imgStream.readBytes()
-                                val base64 = java.util.Base64.getEncoder().encodeToString(bytes)
-                                val mimeType = when (imagePath.substringAfterLast('.', "").lowercase()) {
-                                    "png" -> "image/png"
-                                    "jpg", "jpeg" -> "image/jpeg"
-                                    "gif" -> "image/gif"
-                                    "svg" -> "image/svg+xml"
-                                    "webp" -> "image/webp"
-                                    else -> "image/jpeg"
-                                }
-                                if (img.hasAttr("src")) {
-                                    img.attr("src", "data:$mimeType;base64,$base64")
-                                } else {
-                                    img.attr("xlink:href", "data:$mimeType;base64,$base64")
-                                }
-                            }
-                        } catch (e: Exception) {
-                            // Ignore missing images
+                        val novelUrl = "tsundoku-novel-image://${java.net.URLEncoder.encode(imagePath, "UTF-8")}"
+                        if (img.hasAttr("src")) {
+                            img.attr("src", novelUrl)
+                        } else {
+                            img.attr("xlink:href", novelUrl)
                         }
                     }
                 }
@@ -385,34 +370,16 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
                 }
 
                 val src = rawSrc.substringBefore("#").trim()
-                if (src.isBlank() || src.startsWith("http") || src.startsWith("//") || src.startsWith("data:")) {
+                if (src.isBlank() || src.startsWith("http") || src.startsWith("//") || src.startsWith("data:") || src.startsWith("tsundoku-novel-image://")) {
                     return@forEach
                 }
 
                 val imagePath = resolveZipPath(imageBasePath, src)
-                try {
-                    getInputStream(imagePath)?.use { imgStream ->
-                        val bytes = imgStream.readBytes()
-                        val base64 = java.util.Base64.getEncoder().encodeToString(bytes)
-                        val mimeType = when (imagePath.substringAfterLast('.', "").lowercase()) {
-                            "png" -> "image/png"
-                            "jpg", "jpeg" -> "image/jpeg"
-                            "gif" -> "image/gif"
-                            "svg" -> "image/svg+xml"
-                            "webp" -> "image/webp"
-                            "avif" -> "image/avif"
-                            else -> "application/octet-stream"
-                        }
-
-                        val dataUrl = "data:$mimeType;base64,$base64"
-                        when {
-                            img.hasAttr("src") -> img.attr("src", dataUrl)
-                            img.hasAttr("xlink:href") -> img.attr("xlink:href", dataUrl)
-                            else -> img.attr("href", dataUrl)
-                        }
-                    }
-                } catch (_: Exception) {
-                    // Ignore missing or unreadable image files.
+                val novelUrl = "tsundoku-novel-image://${java.net.URLEncoder.encode(imagePath, "UTF-8")}"
+                when {
+                    img.hasAttr("src") -> img.attr("src", novelUrl)
+                    img.hasAttr("xlink:href") -> img.attr("xlink:href", novelUrl)
+                    else -> img.attr("href", novelUrl)
                 }
             }
 

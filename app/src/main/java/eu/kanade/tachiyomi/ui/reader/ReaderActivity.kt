@@ -599,6 +599,8 @@ class ReaderActivity : BaseActivity() {
 
             val bottomBarItems by viewModel.bottomBarItems.collectAsState()
             var showBottomBarEditor by remember { mutableStateOf(false) }
+            var showEditSaveDialog by remember { mutableStateOf(false) }
+            var isEditing by remember { mutableStateOf(false) }
 
             NovelReaderAppBars(
                 visible = state.menuVisible,
@@ -715,9 +717,58 @@ class ReaderActivity : BaseActivity() {
                         else -> {}
                     }
                 },
+
+                isEditing = isEditing,
+                onToggleEdit = {
+                    val viewer = state.viewer
+                    if (isEditing) {
+                        if (state.hasUnsavedChanges) {
+                            showEditSaveDialog = true
+                        } else {
+                            isEditing = false
+                            (viewer as? NovelWebViewViewer)?.toggleEditMode(isEditing = false, save = false)
+                        }
+                    } else {
+                        isEditing = true
+                        if (viewer is NovelWebViewViewer) {
+                            viewer.toggleEditMode(true)
+                        }
+                    }
+                },
+
+                isWebView = state.viewer is NovelWebViewViewer,
                 bottomBarItems = bottomBarItems,
-                onItemsChange = { viewModel.saveBottomBarItems(it) },
             )
+
+            androidx.activity.compose.BackHandler(enabled = isEditing && state.hasUnsavedChanges) {
+                showEditSaveDialog = true
+            }
+
+            if (showEditSaveDialog) {
+                AlertDialog(
+                    onDismissRequest = { showEditSaveDialog = false },
+                    title = { Text(tachiyomi.presentation.core.i18n.stringResource(tachiyomi.i18n.novel.TDMR.strings.prompt_save_changes)) },
+                    text = { Text(tachiyomi.presentation.core.i18n.stringResource(tachiyomi.i18n.novel.TDMR.strings.prompt_save_changes_message)) },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            showEditSaveDialog = false
+                            isEditing = false
+                            (state.viewer as? NovelWebViewViewer)?.toggleEditMode(isEditing = false, save = true)
+                        }) {
+                            Text(tachiyomi.presentation.core.i18n.stringResource(MR.strings.action_save))
+                        }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            showEditSaveDialog = false
+                            isEditing = false
+                            (state.viewer as? NovelWebViewViewer)?.toggleEditMode(isEditing = false, save = false)
+                        }) {
+                            Text(tachiyomi.presentation.core.i18n.stringResource(tachiyomi.i18n.novel.TDMR.strings.action_discard))
+                        }
+                    },
+                )
+            }
 
             if (showBottomBarEditor) {
                 BottomBarEditorSheet(

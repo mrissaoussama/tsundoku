@@ -23,6 +23,12 @@ abstract class PageLoader {
     abstract suspend fun getPages(): List<ReaderPage>
 
     /**
+     * Reads a specific resource file synchronously from local storage.
+     * Useful for EPUB inner images parsed inside WebView clients.
+     */
+    open suspend fun getPageDataStream(url: String): java.io.InputStream? = null
+
+    /**
      * Loads the page. May also preload other pages.
      * Progress of the page loading should be followed via [page.statusFlow].
      * [loadPage] is not currently guaranteed to complete, so it should be launched asynchronously.

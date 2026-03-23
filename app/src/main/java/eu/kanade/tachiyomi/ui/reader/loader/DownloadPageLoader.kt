@@ -104,6 +104,30 @@ internal class DownloadPageLoader(
         }
     }
 
+override suspend fun getPageDataStream(url: String): java.io.InputStream? {
+        // 1. Try archive (for normal downloaded CBZ)
+        archivePageLoader?.getPageDataStream(url)?.let { return it }
+
+        // 2. Try directory (for normal downloaded directories)
+        val dbChapter = chapter.chapter
+        val chapterPath = downloadProvider.findChapterDir(
+            dbChapter.name,
+            dbChapter.scanlator,
+            dbChapter.url,
+            manga.title,
+            source,
+        )
+        if (chapterPath?.isDirectory == true) {
+            val file = chapterPath.findFile(url)
+            if (file != null && file.exists()) {
+                context.contentResolver.openInputStream(file.uri)?.let { return it }
+            }
+        }
+
+        // 3. Fallback to source (critical for edited EPUB chapters where the custom `.cbz` only contains 001.html)
+        return (source as? tachiyomi.source.local.LocalNovelSource)?.getChapterImage(dbChapter, url)
+    }
+
     override suspend fun loadPage(page: ReaderPage) {
         archivePageLoader?.loadPage(page)
     }

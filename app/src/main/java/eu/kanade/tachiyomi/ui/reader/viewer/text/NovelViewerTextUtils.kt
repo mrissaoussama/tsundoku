@@ -55,54 +55,31 @@ object NovelViewerTextUtils {
 
     /**
      * Strips the chapter title from the beginning of the content.
-     * Searches within the first ~500 characters for chapter title or name matches.
+     * Searches within the first ~3000 characters for chapter title or name matches.
      */
     fun stripChapterTitle(content: String, chapterName: String): String {
         val normalizedChapterName = chapterName.trim().lowercase()
-        // Search within first 500 chars for title (to handle leading whitespace/tags)
-        val searchArea = content.take(500)
+        // Search within first 3000 chars for title (to handle leading whitespace/tags/extra prefixes)
+        val searchArea = content.take(3000)
 
-        // Try to remove first heading (H1-H6) anywhere in search area
-        val headingRegex = """<h[1-6][^>]*>(.*?)</h[1-6]>""".toRegex(RegexOption.IGNORE_CASE)
-        val headingMatch = headingRegex.find(searchArea)
-        if (headingMatch != null) {
-            val headingText = headingMatch.groupValues[1].replace(Regex("<[^>]+>"), "").trim().lowercase()
-            if (isTitleMatch(headingText, normalizedChapterName)) {
-                return content.substring(0, headingMatch.range.first) +
-                    content.substring(headingMatch.range.last + 1)
-            }
-        }
+        // Try to remove first heading, or other elements if they match the chapter name.
+        // We unconditionally hide the first heading.
+        val extractPatterns = listOf(
+            """<h[1-6][^>]*>.*?</h[1-6]>""".toRegex(RegexOption.IGNORE_CASE) to true,
+            """<(strong|b|em)[^>]*>.*?</\1>""".toRegex(RegexOption.IGNORE_CASE) to false,
+            """<p[^>]*>.*?</p>""".toRegex(RegexOption.IGNORE_CASE) to false,
+            """<(div|span)[^>]*>.*?</\1>""".toRegex(RegexOption.IGNORE_CASE) to false,
+        )
 
-        // Try to remove first strong/b/em tag if it looks like a title
-        val strongRegex = """<(strong|b|em)[^>]*>(.*?)</\1>""".toRegex(RegexOption.IGNORE_CASE)
-        val strongMatch = strongRegex.find(searchArea)
-        if (strongMatch != null) {
-            val strongText = strongMatch.groupValues[2].replace(Regex("<[^>]+>"), "").trim().lowercase()
-            if (isTitleMatch(strongText, normalizedChapterName)) {
-                return content.substring(0, strongMatch.range.first) +
-                    content.substring(strongMatch.range.last + 1)
-            }
-        }
-
-        // Try to remove first paragraph if it matches chapter name
-        val paragraphRegex = """<p[^>]*>(.*?)</p>""".toRegex(RegexOption.IGNORE_CASE)
-        val pMatch = paragraphRegex.find(searchArea)
-        if (pMatch != null) {
-            val pText = pMatch.groupValues[1].replace(Regex("<[^>]+>"), "").trim().lowercase()
-            if (isTitleMatch(pText, normalizedChapterName)) {
-                return content.substring(0, pMatch.range.first) +
-                    content.substring(pMatch.range.last + 1)
-            }
-        }
-
-        // Try to remove first div or span if it matches chapter name
-        val divSpanRegex = """<(div|span)[^>]*>(.*?)</\1>""".toRegex(RegexOption.IGNORE_CASE)
-        val divMatch = divSpanRegex.find(searchArea)
-        if (divMatch != null) {
-            val divText = divMatch.groupValues[2].replace(Regex("<[^>]+>"), "").trim().lowercase()
-            if (isTitleMatch(divText, normalizedChapterName)) {
-                return content.substring(0, divMatch.range.first) +
-                    content.substring(divMatch.range.last + 1)
+        for ((regex, unconditional) in extractPatterns) {
+            val match = regex.find(searchArea)
+            if (match != null) {
+                // Strip tags from the entire matched HTML to get just the text
+                val matchText = match.value.replace(Regex("<[^>]+>"), "").trim().lowercase()
+                if (unconditional || isTitleMatch(matchText, normalizedChapterName)) {
+                    return content.substring(0, match.range.first) +
+                        content.substring(match.range.last + 1)
+                }
             }
         }
 
