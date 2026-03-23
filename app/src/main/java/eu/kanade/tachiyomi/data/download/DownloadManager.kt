@@ -182,13 +182,14 @@ class DownloadManager(
         val allFiles = chapterDir?.listFiles().orEmpty()
         logcat { "buildPageList: found ${allFiles.size} files in directory" }
         allFiles.forEach { file ->
-            logcat { "  - file: ${file.name}, isFile=${file.isFile}, isHtml=${file.name?.endsWith(".html")}" }
+            logcat { "  - file: ${file.name}, isFile=${file.isFile}, isHtml=${file.name.isHtmlContentFileName()}" }
         }
 
         val files = allFiles.filter { file ->
+            val fileName = file.name
             file.isFile && (
-                file.name?.endsWith(".html") == true ||
-                    ImageUtil.isImage(file.name) { file.openInputStream() }
+                fileName.isHtmlContentFileName() ||
+                    ImageUtil.isImage(fileName) { file.openInputStream() }
                 )
         }
         logcat { "buildPageList: filtered to ${files.size} files" }
@@ -201,6 +202,11 @@ class DownloadManager(
             .mapIndexed { i, file ->
                 Page(i, uri = file.uri).apply { status = Page.State.Ready }
             }
+    }
+
+    private fun String?.isHtmlContentFileName(): Boolean {
+        val name = this?.lowercase() ?: return false
+        return name.endsWith(".html") || name.endsWith(".htm") || name.endsWith(".xhtml")
     }
 
     /**
