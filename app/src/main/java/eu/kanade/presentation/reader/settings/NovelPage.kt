@@ -63,6 +63,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -884,6 +886,11 @@ private fun SnippetEditDialog(
 ) {
     var snippetTitle by remember { mutableStateOf(initialSnippet?.title ?: "") }
     var snippetCode by remember { mutableStateOf(initialSnippet?.code ?: "") }
+    val codeFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        codeFocusRequester.requestFocus()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -903,7 +910,10 @@ private fun SnippetEditDialog(
                     label = { Text(stringResource(TDMR.strings.novel_snippet_code)) },
                     minLines = 5,
                     maxLines = 10,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .focusRequester(codeFocusRequester),
                 )
             }
         },

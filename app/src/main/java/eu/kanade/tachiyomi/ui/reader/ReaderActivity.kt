@@ -740,8 +740,13 @@ class ReaderActivity : BaseActivity() {
                 bottomBarItems = bottomBarItems,
             )
 
-            androidx.activity.compose.BackHandler(enabled = isEditing && state.hasUnsavedChanges) {
-                showEditSaveDialog = true
+            androidx.activity.compose.BackHandler(enabled = isEditing) {
+                if (state.hasUnsavedChanges) {
+                    showEditSaveDialog = true
+                } else {
+                    isEditing = false
+                    (state.viewer as? NovelWebViewViewer)?.toggleEditMode(isEditing = false, save = false)
+                }
             }
 
             if (showEditSaveDialog) {
