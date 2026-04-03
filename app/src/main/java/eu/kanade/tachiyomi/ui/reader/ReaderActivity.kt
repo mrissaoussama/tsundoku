@@ -62,6 +62,7 @@ import eu.kanade.presentation.reader.TranslationLanguageSelectDialog
 import eu.kanade.presentation.reader.appbars.BottomBarEditorSheet
 import eu.kanade.presentation.reader.appbars.DefaultBottomBarItems
 import eu.kanade.presentation.reader.appbars.NovelReaderAppBars
+import eu.kanade.presentation.reader.appbars.QuotesSheet
 import eu.kanade.presentation.reader.appbars.ReaderAppBars
 import eu.kanade.presentation.reader.appbars.bottomBarItemInfo
 import eu.kanade.presentation.reader.settings.ReaderSettingsDialog
@@ -79,6 +80,7 @@ import eu.kanade.tachiyomi.ui.reader.ReaderViewModel.SetAsCoverResult.Success
 import eu.kanade.tachiyomi.ui.reader.model.ReaderChapter
 import eu.kanade.tachiyomi.ui.reader.model.ReaderPage
 import eu.kanade.tachiyomi.ui.reader.model.ViewerChapters
+import eu.kanade.tachiyomi.ui.reader.quote.Quote
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderOrientation
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsScreenModel
@@ -151,6 +153,9 @@ class ReaderActivity : BaseActivity() {
 
     var isScrollingThroughPages = false
         private set
+
+    // Quotes functionality
+    private var showQuotesSheet by mutableStateOf(false)
 
     /**
      * Called when the activity is created. Initializes the presenter and configuration.
@@ -379,6 +384,54 @@ class ReaderActivity : BaseActivity() {
                 )
             }
             null -> {}
+        }
+
+        // Quotes sheet
+        val quotesState = remember { mutableStateOf(viewModel.getQuotes()) }
+        val showQuotesState = remember { mutableStateOf(false) }
+
+        LaunchedEffect(showQuotesSheet) {
+            showQuotesState.value = showQuotesSheet
+            if (showQuotesSheet) {
+                quotesState.value = viewModel.getQuotes()
+            }
+        }
+
+        // Handle back button when quotes sheet is open
+        androidx.activity.compose.BackHandler(enabled = showQuotesSheet) {
+            showQuotesSheet = false
+        }
+
+        if (showQuotesState.value) {
+            QuotesSheet(
+                quotes = quotesState.value,
+                onDismiss = {
+                    showQuotesSheet = false
+                },
+                onQuoteClick = { quote ->
+                    logcat(LogPriority.DEBUG) { "Quote clicked: ${quote.content.take(50)}..." }
+                },
+                onQuoteDelete = { quote ->
+                    logcat(LogPriority.DEBUG) { "Quote deleted: ${quote.content.take(50)}..." }
+                    viewModel.deleteQuote(quote)
+                    quotesState.value = viewModel.getQuotes()
+                },
+                onQuoteUpdate = { quote ->
+                    logcat(LogPriority.DEBUG) { "Quote updated: ${quote.content.take(50)}..." }
+                    viewModel.updateQuote(quote)
+                    quotesState.value = viewModel.getQuotes()
+                },
+                onQuoteAdd = { content ->
+                    logcat(LogPriority.DEBUG) { "Quote added: ${content.take(50)}..." }
+                    viewModel.saveQuote(content, "")
+                    quotesState.value = viewModel.getQuotes()
+                },
+                onQuoteReorder = { reorderedQuotes ->
+                    logcat(LogPriority.DEBUG) { "Quotes reordered: ${reorderedQuotes.size} quotes" }
+                    viewModel.reorderQuotes(reorderedQuotes)
+                    quotesState.value = viewModel.getQuotes()
+                },
+            )
         }
     }
 
@@ -738,6 +791,7 @@ class ReaderActivity : BaseActivity() {
 
                 isWebView = state.viewer is NovelWebViewViewer,
                 bottomBarItems = bottomBarItems,
+                onQuotes = ::onQuotesClicked,
             )
 
             androidx.activity.compose.BackHandler(enabled = isEditing && state.hasUnsavedChanges) {
@@ -1174,6 +1228,42 @@ class ReaderActivity : BaseActivity() {
                 Error -> MR.strings.notification_cover_update_failed
             },
         )
+    }
+
+    /**
+     * Called when the quotes button is clicked.
+     */
+    fun onQuotesClicked() {
+        showQuotesSheet = true
+    }
+
+    /**
+     * Called when the "Remember" action is triggered.
+     * Gets selected text from the current viewer and adds it as a quote.
+     */
+    fun onRememberSelectedText() {
+        val selectedText = when (val viewer = viewModel.state.value.viewer) {
+            is NovelViewer -> viewer.getSelectedText()
+            is NovelWebViewViewer -> viewer.pendingSelectedText ?: viewer.getSelectedText()
+            else -> null
+        }
+        val chapterName = when (val viewer = viewModel.state.value.viewer) {
+            is NovelViewer -> viewer.getCurrentChapterName()
+            is NovelWebViewViewer -> viewer.getCurrentChapterName()
+            else -> null
+        }
+
+        if (selectedText != null && chapterName != null) {
+            viewModel.saveQuote(selectedText, chapterName)
+            // Clear selection after adding quote
+            when (val viewer = viewModel.state.value.viewer) {
+                is NovelViewer -> viewer.clearTextSelection()
+                is NovelWebViewViewer -> viewer.clearTextSelection()
+            }
+            toast("Quote saved!")
+        } else {
+            toast("No text selected")
+        }
     }
 
     /**
