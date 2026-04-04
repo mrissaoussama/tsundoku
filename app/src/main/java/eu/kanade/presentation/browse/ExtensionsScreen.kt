@@ -158,7 +158,9 @@ private fun ExtensionContent(
     FastScrollLazyColumn(
         contentPadding = contentPadding + topSmallPaddingValues,
     ) {
-        if (!installGranted && state.installer?.requiresSystemPermission == true && state.items.any { (_, items) -> items.any { it.extension is Extension.Available } }) {
+        if (!installGranted && state.installer?.requiresSystemPermission == true &&
+            state.items.any { (_, items) -> items.any { it.extension is Extension.Available } }
+        ) {
             item(key = "extension-permissions-warning") {
                 WarningBanner(
                     textRes = MR.strings.ext_permission_install_apps_warning,

@@ -45,8 +45,8 @@ class LocalNovelPageLoader(
             if (source is NovelSource) {
                 var text = source.fetchPageText(Page(page.index, page.url, page.imageUrl))
                 // Apply auto-split if enabled
-                if (readerPreferences.novelAutoSplitText().get()) {
-                    val wordCount = readerPreferences.novelAutoSplitWordCount().get()
+                if (readerPreferences.novelAutoSplitText.get()) {
+                    val wordCount = readerPreferences.novelAutoSplitWordCount.get()
                     if (wordCount > 0) {
                         text = TextSplitter.splitText(text, wordCount)
                     }

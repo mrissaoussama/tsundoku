@@ -26,6 +26,9 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Refresh library when deleting a category [@Rojikku](https://github.com/Rojikku)  [#134](https://github.com/tsundoku-otaku/tsundoku/pull/134)
 - Fixed ttf font importing [@Rojikku](https://github.com/Rojikku)  [#135](https://github.com/tsundoku-otaku/tsundoku/pull/135)
 
+### Other
+- Merged Mihon [25d4bf5](https://github.com/mihonapp/mihon/commit/25d4bf5e2ffdcb84f6469f5e0a81108777a98e85) [@Rojikku](https://github.com/Rojikku)
+
 
 ## [v0.1.2] - 2026-03-22
 ### Changed
@@ -116,8 +119,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 This project was originally forked from Mihon, and, while we keep separate version numbers, we would like to note in our changelog when we merge from upstream, and link to their changelog to try to give appropriate credit.
 This project is greatly advantaged by building off all of their work, and their continued contributions!
 
-Merged from v0.19.4 [2f9edb5](https://github.com/mihonapp/mihon/commit/f6b2684323569ef0eb23e143cc5d65d7cc1aae3c)
+Merged from v0.19.7 [25d4bf5](https://github.com/mihonapp/mihon/commit/25d4bf5e2ffdcb84f6469f5e0a81108777a98e85)  
 Merged from v0.19.4 [81871a3](https://github.com/mihonapp/mihon/commit/81871a34694c8e408d907731292b7266c5b993cc)  
 Forked from Mihon v0.19.3 [7161bc2](https://github.com/mihonapp/mihon/commit/7161bc2e825bdfd66a1829f7dce42bd0570b1008)
 
-[mihon]: https://github.com/mihonapp/mihon/blob/f6b2684323569ef0eb23e143cc5d65d7cc1aae3c/CHANGELOG.md
+[mihon]: https://github.com/mihonapp/mihon/blob/25d4bf5e2ffdcb84f6469f5e0a81108777a98e85/CHANGELOG.md

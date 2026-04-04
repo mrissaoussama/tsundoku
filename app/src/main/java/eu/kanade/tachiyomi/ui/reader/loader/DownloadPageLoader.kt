@@ -87,8 +87,8 @@ internal class DownloadPageLoader(
                 null
             }
             // Apply auto-split if enabled
-            if (textContent != null && readerPreferences.novelAutoSplitText().get()) {
-                val wordCount = readerPreferences.novelAutoSplitWordCount().get()
+            if (textContent != null && readerPreferences.novelAutoSplitText.get()) {
+                val wordCount = readerPreferences.novelAutoSplitWordCount.get()
                 if (wordCount > 0) {
                     textContent = TextSplitter.splitText(textContent, wordCount)
                 }

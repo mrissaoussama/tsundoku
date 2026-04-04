@@ -52,7 +52,11 @@ class ChapterImageEmbedder(
      * @param baseUrl The base URL of the chapter for resolving relative URLs
      * @return Processed HTML with embedded images
      */
-    suspend fun processHtml(html: String, baseUrl: String?, tmpDir: com.hippo.unifile.UniFile? = null): String = withContext(Dispatchers.IO) {
+    suspend fun processHtml(
+        html: String,
+        baseUrl: String?,
+        tmpDir: com.hippo.unifile.UniFile? = null,
+    ): String = withContext(Dispatchers.IO) {
         if (!novelDownloadPreferences.downloadChapterImages().get()) {
             return@withContext html
         }
@@ -65,7 +69,9 @@ class ChapterImageEmbedder(
         var imageCounter = 0
         for (imageUrl in imageUrls) {
             // Already local or data URI, do not process
-            if (imageUrl.startsWith("tsundoku-novel-image://") || imageUrl.startsWith("file://") || imageUrl.startsWith("data:")) {
+            if (imageUrl.startsWith("tsundoku-novel-image://") || imageUrl.startsWith("file://") ||
+                imageUrl.startsWith("data:")
+            ) {
                 continue
             }
             try {
@@ -197,7 +203,8 @@ class ChapterImageEmbedder(
                                 bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() -> "image/png"
                                 bytes[0] == 0x47.toByte() && bytes[1] == 0x49.toByte() -> "image/gif"
                                 bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() -> "image/jpeg"
-                                bytes[0] == 0x52.toByte() && bytes[1] == 0x49.toByte() && bytes[8] == 0x57.toByte() && bytes[9] == 0x45.toByte() -> "image/webp"
+                                bytes[0] == 0x52.toByte() && bytes[1] == 0x49.toByte() && bytes[8] == 0x57.toByte() &&
+                                    bytes[9] == 0x45.toByte() -> "image/webp"
                                 else -> "image/jpeg"
                             }
                         }
@@ -205,7 +212,9 @@ class ChapterImageEmbedder(
                     }
                 }
             } catch (e: Exception) {
-                logcat(LogPriority.DEBUG) { "ChapterImageEmbedder: Not found in Coil cache or error reading, fetching from network..." }
+                logcat(LogPriority.DEBUG) {
+                    "ChapterImageEmbedder: Not found in Coil cache or error reading, fetching from network..."
+                }
             }
 
             if (imageBytes == null) {

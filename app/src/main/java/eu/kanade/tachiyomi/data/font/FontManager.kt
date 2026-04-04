@@ -152,17 +152,18 @@ class FontManager(
                     context.contentResolver.openInputStream(targetFile.uri)?.use { input ->
                         val header = ByteArray(4)
                         if (input.read(header) != 4) throw Exception("File too small")
-                        
+
                         // TTF: 0x00010000 or 0x74727565 ('true')
                         // OTF: 0x4F54544F ('OTTO')
                         val magic = (header[0].toInt() shl 24) or
                             (header[1].toInt() shl 16) or
                             (header[2].toInt() shl 8) or
                             header[3].toInt()
-                            
+
                         if (magic != 0x00010000 &&
                             magic != 0x74727565 &&
-                            magic != 0x4F54544F) {
+                            magic != 0x4F54544F
+                        ) {
                             throw Exception("Not a valid TTF/OTF file")
                         }
                     }
@@ -264,17 +265,18 @@ class FontManager(
                 context.contentResolver.openInputStream(targetFile.uri)?.use { input ->
                     val header = ByteArray(4)
                     if (input.read(header) != 4) throw Exception("Downloaded file is incomplete")
-                    
+
                     val magic = (header[0].toInt() shl 24) or
                         (header[1].toInt() shl 16) or
                         (header[2].toInt() shl 8) or
                         header[3].toInt()
-                        
+
                     if (magic != 0x00010000 &&
                         magic != 0x74727565 &&
                         magic != 0x4F54544F &&
                         magic != 0x774F4632 && // woff2
-                        magic != 0x774F4646) { // woff
+                        magic != 0x774F4646
+                    ) { // woff
                         throw Exception("Downloaded file is not a valid font")
                     }
                 }
@@ -407,7 +409,7 @@ class FontManager(
             try {
                 val uri = Uri.parse(fontInfo.path)
                 val file = UniFile.fromUri(context, uri)
-                
+
                 // Always use temp file method - this works reliably across all Android versions
                 // and storage locations, avoiding issues with content URIs and scoped storage
                 context.contentResolver.openInputStream(uri)?.use { input ->

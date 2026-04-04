@@ -115,7 +115,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 velocityY: Float,
             ): Boolean {
                 if (isEditingMode) return false
-                if (!preferences.novelSwipeNavigation().get()) return false
+                if (!preferences.novelSwipeNavigation.get()) return false
                 if (e1 == null) return false
 
                 val diffX = e2.x - e1.x
@@ -160,7 +160,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 }
 
                 // Handle tap-to-scroll if enabled
-                if (preferences.novelTapToScroll().get()) {
+                if (preferences.novelTapToScroll.get()) {
                     // Top zone - scroll up
                     if (y < centerYStart) {
                         webView.evaluateJavascript("window.scrollBy(0, -${(viewHeight * 0.8).toInt()});", null)
@@ -210,7 +210,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
             override fun onDone(utteranceId: String?) {
                 // Check if this was the last chunk and auto-play is enabled
-                if (isTtsAutoPlay && preferences.novelTtsAutoNextChapter().get()) {
+                if (isTtsAutoPlay && preferences.novelTtsAutoNextChapter.get()) {
                     activity.runOnUiThread {
                         scope.launch {
                             delay(500)
@@ -245,7 +245,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     private fun applyTtsSettings() {
         tts?.let { textToSpeech ->
             // Set voice/locale
-            val voicePref = preferences.novelTtsVoice().get()
+            val voicePref = preferences.novelTtsVoice.get()
             if (voicePref.isNotEmpty()) {
                 val voices = textToSpeech.voices
                 val selectedVoice = voices?.find { it.name == voicePref }
@@ -264,11 +264,11 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             }
 
             // Set speech rate (speed)
-            val speed = preferences.novelTtsSpeed().get()
+            val speed = preferences.novelTtsSpeed.get()
             textToSpeech.setSpeechRate(speed)
 
             // Set pitch
-            val pitch = preferences.novelTtsPitch().get()
+            val pitch = preferences.novelTtsPitch.get()
             textToSpeech.setPitch(pitch)
         }
     }
@@ -286,7 +286,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
         webView = object : WebView(activity) {
             override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? {
-                if (!preferences.novelTextSelectable().get() || callback == null) {
+                if (!preferences.novelTextSelectable.get() || callback == null) {
                     return super.startActionMode(callback, type)
                 }
                 // Preserve Callback2 so the floating toolbar anchors correctly to the selection
@@ -294,7 +294,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     object : ActionMode.Callback2() {
                         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
                             val result = callback.onCreateActionMode(mode, menu)
-                            menu.add(Menu.NONE, REMEMBER_MENU_ITEM_ID, Menu.NONE, activity.stringResource(TDMR.strings.action_remember))
+                            menu.add(
+                                Menu.NONE,
+                                REMEMBER_MENU_ITEM_ID,
+                                Menu.NONE,
+                                activity.stringResource(TDMR.strings.action_remember),
+                            )
                                 .setIcon(android.R.drawable.ic_menu_save)
                                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
                             return result
@@ -319,7 +324,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     object : ActionMode.Callback {
                         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
                             val result = callback.onCreateActionMode(mode, menu)
-                            menu.add(Menu.NONE, REMEMBER_MENU_ITEM_ID, Menu.NONE, activity.stringResource(TDMR.strings.action_remember))
+                            menu.add(
+                                Menu.NONE,
+                                REMEMBER_MENU_ITEM_ID,
+                                Menu.NONE,
+                                activity.stringResource(TDMR.strings.action_remember),
+                            )
                                 .setIcon(android.R.drawable.ic_menu_save)
                                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
                             return result
@@ -353,13 +363,16 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 displayZoomControls = false
                 cacheMode = WebSettings.LOAD_DEFAULT
                 // Block images/videos if preference is set
-                val shouldBlock = preferences.novelBlockMedia().get()
+                val shouldBlock = preferences.novelBlockMedia.get()
                 blockNetworkImage = shouldBlock
                 loadsImagesAutomatically = !shouldBlock
             }
 
             webViewClient = object : WebViewClient() {
-                override fun shouldInterceptRequest(view: WebView?, request: android.webkit.WebResourceRequest?): android.webkit.WebResourceResponse? {
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: android.webkit.WebResourceRequest?,
+                ): android.webkit.WebResourceResponse? {
                     val url = request?.url?.toString() ?: return null
                     if (url.startsWith("tsundoku-novel-image://")) {
                         val imagePath = android.net.Uri.decode(url.removePrefix("tsundoku-novel-image://"))
@@ -390,7 +403,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     injectCustomScript()
                     injectScrollTracking()
                     restoreScrollPosition()
-                    if (!preferences.novelInfiniteScroll().get()) {
+                    if (!preferences.novelInfiniteScroll.get()) {
                         injectNextChapterButton()
                     }
                     if (isEditingMode) {
@@ -412,8 +425,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         }
 
         // Initial setup for background to avoid white flashes
-        val theme = preferences.novelTheme().get()
-        val backgroundColor = preferences.novelBackgroundColor().get()
+        val theme = preferences.novelTheme.get()
+        val backgroundColor = preferences.novelBackgroundColor.get()
         val (themeBgColor, _) = getThemeColors(theme)
         val finalBgColor = if (theme == "custom" && backgroundColor != 0) backgroundColor else themeBgColor
         webView.setBackgroundColor(finalBgColor)
@@ -425,24 +438,24 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     private fun observePreferences() {
         scope.launch {
             merge(
-                preferences.novelFontSize().changes(),
-                preferences.novelFontFamily().changes(),
-                preferences.novelTheme().changes(),
-                preferences.novelLineHeight().changes(),
-                preferences.novelTextAlign().changes(),
-                preferences.novelMarginLeft().changes(),
-                preferences.novelMarginRight().changes(),
-                preferences.novelMarginTop().changes(),
-                preferences.novelMarginBottom().changes(),
-                preferences.novelFontColor().changes(),
-                preferences.novelBackgroundColor().changes(),
-                preferences.novelParagraphIndent().changes(),
-                preferences.novelParagraphSpacing().changes(),
-                preferences.novelCustomCss().changes(),
-                preferences.novelCustomCssSnippets().changes(),
-                preferences.novelUseOriginalFonts().changes(),
-                preferences.novelHideChapterTitle().changes(),
-                preferences.novelTextSelectable().changes(),
+                preferences.novelFontSize.changes(),
+                preferences.novelFontFamily.changes(),
+                preferences.novelTheme.changes(),
+                preferences.novelLineHeight.changes(),
+                preferences.novelTextAlign.changes(),
+                preferences.novelMarginLeft.changes(),
+                preferences.novelMarginRight.changes(),
+                preferences.novelMarginTop.changes(),
+                preferences.novelMarginBottom.changes(),
+                preferences.novelFontColor.changes(),
+                preferences.novelBackgroundColor.changes(),
+                preferences.novelParagraphIndent.changes(),
+                preferences.novelParagraphSpacing.changes(),
+                preferences.novelCustomCss.changes(),
+                preferences.novelCustomCssSnippets.changes(),
+                preferences.novelUseOriginalFonts.changes(),
+                preferences.novelHideChapterTitle.changes(),
+                preferences.novelTextSelectable.changes(),
             ).drop(20) // Drop initial emissions from all 20 preferences
                 .collect {
                     injectCustomStyles()
@@ -452,8 +465,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         // Observe JS changes separately to re-inject scripts
         scope.launch {
             merge(
-                preferences.novelCustomJs().changes(),
-                preferences.novelCustomJsSnippets().changes(),
+                preferences.novelCustomJs.changes(),
+                preferences.novelCustomJsSnippets.changes(),
             ).drop(2)
                 .collect {
                     injectCustomScript()
@@ -461,7 +474,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         }
 
         scope.launch {
-            preferences.novelForceTextLowercase().changes()
+            preferences.novelForceTextLowercase.changes()
                 .drop(1)
                 .collect {
                     currentChapters?.let {
@@ -473,7 +486,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
         // Observe block media preference
         scope.launch {
-            preferences.novelBlockMedia().changes()
+            preferences.novelBlockMedia.changes()
                 .drop(1)
                 .collect { blockMedia ->
                     webView.settings.apply {
@@ -487,7 +500,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
         // Observe regex replacements — requires full content reload
         scope.launch {
-            preferences.novelRegexReplacements().changes()
+            preferences.novelRegexReplacements.changes()
                 .drop(1)
                 .collect {
                     currentChapters?.let { setChapters(it) }
@@ -496,20 +509,20 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     }
 
     private fun injectCustomStyles() {
-        val fontSize = preferences.novelFontSize().get()
-        val fontFamily = preferences.novelFontFamily().get()
-        val lineHeight = preferences.novelLineHeight().get()
-        val marginLeft = preferences.novelMarginLeft().get()
-        val marginRight = preferences.novelMarginRight().get()
-        val marginTop = preferences.novelMarginTop().get()
-        val marginBottom = preferences.novelMarginBottom().get()
-        val fontColor = preferences.novelFontColor().get()
-        val backgroundColor = preferences.novelBackgroundColor().get()
-        val paragraphIndent = preferences.novelParagraphIndent().get()
-        val paragraphSpacing = preferences.novelParagraphSpacing().get()
-        val textAlign = preferences.novelTextAlign().get()
-        val theme = preferences.novelTheme().get()
-        val hideChapterTitle = preferences.novelHideChapterTitle().get()
+        val fontSize = preferences.novelFontSize.get()
+        val fontFamily = preferences.novelFontFamily.get()
+        val lineHeight = preferences.novelLineHeight.get()
+        val marginLeft = preferences.novelMarginLeft.get()
+        val marginRight = preferences.novelMarginRight.get()
+        val marginTop = preferences.novelMarginTop.get()
+        val marginBottom = preferences.novelMarginBottom.get()
+        val fontColor = preferences.novelFontColor.get()
+        val backgroundColor = preferences.novelBackgroundColor.get()
+        val paragraphIndent = preferences.novelParagraphIndent.get()
+        val paragraphSpacing = preferences.novelParagraphSpacing.get()
+        val textAlign = preferences.novelTextAlign.get()
+        val theme = preferences.novelTheme.get()
+        val hideChapterTitle = preferences.novelHideChapterTitle.get()
 
         val (themeBgColor, themeTextColor) = getThemeColors(theme)
         // Use 0 as default marker (not -1, since white = -1 as signed int)
@@ -522,11 +535,11 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         val bgColorHex = String.format("#%06X", 0xFFFFFF and finalBgColor)
         val textColorHex = String.format("#%06X", 0xFFFFFF and finalTextColor)
 
-        val customCss = preferences.novelCustomCss().get()
-        val useOriginalFonts = preferences.novelUseOriginalFonts().get()
+        val customCss = preferences.novelCustomCss.get()
+        val useOriginalFonts = preferences.novelUseOriginalFonts.get()
 
         // Collect enabled CSS snippets
-        val cssSnippetsJson = preferences.novelCustomCssSnippets().get()
+        val cssSnippetsJson = preferences.novelCustomCssSnippets.get()
         val enabledSnippetsCss = try {
             val snippets = Json.decodeFromString<List<CodeSnippet>>(cssSnippetsJson)
             snippets.filter { it.enabled }.joinToString("\n") { it.code }
@@ -583,8 +596,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 color: $textColorHex !important;
                 background-color: $bgColorHex !important;
                 text-align: $textAlign;
-                -webkit-user-select: ${if (preferences.novelTextSelectable().get()) "text" else "none"};
-                user-select: ${if (preferences.novelTextSelectable().get()) "text" else "none"};
+                -webkit-user-select: ${if (preferences.novelTextSelectable.get()) "text" else "none"};
+                user-select: ${if (preferences.novelTextSelectable.get()) "text" else "none"};
             }
             p {
                 text-indent: ${paragraphIndent}em;
@@ -636,14 +649,14 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             chapterUrl: "$chapterUrl",
             novelUrl: "$novelUrl",
             isEditMode: $isEditingMode,
-            isInfScroll: ${preferences.novelInfiniteScroll().get()},
-            textSelectionBlocked: ${!preferences.novelTextSelectable().get()},
-            forcedLowercase: ${preferences.novelForceTextLowercase().get()}
+            isInfScroll: ${preferences.novelInfiniteScroll.get()},
+            textSelectionBlocked: ${!preferences.novelTextSelectable.get()},
+            forcedLowercase: ${preferences.novelForceTextLowercase.get()}
         };
         """.trimIndent()
         evaluateJavascriptSafe(script, null)
 
-        val customJs = preferences.novelCustomJs().get()
+        val customJs = preferences.novelCustomJs.get()
         if (customJs.isNotBlank()) {
             evaluateJavascriptSafe(customJs, null)
         }
@@ -686,8 +699,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
     private fun injectScrollTracking() {
         // Add scroll tracking script with infinite scroll support
-        val infiniteScrollEnabled = preferences.novelInfiniteScroll().get()
-        val autoLoadThreshold = preferences.novelAutoLoadNextChapterAt().get()
+        val infiniteScrollEnabled = preferences.novelInfiniteScroll.get()
+        val autoLoadThreshold = preferences.novelAutoLoadNextChapterAt.get()
         // Treat stored 0 as legacy/unset and use a sensible default.
         val infiniteScrollActuallyEnabled = infiniteScrollEnabled
         val effectiveThreshold = if (autoLoadThreshold > 0) autoLoadThreshold / 100.0 else 0.95
@@ -838,7 +851,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             val shouldRestore = if (!isRead) {
                 savedProgress > 0 && savedProgress <= 100
             } else {
-                libraryPreferences.novelReadProgress100().get() && savedProgress > 0 && savedProgress <= 100
+                libraryPreferences.novelReadProgress100.get() && savedProgress > 0 && savedProgress <= 100
             }
             if (shouldRestore) {
                 val progress = savedProgress / 100f
@@ -924,7 +937,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         var content = page.text ?: return
 
         // Optionally strip chapter title from content
-        if (preferences.novelHideChapterTitle().get()) {
+        if (preferences.novelHideChapterTitle.get()) {
             content = stripChapterTitle(content, chapter.chapter.name)
         }
 
@@ -979,7 +992,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         }
 
         // Clear previous chapters for manual navigation / initial load.
-        if (!preferences.novelInfiniteScroll().get() || loadedChapterIds.isEmpty()) {
+        if (!preferences.novelInfiniteScroll.get() || loadedChapterIds.isEmpty()) {
             loadedChapterIds.clear()
             loadedChapters.clear()
             currentChapterIndex = 0
@@ -1152,12 +1165,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         val chapterId = chapter.chapter.id ?: return
 
         // Optionally strip chapter title from content
-        if (preferences.novelHideChapterTitle().get()) {
+        if (preferences.novelHideChapterTitle.get()) {
             content = stripChapterTitle(content, chapter.chapter.name)
         }
 
         // Optionally force lowercase
-        if (preferences.novelForceTextLowercase().get()) {
+        if (preferences.novelForceTextLowercase.get()) {
             content = content.lowercase()
         }
 
@@ -1180,7 +1193,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             }
 
             withContext(Dispatchers.Main) {
-                if (isAppendOrPrepend && preferences.novelInfiniteScroll().get()) {
+                if (isAppendOrPrepend && preferences.novelInfiniteScroll.get()) {
                     if (!loadedChapterIds.contains(chapterId)) {
                         if (isPrepend) {
                             loadedChapterIds.add(0, chapterId)
@@ -1221,7 +1234,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             .replace(Regex("<script[^>]*/>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<style[^>]*>[\\s\\S]*?</style>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<noscript[^>]*>[\\s\\S]*?</noscript>", RegexOption.IGNORE_CASE), "")
-        if (preferences.novelBlockMedia().get()) {
+        if (preferences.novelBlockMedia.get()) {
             cleanContent = stripMediaTags(cleanContent)
         }
         val escapedContent = cleanContent.replace("\\", "\\\\")
@@ -1282,7 +1295,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             .replace(Regex("<script[^>]*/>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<style[^>]*>[\\s\\S]*?</style>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<noscript[^>]*>[\\s\\S]*?</noscript>", RegexOption.IGNORE_CASE), "")
-        if (preferences.novelBlockMedia().get()) {
+        if (preferences.novelBlockMedia.get()) {
             cleanContent = stripMediaTags(cleanContent)
         }
         val escapedContent = cleanContent.replace("\\", "\\\\")
@@ -1326,7 +1339,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             .replace(Regex("<style[^>]*>[\\s\\S]*?</style>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<noscript[^>]*>[\\s\\S]*?</noscript>", RegexOption.IGNORE_CASE), "")
 
-        val blockMedia = preferences.novelBlockMedia().get()
+        val blockMedia = preferences.novelBlockMedia.get()
         if (blockMedia) {
             cleanContent = stripMediaTags(cleanContent)
         }
@@ -1334,7 +1347,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         // Apply user's regex find & replace rules
         cleanContent = applyRegexReplacements(cleanContent)
 
-        val theme = preferences.novelTheme().get()
+        val theme = preferences.novelTheme.get()
         val (themeBgColor, themeTextColor) = getThemeColors(theme)
         val bgColorHex = String.format("#%06X", 0xFFFFFF and themeBgColor)
         val textColorHex = String.format("#%06X", 0xFFFFFF and themeTextColor)
@@ -1345,13 +1358,13 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         currentChapterIndex = 0
 
         // Add initial invisible chapter divider marker for tracking (no visible separator)
-        val chapterDivider = if (chapterId != null && preferences.novelInfiniteScroll().get()) {
+        val chapterDivider = if (chapterId != null && preferences.novelInfiniteScroll.get()) {
             """<div class="chapter-divider" data-chapter-id="$chapterId" style="height:0;margin:0;padding:0;"></div>
                <div class="chapter-content" data-chapter-id="$chapterId">"""
         } else {
             ""
         }
-        val chapterDividerEnd = if (chapterId != null && preferences.novelInfiniteScroll().get()) "</div>" else ""
+        val chapterDividerEnd = if (chapterId != null && preferences.novelInfiniteScroll.get()) "</div>" else ""
 
         val mediaBlockCss = if (blockMedia) {
             "img, video, audio, source, svg, image { display: none !important; }"
@@ -1359,7 +1372,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             ""
         }
 
-        val userSelectCss = if (preferences.novelTextSelectable().get()) "text" else "none"
+        val userSelectCss = if (preferences.novelTextSelectable.get()) "text" else "none"
 
         // Build global JS variables for custom scripts
         val chapterMetaScript = buildChapterMetaScript()
@@ -1371,7 +1384,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             val doc = org.jsoup.Jsoup.parse(finalContent)
 
             // Extract and filter EPUB styles
-            if (preferences.enableEpubStyles().get()) {
+            if (preferences.enableEpubStyles.get()) {
                 doc.select("style[data-epub-css]").forEach { style ->
                     epubHead += "\n" + style.outerHtml()
                 }
@@ -1379,7 +1392,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             doc.select("style[data-epub-css]").remove()
 
             // Extract and filter EPUB scripts
-            if (preferences.enableEpubJs().get()) {
+            if (preferences.enableEpubJs.get()) {
                 doc.select("script[data-epub-js]").forEach { script ->
                     epubHead += "\n" + script.outerHtml()
                 }
@@ -1475,9 +1488,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             window.__TSUNDOKU_CHAPTER_URL = "$chapterUrl";
             window.__TSUNDOKU_NOVEL_URL = "$novelUrl";
             window.__TSUNDOKU_IS_EDIT_MODE = $isEditingMode;
-            window.__TSUNDOKU_IS_INF_SCROLL = ${preferences.novelInfiniteScroll().get()};
-            window.__TSUNDOKU_TEXT_SELECTION_BLOCKED = ${!preferences.novelTextSelectable().get()};
-            window.__TSUNDOKU_FORCED_LOWERCASE = ${preferences.novelForceTextLowercase().get()};
+            window.__TSUNDOKU_IS_INF_SCROLL = ${preferences.novelInfiniteScroll.get()};
+            window.__TSUNDOKU_TEXT_SELECTION_BLOCKED = ${!preferences.novelTextSelectable.get()};
+            window.__TSUNDOKU_FORCED_LOWERCASE = ${preferences.novelForceTextLowercase.get()};
         """.trimIndent()
     }
 
@@ -1523,9 +1536,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
     private fun showLoadingIndicator() {
         // Inject loading HTML instead of showing popup
-        val theme = preferences.novelTheme().get()
-        val backgroundColor = preferences.novelBackgroundColor().get()
-        val fontColor = preferences.novelFontColor().get()
+        val theme = preferences.novelTheme.get()
+        val backgroundColor = preferences.novelBackgroundColor.get()
+        val fontColor = preferences.novelFontColor.get()
         val (themeBgColor, themeTextColor) = getThemeColors(theme)
         val finalBgColor = if (theme == "custom" && backgroundColor != 0) backgroundColor else themeBgColor
         val finalTextColor = if (fontColor != 0) fontColor else themeTextColor
@@ -1567,9 +1580,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     }
 
     private fun displayError(error: Throwable) {
-        val theme = preferences.novelTheme().get()
-        val backgroundColor = preferences.novelBackgroundColor().get()
-        val fontColor = preferences.novelFontColor().get()
+        val theme = preferences.novelTheme.get()
+        val backgroundColor = preferences.novelBackgroundColor.get()
+        val fontColor = preferences.novelFontColor.get()
         val (themeBgColor, themeTextColor) = getThemeColors(theme)
         val finalBgColor = if (theme == "custom" && backgroundColor != 0) backgroundColor else themeBgColor
         val finalTextColor = if (fontColor != 0) fontColor else themeTextColor
@@ -1612,14 +1625,14 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 return true
             }
             KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                if (preferences.novelVolumeKeysScroll().get()) {
+                if (preferences.novelVolumeKeysScroll.get()) {
                     if (!isUp) webView.evaluateJavascript("window.scrollBy(0, $scrollAmount);", null)
                     return true
                 }
                 return false
             }
             KeyEvent.KEYCODE_VOLUME_UP -> {
-                if (preferences.novelVolumeKeysScroll().get()) {
+                if (preferences.novelVolumeKeysScroll.get()) {
                     if (!isUp) webView.evaluateJavascript("window.scrollBy(0, -$scrollAmount);", null)
                     return true
                 }
@@ -1650,7 +1663,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     fun toggleEditMode(isEditing: Boolean, save: Boolean = true) {
         if (!isEditing && !save) {
             this.isEditingMode = false
-            webView.evaluateJavascript("(function() { window.getSelection().removeAllRanges(); document.activeElement.blur(); })();", null)
+            webView.evaluateJavascript(
+                "(function() { window.getSelection().removeAllRanges(); document.activeElement.blur(); })();",
+                null,
+            )
             webView.clearFocus()
             val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
             imm?.hideSoftInputFromWindow(webView.windowToken, 0)
@@ -1678,7 +1694,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 }, 120)
             }
         } else {
-            webView.evaluateJavascript("(function() { window.getSelection().removeAllRanges(); document.activeElement.blur(); })();", null)
+            webView.evaluateJavascript(
+                "(function() { window.getSelection().removeAllRanges(); document.activeElement.blur(); })();",
+                null,
+            )
             webView.clearFocus()
             val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
             imm?.hideSoftInputFromWindow(webView.windowToken, 0)
@@ -1825,9 +1844,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         fun loadNextChapter() {
             activity.runOnUiThread {
                 logcat(LogPriority.DEBUG) {
-                    "NovelWebViewViewer: loadNextChapter triggered, infiniteScroll=${preferences.novelInfiniteScroll().get()}, isLoadingNext=$isLoadingNext, loadedCount=${loadedChapterIds.size}"
+                    "NovelWebViewViewer: loadNextChapter triggered, infiniteScroll=${preferences.novelInfiniteScroll.get()}, isLoadingNext=$isLoadingNext, loadedCount=${loadedChapterIds.size}"
                 }
-                if (!preferences.novelInfiniteScroll().get()) {
+                if (!preferences.novelInfiniteScroll.get()) {
                     activity.loadNextChapter()
                 } else if (!isLoadingNext) {
                     isLoadingNext = true
@@ -1841,7 +1860,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     }
                 } else {
                     logcat(LogPriority.WARN) {
-                        "NovelWebViewViewer: loadNextChapter ignored (infiniteScroll=${preferences.novelInfiniteScroll().get()}, isLoadingNext=$isLoadingNext)"
+                        "NovelWebViewViewer: loadNextChapter ignored (infiniteScroll=${preferences.novelInfiniteScroll.get()}, isLoadingNext=$isLoadingNext)"
                     }
                 }
             }
@@ -1875,12 +1894,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
 
         val chapterId = chapter.chapter.id ?: return
 
-        if (preferences.novelHideChapterTitle().get()) {
+        if (preferences.novelHideChapterTitle.get()) {
             content = stripChapterTitle(content, chapter.chapter.name)
         }
 
         // Optionally force lowercase
-        if (preferences.novelForceTextLowercase().get()) {
+        if (preferences.novelForceTextLowercase.get()) {
             content = content.lowercase()
         }
 
@@ -1889,7 +1908,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         withContext(Dispatchers.Main) {
             if (isDestroyed) return@withContext
 
-            if (isAppendOrPrepend && preferences.novelInfiniteScroll().get()) {
+            if (isAppendOrPrepend && preferences.novelInfiniteScroll.get()) {
                 if (!loadedChapterIds.contains(chapterId)) {
                     if (isPrepend) {
                         // Backward prepend is disabled; keep behavior forward-only.
@@ -2026,7 +2045,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     }
 
     private fun startAutoScroll() {
-        val speed = preferences.novelAutoScrollSpeed().get().coerceIn(1, 10)
+        val speed = preferences.novelAutoScrollSpeed.get().coerceIn(1, 10)
         isAutoScrolling = true
 
         autoScrollJob?.cancel()
