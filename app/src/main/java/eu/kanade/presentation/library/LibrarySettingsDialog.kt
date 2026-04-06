@@ -808,7 +808,7 @@ private fun ColumnScope.ExtensionsPage(
             Icon(Icons.Default.Check, contentDescription = "Check all")
             Spacer(Modifier.width(4.dp))
             Text(
-                text = "Check",
+                text = "All",
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
@@ -822,7 +822,7 @@ private fun ColumnScope.ExtensionsPage(
             Icon(Icons.Default.Clear, contentDescription = "Uncheck all")
             Spacer(Modifier.width(4.dp))
             Text(
-                text = "Uncheck",
+                text = "None",
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis,
