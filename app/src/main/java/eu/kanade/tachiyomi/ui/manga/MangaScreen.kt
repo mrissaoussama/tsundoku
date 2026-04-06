@@ -48,6 +48,7 @@ import eu.kanade.tachiyomi.source.isLocalOrStub
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.ui.browse.source.browse.BrowseSourceScreen
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.GlobalSearchScreen
+import eu.kanade.tachiyomi.ui.browse.source.globalsearch.NovelGlobalSearchScreen
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.home.HomeScreen
 import eu.kanade.tachiyomi.ui.manga.notes.MangaNotesScreen
@@ -161,7 +162,7 @@ class MangaScreen(
                     if (!global && source != null && query == source.getNameForMangaInfo()) {
                         navigator.push(BrowseSourceScreen(source.id, null))
                     } else {
-                        performSearch(navigator, query, global)
+                        performSearch(navigator, query, global, source)
                     }
                 }
             },
@@ -447,9 +448,13 @@ class MangaScreen(
      *
      * @param query the search query to the parent controller
      */
-    private suspend fun performSearch(navigator: Navigator, query: String, global: Boolean) {
+    private suspend fun performSearch(navigator: Navigator, query: String, global: Boolean, source: Source? = null) {
         if (global) {
-            navigator.push(GlobalSearchScreen(query))
+            if (source?.isNovelSource == true) {
+                navigator.push(NovelGlobalSearchScreen(query))
+            } else {
+                navigator.push(GlobalSearchScreen(query))
+            }
             return
         }
 
@@ -484,7 +489,7 @@ class MangaScreen(
             navigator.pop()
             previousController.searchGenre(genreName)
         } else {
-            performSearch(navigator, genreName, global = false)
+            performSearch(navigator, genreName, global = false, source = source)
         }
     }
 
