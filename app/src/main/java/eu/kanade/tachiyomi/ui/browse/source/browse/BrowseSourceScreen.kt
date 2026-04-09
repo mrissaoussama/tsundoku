@@ -124,9 +124,10 @@ data class BrowseSourceScreen(
             navigateUp()
         }
 
-        if (screenModel.source is StubSource) {
+        val currentSource = screenModel.source
+        if (currentSource is StubSource) {
             MissingSourceScreen(
-                source = screenModel.source,
+                source = currentSource,
                 navigateUp = navigateUp,
             )
             return

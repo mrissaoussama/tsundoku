@@ -296,10 +296,10 @@ class BrowseSourceScreenModel(
     }
 
     fun resetFilters() {
-        if (source !is CatalogueSource) return
+        val catalogueSource = source as? CatalogueSource ?: return
 
         // Get fresh filter list from source
-        val freshFilters = source.getFilterList()
+        val freshFilters = catalogueSource.getFilterList()
 
         // Apply default preset if auto-apply is enabled
         if (manageFilterPresets.getAutoApplyEnabled()) {
@@ -336,9 +336,9 @@ class BrowseSourceScreenModel(
      * Creates a fresh FilterList with copied state to avoid reference sharing issues.
      */
     fun openFilterDialog() {
-        if (source !is CatalogueSource) return
+        val catalogueSource = source as? CatalogueSource ?: return
         // Get fresh filters to avoid reference sharing
-        val freshFilters = source.getFilterList()
+        val freshFilters = catalogueSource.getFilterList()
         // Copy state from current filters to fresh filters
         copyFilterState(state.value.filters, freshFilters)
 
@@ -396,11 +396,11 @@ class BrowseSourceScreenModel(
     }
 
     fun search(query: String? = null, filters: FilterList? = null) {
-        if (source !is CatalogueSource) return
+        val catalogueSource = source as? CatalogueSource ?: return
         logcat(LogPriority.DEBUG) { "search called: query='$query', filters=${filters?.hashCode()}" }
 
         val input = state.value.listing as? Listing.Search
-            ?: Listing.Search(query = null, filters = source.getFilterList())
+            ?: Listing.Search(query = null, filters = catalogueSource.getFilterList())
 
         val newFilters = filters ?: input.filters
 
@@ -421,9 +421,9 @@ class BrowseSourceScreenModel(
     }
 
     fun searchGenre(genreName: String) {
-        if (source !is CatalogueSource) return
+        val catalogueSource = source as? CatalogueSource ?: return
 
-        val defaultFilters = source.getFilterList()
+        val defaultFilters = catalogueSource.getFilterList()
         var genreExists = false
 
         filter@ for (sourceFilter in defaultFilters) {
@@ -628,13 +628,13 @@ class BrowseSourceScreenModel(
     }
 
     fun loadFilterPreset(presetId: Long) {
-        if (source !is CatalogueSource) return
+        val catalogueSource = source as? CatalogueSource ?: return
 
         logcat(LogPriority.DEBUG) { "BrowseSource: loadFilterPreset presetId=$presetId, sourceId=$sourceId" }
         val presetState = manageFilterPresets.loadPresetState(sourceId, presetId)
         if (presetState != null) {
             logcat(LogPriority.DEBUG) { "BrowseSource: Loaded preset state, applying..." }
-            val filters = source.getFilterList()
+            val filters = catalogueSource.getFilterList()
             ManageFilterPresets.applyPresetState(filters, presetState)
             // Update pendingFilters directly and open filter dialog
             mutableState.update {
@@ -675,14 +675,14 @@ class BrowseSourceScreenModel(
     }
 
     private fun applyDefaultPresetIfEnabled() {
-        if (source !is CatalogueSource) return
+        val catalogueSource = source as? CatalogueSource ?: return
         if (!manageFilterPresets.getAutoApplyEnabled()) return
 
         logcat(LogPriority.DEBUG) { "BrowseSource: applyDefaultPresetIfEnabled sourceId=$sourceId" }
         val presetState = manageFilterPresets.getDefaultPresetState(sourceId)
         if (presetState != null) {
             logcat(LogPriority.DEBUG) { "BrowseSource: Found default preset, applying..." }
-            val filters = source.getFilterList()
+            val filters = catalogueSource.getFilterList()
             ManageFilterPresets.applyPresetState(filters, presetState)
             mutableState.update { it.copy(filters = filters) }
             // Force a search with the new filters if we are in a search listing
