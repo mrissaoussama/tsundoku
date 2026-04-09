@@ -29,6 +29,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Fixed bottom bar resizing [@Rojikku](https://github.com/Rojikku) [#96](https://github.com/tsundoku-otaku/tsundoku/pull/96)
 - Fixed extension filter option formatting [@mrissaoussama](https://github.com/mrissaoussama) [#138](https://github.com/tsundoku-otaku/tsundoku/pull/138)
 - Refresh library when deleting a category [@Rojikku](https://github.com/Rojikku)  [#134](https://github.com/tsundoku-otaku/tsundoku/pull/134)
+- Rare issue with OS app killing and source detection [@mrissaoussama](https://github.com/mrissaoussama) [#144](https://github.com/tsundoku-otaku/tsundoku/pull/144)
 - Fixed ttf font importing [@Rojikku](https://github.com/Rojikku)  [#135](https://github.com/tsundoku-otaku/tsundoku/pull/135)
 
 ### Other
