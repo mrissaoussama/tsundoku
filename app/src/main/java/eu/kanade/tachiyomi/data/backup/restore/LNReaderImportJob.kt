@@ -56,6 +56,8 @@ class LNReaderImportJob(private val context: Context, workerParams: WorkerParame
 
             logcat(LogPriority.INFO) {
                 "LNReaderImport: Completed - ${result.novelCount} novels, ${result.categoryCount} categories, " +
+                    "${result.installedPluginCount} plugins installed, ${result.restoredDownloadCount} downloaded chapters restored, " +
+                    "${result.restoredCoverCount} covers restored, " +
                     "${result.skippedCount} skipped, ${result.errorCount} errors" +
                     if (result.missingPlugins.isNotEmpty()) ", missing plugins: ${result.missingPlugins.joinToString()}" else ""
             }

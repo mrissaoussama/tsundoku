@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.data.backup.restore
 
 import android.content.Context
 import android.net.Uri
+import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.data.backup.BackupNotifier
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import eu.kanade.tachiyomi.data.backup.models.BackupChapter
@@ -9,6 +10,8 @@ import eu.kanade.tachiyomi.data.backup.models.BackupHistory
 import eu.kanade.tachiyomi.data.backup.models.BackupManga
 import eu.kanade.tachiyomi.data.backup.restore.restorers.CategoriesRestorer
 import eu.kanade.tachiyomi.data.backup.restore.restorers.MangaRestorer
+import eu.kanade.tachiyomi.data.cache.CoverCache
+import eu.kanade.tachiyomi.data.download.DownloadProvider
 import eu.kanade.tachiyomi.jsplugin.JsPluginManager
 import eu.kanade.tachiyomi.util.system.createFileInCacheDir
 import kotlinx.coroutines.coroutineScope
@@ -19,10 +22,13 @@ import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.category.model.Category
 import tachiyomi.domain.manga.interactor.GetMangaByUrlAndSourceId
+import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.source.repository.StubSourceRepository
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.io.ByteArrayInputStream
 import java.io.File
+import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -50,6 +56,9 @@ class LNReaderBackupImporter(
     private val mangaRestorer: MangaRestorer = MangaRestorer(),
     private val getMangaByUrlAndSourceId: GetMangaByUrlAndSourceId = Injekt.get(),
     private val stubSourceRepository: StubSourceRepository = Injekt.get(),
+    private val sourceManager: SourceManager = Injekt.get(),
+    private val downloadProvider: DownloadProvider = Injekt.get(),
+    private val coverCache: CoverCache = Injekt.get(),
 ) {
 
     private val json = Json {
@@ -110,6 +119,9 @@ class LNReaderBackupImporter(
         val logFile: File,
         val missingPlugins: List<String> = emptyList(),
         val skippedCount: Int = 0,
+        val installedPluginCount: Int = 0,
+        val restoredDownloadCount: Int = 0,
+        val restoredCoverCount: Int = 0,
     )
 
     data class ImportOptions(
@@ -129,6 +141,9 @@ class LNReaderBackupImporter(
         var novelCount = 0
         var categoryCount = 0
         var skippedCount = 0
+        var installedPluginCount = 0
+        var restoredDownloadCount = 0
+        var restoredCoverCount = 0
         val missingPlugins = mutableSetOf<String>()
 
         try {
@@ -156,7 +171,7 @@ class LNReaderBackupImporter(
 
             // Step 3: Install plugins
             if (options.restorePlugins && pluginZipBytes != null) {
-                processDownloadZip(pluginZipBytes)
+                installedPluginCount = installPluginsFromDownloadZip(pluginZipBytes)
                 kotlinx.coroutines.delay(500)
             }
 
@@ -267,13 +282,30 @@ class LNReaderBackupImporter(
                     }
                 }
             }
+            // Step 5: Restore downloaded chapter HTML and cached covers from LNReader download.zip
+            if (options.restoreChapters && pluginZipBytes != null) {
+                val restored = restoreDownloadedAssetsFromDownloadZip(pluginZipBytes, novels, pluginIdToSourceId)
+                restoredDownloadCount = restored.first
+                restoredCoverCount = restored.second
+            }
+
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e) { "LNReaderImport: Failed to import backup" }
             errors.add(Date() to "Fatal error: ${e.message}")
         }
 
         val logFile = writeErrorLog()
-        return ImportResult(novelCount, categoryCount, errors.size, logFile, missingPlugins.toList(), skippedCount)
+        return ImportResult(
+            novelCount = novelCount,
+            categoryCount = categoryCount,
+            errorCount = errors.size,
+            logFile = logFile,
+            missingPlugins = missingPlugins.toList(),
+            skippedCount = skippedCount,
+            installedPluginCount = installedPluginCount,
+            restoredDownloadCount = restoredDownloadCount,
+            restoredCoverCount = restoredCoverCount,
+        )
     }
 
     private fun buildPluginMapping(): Map<String, Long> {
@@ -307,11 +339,11 @@ class LNReaderBackupImporter(
                     val name = entry.name
                     when {
                         name == "Category.json" -> {
-                            val content = zip.bufferedReader().readText()
+                            val content = zip.bufferedReader(StandardCharsets.UTF_8).readText()
                             categories = json.decodeFromString<List<LNCategory>>(content)
                         }
                         name.startsWith("NovelAndChapters/") && name.endsWith(".json") -> {
-                            val content = zip.bufferedReader().readText()
+                            val content = zip.bufferedReader(StandardCharsets.UTF_8).readText()
                             try {
                                 val novel = json.decodeFromString<LNNovel>(content)
                                 if (novel.name.isNotBlank()) {
@@ -336,7 +368,8 @@ class LNReaderBackupImporter(
         return ExtractedBackup(novels, categories, downloadZipBytes)
     }
 
-    private suspend fun processDownloadZip(zipBytes: ByteArray) {
+    private suspend fun installPluginsFromDownloadZip(zipBytes: ByteArray): Int {
+        var installedCount = 0
         try {
             ZipInputStream(zipBytes.inputStream()).use { zip ->
                 var entry = zip.nextEntry
@@ -349,10 +382,11 @@ class LNReaderBackupImporter(
                         if (parts.size == 2) {
                             val pluginId = parts[0]
                             try {
-                                val code = zip.bufferedReader().readText()
+                                val code = zip.bufferedReader(StandardCharsets.UTF_8).readText()
                                 if (code.isNotBlank()) {
                                     val installed = jsPluginManager.installPluginFromCode(pluginId, code)
                                     if (installed) {
+                                        installedCount++
                                         logcat(LogPriority.INFO) {
                                             "LNReaderImport: Installed plugin '$pluginId' from backup"
                                         }
@@ -374,6 +408,165 @@ class LNReaderBackupImporter(
             logcat(LogPriority.ERROR, e) { "LNReaderImport: Failed to process download.zip" }
             errors.add(Date() to "Failed to process download.zip: ${e.message}")
         }
+        return installedCount
+    }
+
+    private suspend fun restoreDownloadedAssetsFromDownloadZip(
+        zipBytes: ByteArray,
+        novels: List<LNNovel>,
+        pluginIdToSourceId: Map<String, Long>,
+    ): Pair<Int, Int> {
+        val novelByPluginAndId = novels.associateBy { normalizePluginId(it.pluginId) to it.id }
+        val downloadedChapterByKey = buildMap {
+            novels.forEach { novel ->
+                novel.chapters
+                    .filter { it.isDownloaded != 0 }
+                    .forEach { chapter ->
+                        put(Triple(normalizePluginId(novel.pluginId), novel.id, chapter.id), chapter)
+                    }
+            }
+        }
+
+        var restoredChapterFiles = 0
+        var restoredCovers = 0
+
+        val chapterRegex = Regex(
+            pattern = """^Novels/([^/]+)/([0-9]+)/([0-9]+)/index\.(html?|xhtml)$""",
+            option = RegexOption.IGNORE_CASE,
+        )
+        val coverRegex = Regex(
+            pattern = """^Novels/([^/]+)/([0-9]+)/cover\.(png|jpe?g|webp)$""",
+            option = RegexOption.IGNORE_CASE,
+        )
+
+        try {
+            ZipInputStream(zipBytes.inputStream()).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory) {
+                        val name = entry.name
+
+                        val chapterMatch = chapterRegex.matchEntire(name)
+                        if (chapterMatch != null) {
+                            val pluginId = chapterMatch.groupValues[1]
+                            val novelId = chapterMatch.groupValues[2].toIntOrNull()
+                            val chapterId = chapterMatch.groupValues[3].toIntOrNull()
+
+                            if (novelId != null && chapterId != null) {
+                                val normalizedPluginId = normalizePluginId(pluginId)
+                                val novel = novelByPluginAndId[normalizedPluginId to novelId]
+                                val chapter = downloadedChapterByKey[Triple(normalizedPluginId, novelId, chapterId)]
+                                val sourceId = novel?.let { resolveSourceId(pluginIdToSourceId, it.pluginId) }
+
+                                if (novel != null && chapter != null && sourceId != null) {
+                                    val htmlBytes = zip.readBytes()
+                                    if (writeDownloadedChapterHtml(novel, chapter, sourceId, htmlBytes)) {
+                                        restoredChapterFiles++
+                                    }
+                                }
+                            }
+                        } else {
+                            val coverMatch = coverRegex.matchEntire(name)
+                            if (coverMatch != null) {
+                                val pluginId = coverMatch.groupValues[1]
+                                val novelId = coverMatch.groupValues[2].toIntOrNull()
+                                if (novelId != null) {
+                                    val novel = novelByPluginAndId[normalizePluginId(pluginId) to novelId]
+                                    val sourceId = novel?.let { resolveSourceId(pluginIdToSourceId, it.pluginId) }
+
+                                    if (novel != null && sourceId != null) {
+                                        val coverBytes = zip.readBytes()
+                                        if (restoreCoverToCache(novel, sourceId, coverBytes)) {
+                                            restoredCovers++
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                }
+            }
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "LNReaderImport: Failed to restore downloaded assets from download.zip" }
+            errors.add(Date() to "Failed to restore downloaded assets: ${e.message}")
+        }
+
+        logcat(LogPriority.INFO) {
+            "LNReaderImport: Restored $restoredChapterFiles downloaded chapters and $restoredCovers covers from download.zip"
+        }
+
+        return restoredChapterFiles to restoredCovers
+    }
+
+    private suspend fun writeDownloadedChapterHtml(
+        novel: LNNovel,
+        chapter: LNChapter,
+        sourceId: Long,
+        htmlBytes: ByteArray,
+    ): Boolean {
+        return try {
+            val source = sourceManager.getOrStub(sourceId)
+            val mangaDir = downloadProvider.getMangaDir(novel.name, source).getOrElse {
+                throw it
+            }
+
+            val chapterDirName = downloadProvider.getChapterDirName(
+                chapter.name,
+                chapterScanlator = null,
+                chapterUrl = chapter.path,
+            )
+
+            val chapterDir = mangaDir.findFile(chapterDirName) ?: mangaDir.createDirectory(chapterDirName)
+            if (chapterDir == null || !chapterDir.exists()) {
+                return false
+            }
+
+            writeBytesToFile(chapterDir, "001.html", htmlBytes)
+            true
+        } catch (e: Exception) {
+            logcat(LogPriority.WARN, e) {
+                "LNReaderImport: Failed to restore downloaded chapter '${chapter.name}' for '${novel.name}'"
+            }
+            false
+        }
+    }
+
+    private suspend fun restoreCoverToCache(novel: LNNovel, sourceId: Long, coverBytes: ByteArray): Boolean {
+        return try {
+            val manga = getMangaByUrlAndSourceId.await(novel.path, sourceId) ?: return false
+            ByteArrayInputStream(coverBytes).use { stream ->
+                coverCache.setCustomCoverToCache(manga, stream)
+            }
+            true
+        } catch (e: Exception) {
+            logcat(LogPriority.WARN, e) { "LNReaderImport: Failed to restore cached cover for '${novel.name}'" }
+            false
+        }
+    }
+
+    private fun writeBytesToFile(parent: UniFile, fileName: String, data: ByteArray) {
+        val existing = parent.findFile(fileName)
+        if (existing != null) {
+            existing.delete()
+        }
+        val file = parent.createFile(fileName) ?: throw IllegalStateException("Failed to create '$fileName'")
+        file.openOutputStream().use { out ->
+            out.write(data)
+        }
+    }
+
+    private fun resolveSourceId(pluginIdToSourceId: Map<String, Long>, pluginId: String): Long? {
+        return pluginIdToSourceId[pluginId]
+            ?: pluginIdToSourceId.entries.firstOrNull {
+                it.key.equals(pluginId, ignoreCase = true)
+            }?.value
+    }
+
+    private fun normalizePluginId(pluginId: String): String {
+        return pluginId.trim().lowercase(Locale.ROOT)
     }
 
     private fun convertNovel(
