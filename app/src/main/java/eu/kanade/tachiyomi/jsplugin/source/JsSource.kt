@@ -30,6 +30,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import logcat.LogPriority
+import okhttp3.Headers
 import tachiyomi.core.common.util.system.logcat
 import eu.kanade.tachiyomi.util.lang.normalizeHtmlDescription
 import uy.kohesive.injekt.Injekt
@@ -91,6 +92,20 @@ class JsSource(
     val baseUrl: String = plugin.site?.takeIf { it.isNotBlank() }?.trimEnd('/') ?: "https://example.com"
     val iconUrl: String = plugin.iconUrl
     val version: String = plugin.version
+
+    fun getCoverRequestHeaders(coverUrl: String?): Headers {
+        return try {
+            // Return default referer header for cover images.
+            // Plugins can override via imageRequestInit or headers properties if needed.
+            Headers.Builder()
+                .set("Referer", "$baseUrl/")
+                .build()
+        } catch (_: Exception) {
+            Headers.Builder()
+                .set("Referer", "$baseUrl/")
+                .build()
+        }
+    }
 
     private fun codeLooksTruncated(code: String): Boolean {
         if (code.isBlank()) return true
@@ -279,7 +294,7 @@ class JsSource(
 
             // Check for errors - "null" string from error means no error, not "Plugin error: null"
             if (!error.isNullOrEmpty() && error != "null") {
-                throw Exception("Plugin error: $error")
+                throw Exception("Plugin error while executing [$methodCall]: $error")
             }
 
             logcat(LogPriority.DEBUG) { "JsSource[$pluginId]: Result: ${jsonResult?.take(200)}" }
@@ -301,12 +316,16 @@ class JsSource(
 
     override suspend fun getPopularManga(page: Int): MangasPage = withContext(Dispatchers.IO) {
         try {
-            logcat(LogPriority.DEBUG) { "JsSource[${plugin.id}].getPopularManga: page=$page" }
-            // Fetch page content and execute plugin
-            val result =
+            val currentResult =
                 executePluginMethod("plugin.popularNovels($page, { showLatestNovels: false, filters: plugin.filters })")
-            logcat(LogPriority.DEBUG) { "JsSource[${plugin.id}].getPopularManga: result $result" }
-            parseMangasPage(result, page)
+            val parsed = parseMangasPage(currentResult, page)
+            inferHasNextPage(
+                currentPage = page,
+                current = parsed,
+                methodCallForPage = { probePage ->
+                    "plugin.popularNovels($probePage, { showLatestNovels: false, filters: plugin.filters })"
+                },
+            )
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e) { "Error in getPopularManga for ${plugin.name}" }
             MangasPage(emptyList(), false)
@@ -315,11 +334,16 @@ class JsSource(
 
     override suspend fun getLatestUpdates(page: Int): MangasPage = withContext(Dispatchers.IO) {
         try {
-            logcat(LogPriority.DEBUG) { "JsSource[${plugin.id}].getLatestUpdates: page=$page" }
-            val result =
+            val currentResult =
                 executePluginMethod("plugin.popularNovels($page, { showLatestNovels: true, filters: plugin.filters })")
-            logcat(LogPriority.DEBUG) { "JsSource[${plugin.id}].getLatestUpdates: result$result" }
-            parseMangasPage(result, page)
+            val parsed = parseMangasPage(currentResult, page)
+            inferHasNextPage(
+                currentPage = page,
+                current = parsed,
+                methodCallForPage = { probePage ->
+                    "plugin.popularNovels($probePage, { showLatestNovels: true, filters: plugin.filters })"
+                },
+            )
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e) { "Error in getLatestUpdates for ${plugin.name}" }
             MangasPage(emptyList(), false)
@@ -348,21 +372,40 @@ class JsSource(
 
             if (query.isNotBlank()) {
                 // Use searchNovels for text search
-                val result = executePluginMethod("plugin.searchNovels('$escapedQuery', $page)")
-                parseMangasPage(result, page)
+                val currentResult = executePluginMethod("plugin.searchNovels('$escapedQuery', $page)")
+                val parsed = parseMangasPage(currentResult, page)
+                inferHasNextPage(
+                    currentPage = page,
+                    current = parsed,
+                    methodCallForPage = { probePage -> "plugin.searchNovels('$escapedQuery', $probePage)" },
+                )
             } else if (hasActiveFilters) {
                 // Use popularNovels with user-modified filters
                 val filtersJs = convertFiltersToJs(filters)
-                val result =
+                val currentResult =
                     executePluginMethod("plugin.popularNovels($page, { showLatestNovels: false, filters: $filtersJs })")
-                parseMangasPage(result, page)
+                val parsed = parseMangasPage(currentResult, page)
+                inferHasNextPage(
+                    currentPage = page,
+                    current = parsed,
+                    methodCallForPage = { probePage ->
+                        "plugin.popularNovels($probePage, { showLatestNovels: false, filters: $filtersJs })"
+                    },
+                )
             } else {
                 // Default to popular with plugin's original filters
-                val result =
+                val currentResult =
                     executePluginMethod(
                         "plugin.popularNovels($page, { showLatestNovels: false, filters: plugin.filters })",
                     )
-                parseMangasPage(result, page)
+                val parsed = parseMangasPage(currentResult, page)
+                inferHasNextPage(
+                    currentPage = page,
+                    current = parsed,
+                    methodCallForPage = { probePage ->
+                        "plugin.popularNovels($probePage, { showLatestNovels: false, filters: plugin.filters })"
+                    },
+                )
             }
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e) { "Error in getSearchManga for ${plugin.name}" }
@@ -493,19 +536,21 @@ class JsSource(
                 1
             }
 
-            val needsPaging = (chapters.isEmpty() && totalPages >= 0) || totalPages > 0
-            if (needsPaging) {
+            if (totalPages > 1 || chapters.isEmpty()) {
+                val maxPages = if (totalPages > 0) totalPages else 1
                 val startPage = if (chapters.isEmpty()) 1 else 2
                 logcat(LogPriority.DEBUG) {
                     "JsSource[$pluginId]: Paged source detected, totalPages=$totalPages, startPage=$startPage, existingChapters=${chapters.size}"
                 }
-                for (page in startPage..totalPages) {
-                    try {
-                        val pageResult = executePluginMethod("plugin.parsePage('$path', '$page')")
-                        val pageChapters = parsePageChapters(pageResult)
-                        chapters.addAll(pageChapters)
-                    } catch (e: Exception) {
-                        logcat(LogPriority.ERROR, e) { "JsSource[$pluginId]: Error fetching page $page of $totalPages" }
+                if (startPage <= maxPages) {
+                    for (page in startPage..maxPages) {
+                        try {
+                            val pageResult = executePluginMethod("plugin.parsePage('$path', $page)")
+                            val pageChapters = parsePageChapters(pageResult)
+                            chapters.addAll(pageChapters)
+                        } catch (e: Exception) {
+                            logcat(LogPriority.ERROR, e) { "JsSource[$pluginId]: Error fetching page $page of $maxPages" }
+                        }
                     }
                 }
             }
@@ -679,8 +724,23 @@ class JsSource(
         }
 
         try {
-            val array = json.parseToJsonElement(jsonResult).jsonArray
-            val mangas = array.mapNotNull { item ->
+            val parsed = json.parseToJsonElement(jsonResult)
+            
+            // Check if response is an array (simple case) or object with pagination metadata
+            val (mangaArray, hasNextPageExplicit) = if (parsed is JsonArray) {
+                Pair(parsed, null)
+            } else if (parsed is JsonObject) {
+                // Plugin can return { novels: [...], hasNextPage: true } or similar structure
+                val novels = parsed["novels"]?.jsonArray 
+                    ?: parsed["results"]?.jsonArray
+                    ?: return MangasPage(emptyList(), false)
+                val hasNext = parsed["hasNextPage"]?.jsonPrimitive?.content?.toBoolean()
+                Pair(novels, hasNext)
+            } else {
+                return MangasPage(emptyList(), false)
+            }
+
+            val mangas = mangaArray.mapNotNull { item ->
                 try {
                     val obj = item.jsonObject
                     SManga.create().apply {
@@ -700,11 +760,36 @@ class JsSource(
                     null
                 }
             }
-            // Assume more pages if we got results
-            return MangasPage(mangas, mangas.size >= 20)
+            
+            // Use explicit hasNextPage if provided by plugin; otherwise use heuristic
+            val hasNext = when {
+                hasNextPageExplicit != null -> hasNextPageExplicit
+                mangas.isEmpty() -> false
+                else -> mangas.size >= 20 // Assume more pages if we got 20+ results
+            }
+            return MangasPage(mangas, hasNext)
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e) { "Failed to parse mangas: $jsonResult" }
             return MangasPage(emptyList(), false)
+        }
+    }
+
+    private suspend fun inferHasNextPage(
+        currentPage: Int,
+        current: MangasPage,
+        methodCallForPage: (Int) -> String,
+    ): MangasPage {
+        if (current.hasNextPage || current.mangas.isEmpty()) {
+            return current
+        }
+
+        val probePage = currentPage + 1
+        return try {
+            val nextResult = executePluginMethod(methodCallForPage(probePage))
+            val nextParsed = parseMangasPage(nextResult, probePage)
+            MangasPage(current.mangas, nextParsed.mangas.isNotEmpty())
+        } catch (_: Exception) {
+            current
         }
     }
 
