@@ -16,6 +16,7 @@ import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
+import eu.kanade.tachiyomi.util.lang.normalizeHtmlDescription
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
@@ -32,7 +33,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import logcat.LogPriority
 import okhttp3.Headers
 import tachiyomi.core.common.util.system.logcat
-import eu.kanade.tachiyomi.util.lang.normalizeHtmlDescription
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.text.SimpleDateFormat

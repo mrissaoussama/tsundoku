@@ -271,7 +271,16 @@ object SettingsDataScreen : SearchableSettings {
         pendingLNReaderUri?.let { uri ->
             LNReaderImportOptionsDialog(
                 onDismissRequest = { pendingLNReaderUri = null },
-                onConfirm = { novels, chapters, categories, history, plugins, missingPlugins, downloadedChapters, covers ->
+                onConfirm = {
+                        novels,
+                        chapters,
+                        categories,
+                        history,
+                        plugins,
+                        missingPlugins,
+                        downloadedChapters,
+                        covers,
+                    ->
                     pendingLNReaderUri = null
                     LNReaderImportJob.start(
                         context,

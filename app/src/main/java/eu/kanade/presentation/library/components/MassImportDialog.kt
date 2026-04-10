@@ -210,7 +210,10 @@ fun MassImportDialog(
                         )
                         Row {
                             // Clear completed button
-                            val hasCompleted = queue.any { it.status == MassImportJob.BatchStatus.Completed || it.status == MassImportJob.BatchStatus.Cancelled }
+                            val hasCompleted = queue.any {
+                                it.status == MassImportJob.BatchStatus.Completed ||
+                                    it.status == MassImportJob.BatchStatus.Cancelled
+                            }
                             if (hasCompleted) {
                                 TextButton(
                                     onClick = { MassImportJob.clearCompleted() },
@@ -219,7 +222,10 @@ fun MassImportDialog(
                                 }
                             }
                             // Cancel all button
-                            val hasActive = queue.any { it.status == MassImportJob.BatchStatus.Pending || it.status == MassImportJob.BatchStatus.Running }
+                            val hasActive = queue.any {
+                                it.status == MassImportJob.BatchStatus.Pending ||
+                                    it.status == MassImportJob.BatchStatus.Running
+                            }
                             if (hasActive) {
                                 TextButton(
                                     onClick = { MassImportJob.stop(context) },
@@ -264,7 +270,10 @@ fun MassImportDialog(
                                 },
                                 onSaveReport = {
                                     batchToSave = batch
-                                    val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+                                    val timestamp = java.text.SimpleDateFormat(
+                                        "yyyyMMdd_HHmmss",
+                                        java.util.Locale.getDefault(),
+                                    ).format(java.util.Date())
                                     saveReportLauncher.launch("mass_import_report_$timestamp.txt")
                                 },
                                 onRemove = { MassImportJob.removeBatch(batch.id) },
@@ -274,7 +283,10 @@ fun MassImportDialog(
                                 },
                                 onExportUrls = {
                                     batchToExport = batch
-                                    val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+                                    val timestamp = java.text.SimpleDateFormat(
+                                        "yyyyMMdd_HHmmss",
+                                        java.util.Locale.getDefault(),
+                                    ).format(java.util.Date())
                                     exportUrlsLauncher.launch("mass_import_urls_$timestamp.txt")
                                 },
                                 onRequeue = {
@@ -648,7 +660,9 @@ private fun BatchItem(
                     }
 
                     // Cancel button (only for pending/running)
-                    if (batch.status == MassImportJob.BatchStatus.Pending || batch.status == MassImportJob.BatchStatus.Running) {
+                    if (batch.status == MassImportJob.BatchStatus.Pending ||
+                        batch.status == MassImportJob.BatchStatus.Running
+                    ) {
                         IconButton(
                             onClick = onCancel,
                             modifier = Modifier.size(24.dp),
@@ -663,7 +677,9 @@ private fun BatchItem(
                     }
 
                     // Remove button (only for completed/cancelled)
-                    if (batch.status == MassImportJob.BatchStatus.Completed || batch.status == MassImportJob.BatchStatus.Cancelled) {
+                    if (batch.status == MassImportJob.BatchStatus.Completed ||
+                        batch.status == MassImportJob.BatchStatus.Cancelled
+                    ) {
                         // Requeue button (for cancelled batches with remaining URLs)
                         if (batch.status == MassImportJob.BatchStatus.Cancelled && batch.progress < batch.total) {
                             IconButton(
@@ -702,7 +718,9 @@ private fun BatchItem(
             }
 
             // Summary for completed
-            if (batch.status == MassImportJob.BatchStatus.Completed || batch.status == MassImportJob.BatchStatus.Cancelled) {
+            if (batch.status == MassImportJob.BatchStatus.Completed ||
+                batch.status == MassImportJob.BatchStatus.Cancelled
+            ) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -770,7 +788,9 @@ private fun BatchItem(
                     }
 
                     // For completed batches: Copy Report, Save Report, Retry Errors
-                    if (batch.status == MassImportJob.BatchStatus.Completed || batch.status == MassImportJob.BatchStatus.Cancelled) {
+                    if (batch.status == MassImportJob.BatchStatus.Completed ||
+                        batch.status == MassImportJob.BatchStatus.Cancelled
+                    ) {
                         IconButton(onClick = onCopyReport, modifier = Modifier.size(32.dp)) {
                             Icon(
                                 Icons.Outlined.Description,
