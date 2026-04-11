@@ -138,6 +138,7 @@ class BackupNotifier(private val context: Context) {
         path: String?,
         file: String?,
         sync: Boolean,
+        customMessage: String? = null,
     ) {
         val contentTitle = if (sync) {
             context.stringResource(MR.strings.library_sync_complete)
@@ -158,7 +159,7 @@ class BackupNotifier(private val context: Context) {
         with(completeNotificationBuilder) {
             setContentTitle(contentTitle)
             setContentText(
-                context.pluralStringResource(
+                customMessage ?: context.pluralStringResource(
                     MR.plurals.restore_completed_message,
                     errorCount,
                     timeString,

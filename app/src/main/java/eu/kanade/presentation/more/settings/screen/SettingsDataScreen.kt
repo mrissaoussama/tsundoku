@@ -271,7 +271,16 @@ object SettingsDataScreen : SearchableSettings {
         pendingLNReaderUri?.let { uri ->
             LNReaderImportOptionsDialog(
                 onDismissRequest = { pendingLNReaderUri = null },
-                onConfirm = { novels, chapters, categories, history, plugins, missingPlugins ->
+                onConfirm = {
+                        novels,
+                        chapters,
+                        categories,
+                        history,
+                        plugins,
+                        missingPlugins,
+                        downloadedChapters,
+                        covers,
+                    ->
                     pendingLNReaderUri = null
                     LNReaderImportJob.start(
                         context,
@@ -282,6 +291,8 @@ object SettingsDataScreen : SearchableSettings {
                         restoreHistory = history,
                         restorePlugins = plugins,
                         restoreMissingPlugins = missingPlugins,
+                        restoreDownloadedChapters = downloadedChapters,
+                        restoreCovers = covers,
                     )
                     lnReaderImportStatus = "Import started (check notifications for progress)"
                     scope.launch {
@@ -614,6 +625,8 @@ private fun LNReaderImportOptionsDialog(
         history: Boolean,
         plugins: Boolean,
         missingPlugins: Boolean,
+        downloadedChapters: Boolean,
+        covers: Boolean,
     ) -> Unit,
 ) {
     var restoreNovels by remember { mutableStateOf(true) }
@@ -622,6 +635,8 @@ private fun LNReaderImportOptionsDialog(
     var restoreHistory by remember { mutableStateOf(true) }
     var restorePlugins by remember { mutableStateOf(true) }
     var restoreMissingPlugins by remember { mutableStateOf(false) }
+    var restoreDownloadedChapters by remember { mutableStateOf(true) }
+    var restoreCovers by remember { mutableStateOf(true) }
 
     AlertDialog(
         onDismissRequest = onDismissRequest,
@@ -643,7 +658,7 @@ private fun LNReaderImportOptionsDialog(
                         onCheckedChange = { restoreChapters = it },
                         enabled = restoreNovels,
                     )
-                    Text("Chapters", modifier = Modifier.padding(start = 4.dp))
+                    Text("Chapters lists", modifier = Modifier.padding(start = 4.dp))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = restoreCategories, onCheckedChange = { restoreCategories = it })
@@ -656,6 +671,14 @@ private fun LNReaderImportOptionsDialog(
                         enabled = restoreNovels,
                     )
                     Text("Reading history", modifier = Modifier.padding(start = 4.dp))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = restoreDownloadedChapters, onCheckedChange = { restoreDownloadedChapters = it })
+                    Text("Downloaded chapters", modifier = Modifier.padding(start = 4.dp))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = restoreCovers, onCheckedChange = { restoreCovers = it })
+                    Text("Cached covers", modifier = Modifier.padding(start = 4.dp))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = restorePlugins, onCheckedChange = { restorePlugins = it })
@@ -681,6 +704,8 @@ private fun LNReaderImportOptionsDialog(
                         restoreHistory,
                         restorePlugins,
                         restoreMissingPlugins,
+                        restoreDownloadedChapters,
+                        restoreCovers,
                     )
                 },
                 enabled = restoreNovels || restoreCategories || restorePlugins,

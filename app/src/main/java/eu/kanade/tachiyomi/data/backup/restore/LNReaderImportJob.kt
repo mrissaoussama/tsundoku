@@ -42,9 +42,17 @@ class LNReaderImportJob(private val context: Context, workerParams: WorkerParame
                 restoreHistory = inputData.getBoolean(KEY_RESTORE_HISTORY, true),
                 restorePlugins = inputData.getBoolean(KEY_RESTORE_PLUGINS, true),
                 restoreMissingPlugins = inputData.getBoolean(KEY_RESTORE_MISSING_PLUGINS, false),
+                restoreDownloadedChapters = inputData.getBoolean(KEY_RESTORE_DOWNLOADED_CHAPTERS, true),
+                restoreCovers = inputData.getBoolean(KEY_RESTORE_COVERS, true),
             )
             val startTime = System.currentTimeMillis()
             val result = importer.import(uri, options)
+
+            val summaryMessage = "Completed - ${result.novelCount} novels, ${result.categoryCount} categories, " +
+                "${result.installedPluginCount} plugins, ${result.restoredDownloadCount} chapters, " +
+                "${result.restoredCoverCount} covers, " +
+                "${result.skippedCount} skipped, ${result.errorCount} errors" +
+                if (result.missingPlugins.isNotEmpty()) " (Missing: ${result.missingPlugins.size})" else ""
 
             notifier.showRestoreComplete(
                 time = System.currentTimeMillis() - startTime,
@@ -52,12 +60,11 @@ class LNReaderImportJob(private val context: Context, workerParams: WorkerParame
                 path = result.logFile.parent,
                 file = result.logFile.name,
                 sync = false,
+                customMessage = summaryMessage,
             )
 
             logcat(LogPriority.INFO) {
-                "LNReaderImport: Completed - ${result.novelCount} novels, ${result.categoryCount} categories, " +
-                    "${result.skippedCount} skipped, ${result.errorCount} errors" +
-                    if (result.missingPlugins.isNotEmpty()) ", missing plugins: ${result.missingPlugins.joinToString()}" else ""
+                "LNReaderImport: $summaryMessage"
             }
 
             Result.success()
@@ -101,6 +108,8 @@ class LNReaderImportJob(private val context: Context, workerParams: WorkerParame
             restoreHistory: Boolean = true,
             restorePlugins: Boolean = true,
             restoreMissingPlugins: Boolean = false,
+            restoreDownloadedChapters: Boolean = true,
+            restoreCovers: Boolean = true,
         ) {
             val inputData = workDataOf(
                 LOCATION_URI_KEY to uri.toString(),
@@ -110,6 +119,8 @@ class LNReaderImportJob(private val context: Context, workerParams: WorkerParame
                 KEY_RESTORE_HISTORY to restoreHistory,
                 KEY_RESTORE_PLUGINS to restorePlugins,
                 KEY_RESTORE_MISSING_PLUGINS to restoreMissingPlugins,
+                KEY_RESTORE_DOWNLOADED_CHAPTERS to restoreDownloadedChapters,
+                KEY_RESTORE_COVERS to restoreCovers,
             )
             val request = OneTimeWorkRequestBuilder<LNReaderImportJob>()
                 .addTag(TAG)
@@ -132,3 +143,5 @@ private const val KEY_RESTORE_CATEGORIES = "restore_categories"
 private const val KEY_RESTORE_HISTORY = "restore_history"
 private const val KEY_RESTORE_PLUGINS = "restore_plugins"
 private const val KEY_RESTORE_MISSING_PLUGINS = "restore_missing_plugins"
+private const val KEY_RESTORE_DOWNLOADED_CHAPTERS = "restore_downloaded_chapters"
+private const val KEY_RESTORE_COVERS = "restore_covers"

@@ -33,6 +33,9 @@ class CloudflareInterceptor(
     override fun shouldIntercept(response: Response): Boolean {
         // Check if Cloudflare anti-bot is on
         return if (response.code in ERROR_CODES && response.header("Server") in SERVER_CHECK) {
+            if (response.header("cf-mitigated")?.equals("challenge", ignoreCase = true) == true) {
+                return true
+            }
             val document = Jsoup.parse(
                 response.peekBody(Long.MAX_VALUE).string(),
                 response.request.url.toString(),

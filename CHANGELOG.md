@@ -25,6 +25,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - MassImport will now also work with Manga [@mrissaoussama](https://github.com/mrissaoussama) [#142](https://github.com/tsundoku-otaku/tsundoku/pull/142)
 - Regex improved to faster versions [@Palloxin] [#147](https://github.com/tsundoku-otaku/tsundoku/pull/147)
 - Expanded JS compatibility [@mrissaoussama](https://github.com/mrissaoussama) [#146](https://github.com/tsundoku-otaku/tsundoku/pull/146)
+- LNreader backups should now restore downloaded chapters and covers. [@mrissaoussama](https://github.com/mrissaoussama) [#145](https://github.com/tsundoku-otaku/tsundoku/pull/145)
 
 ### Fixed 
 - Fixed tapping novel name opening a manga search instead of novel [@mrissaoussama](https://github.com/mrissaoussama) [#143](https://github.com/tsundoku-otaku/tsundoku/pull/143)
