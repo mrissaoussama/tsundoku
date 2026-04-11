@@ -549,7 +549,9 @@ class JsSource(
                             val pageChapters = parsePageChapters(pageResult)
                             chapters.addAll(pageChapters)
                         } catch (e: Exception) {
-                            logcat(LogPriority.ERROR, e) { "JsSource[$pluginId]: Error fetching page $page of $maxPages" }
+                            logcat(LogPriority.ERROR, e) {
+                                "JsSource[$pluginId]: Error fetching page $page of $maxPages"
+                            }
                         }
                     }
                 }
@@ -725,13 +727,13 @@ class JsSource(
 
         try {
             val parsed = json.parseToJsonElement(jsonResult)
-            
+
             // Check if response is an array (simple case) or object with pagination metadata
             val (mangaArray, hasNextPageExplicit) = if (parsed is JsonArray) {
                 Pair(parsed, null)
             } else if (parsed is JsonObject) {
                 // Plugin can return { novels: [...], hasNextPage: true } or similar structure
-                val novels = parsed["novels"]?.jsonArray 
+                val novels = parsed["novels"]?.jsonArray
                     ?: parsed["results"]?.jsonArray
                     ?: return MangasPage(emptyList(), false)
                 val hasNext = parsed["hasNextPage"]?.jsonPrimitive?.content?.toBoolean()
@@ -760,7 +762,7 @@ class JsSource(
                     null
                 }
             }
-            
+
             // Use explicit hasNextPage if provided by plugin; otherwise use heuristic
             val hasNext = when {
                 hasNextPageExplicit != null -> hasNextPageExplicit

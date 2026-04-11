@@ -448,7 +448,6 @@ object SettingsDataScreen : SearchableSettings {
         }
 
         val context = LocalContext.current
-        val scope = rememberCoroutineScope()
 
         val saveFileLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.CreateDocument("text/csv"),

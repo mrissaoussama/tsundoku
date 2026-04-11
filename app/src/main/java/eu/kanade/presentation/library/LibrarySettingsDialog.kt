@@ -450,11 +450,25 @@ private fun ColumnScope.TagsPage(
 
     // Options expanded state
     val optionsExpanded by screenModel.tagOptionsExpanded.collectAsState()
+    var showRefreshCompleted by remember { mutableStateOf(false) }
+    var wasLoading by remember { mutableStateOf(false) }
 
     // Load data when first entering this page (only if empty)
     LaunchedEffect(Unit) {
         if (tags.isEmpty()) {
             screenModel.refreshTags()
+        }
+    }
+
+    LaunchedEffect(isLoading) {
+        if (isLoading) {
+            wasLoading = true
+            showRefreshCompleted = false
+        } else if (wasLoading) {
+            wasLoading = false
+            showRefreshCompleted = true
+            delay(900)
+            showRefreshCompleted = false
         }
     }
 
@@ -472,10 +486,25 @@ private fun ColumnScope.TagsPage(
             Spacer(Modifier.width(4.dp))
             Text("Options")
         }
-        TextButton(onClick = { screenModel.refreshTags(forceRefresh = true) }) {
-            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+        TextButton(
+            onClick = { screenModel.refreshTags(forceRefresh = true) },
+            enabled = !isLoading,
+        ) {
+            Crossfade(
+                targetState = when {
+                    isLoading -> "loading"
+                    showRefreshCompleted -> "done"
+                    else -> "idle"
+                },
+            ) { state ->
+                when (state) {
+                    "loading" -> CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    "done" -> Icon(Icons.Default.Done, contentDescription = "Refreshed")
+                    else -> Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                }
+            }
             Spacer(Modifier.width(4.dp))
-            Text("Refresh")
+            Text(if (showRefreshCompleted) "Refreshed" else "Refresh")
         }
     }
 
@@ -746,13 +775,14 @@ private fun ColumnScope.ExtensionsPage(
     val availableExtensions by screenModel.extensionsFlow.collectAsState()
     val isLoading by screenModel.isLoading.collectAsState()
     var showRefreshCompleted by remember { mutableStateOf(false) }
-    var refreshTriggered by remember { mutableStateOf(false) }
+    var wasLoading by remember { mutableStateOf(false) }
 
     LaunchedEffect(isLoading) {
         if (isLoading) {
+            wasLoading = true
             showRefreshCompleted = false
-        } else if (refreshTriggered) {
-            refreshTriggered = false
+        } else if (wasLoading) {
+            wasLoading = false
             showRefreshCompleted = true
             delay(900)
             showRefreshCompleted = false
@@ -773,7 +803,6 @@ private fun ColumnScope.ExtensionsPage(
     ) {
         TextButton(
             onClick = {
-                refreshTriggered = true
                 screenModel.refreshExtensions(forceRefresh = true)
             },
             enabled = !isLoading,
