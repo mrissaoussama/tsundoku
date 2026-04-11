@@ -12,6 +12,9 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 
+### Fixed
+- Fixed issue where some chapters wouldn't be marked read [@mrissaoussama](https://github.com/mrissaoussama) [#148](https://github.com/tsundoku-otaku/tsundoku/pull/148)
+
 
 ## [v0.1.3] - 2026-04-10
 ### Changed
