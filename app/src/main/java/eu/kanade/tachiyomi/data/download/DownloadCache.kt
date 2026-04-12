@@ -121,6 +121,12 @@ class DownloadCache(
         storageManager.changes
             .onEach { invalidateCache() }
             .launchIn(scope)
+
+        // Sources can be loaded asynchronously after app startup (notably JS/custom sources).
+        // Rebuild the cache when the source list changes so those entries get indexed too.
+        sourceManager.catalogueSources
+            .onEach { invalidateCache() }
+            .launchIn(scope)
     }
 
     /**
