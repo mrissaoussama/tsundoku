@@ -1545,8 +1545,14 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     }
 
     private fun loadHtmlContent(content: String, chapterId: Long? = null, chapterName: String? = null) {
+        val sourceContent = if (NovelMarkdownUtils.isMarkdownUrl(getCurrentChapterUrl())) {
+            NovelMarkdownUtils.toHtml(content)
+        } else {
+            content
+        }
+
         // Strip script tags from content to prevent unwanted JS execution
-        var cleanContent = content
+        var cleanContent = sourceContent
             .replace(Regex("<script[^>]*>.*?</script>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
             .replace(Regex("<script[^>]*/>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<style[^>]*>.*?</style>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
@@ -1672,6 +1678,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         """.trimIndent()
 
         webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+    }
+
+    private fun getCurrentChapterUrl(): String {
+        return currentPage?.url
+            ?: currentChapters?.currChapter?.chapter?.url
+            ?: ""
     }
 
     private fun stripMediaTags(content: String): String {
