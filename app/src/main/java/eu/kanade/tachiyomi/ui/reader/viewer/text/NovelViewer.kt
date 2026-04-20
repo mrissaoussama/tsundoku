@@ -384,6 +384,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     private var isLoadingNext = false
     private var isRestoringScroll = false
     private var currentChapterIndex = 0
+    private var disableScrollbarForSession = false
 
     // Flag to track if next chapter load is from infinite scroll (vs manual navigation)
     private var isInfiniteScrollNavigation = false
@@ -511,8 +512,37 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                 gestureDetector.onTouchEvent(ev)
                 return super.dispatchTouchEvent(ev)
             }
+
+            override fun draw(canvas: Canvas) {
+                try {
+                    super.draw(canvas)
+                } catch (e: NullPointerException) {
+                    val isScrollbarDrawableBug =
+                        e.message?.contains("ScrollBarDrawable", ignoreCase = true) == true
+
+                    // Some Android builds can crash in View.onDrawScrollBars()
+                    // when ScrollBarDrawable is unexpectedly null.
+                    if (isScrollbarDrawableBug) {
+                        logcat(LogPriority.WARN) {
+                            "NovelViewer: disabling native scrollbars after framework draw crash: ${e.message}"
+                        }
+                        disableScrollbarForSession = true
+                        isVerticalScrollBarEnabled = false
+                        isHorizontalScrollBarEnabled = false
+
+                        // Try one safe redraw after scrollbars are disabled.
+                        // If framework still throws, skip this frame instead of crashing.
+                        runCatching { super.draw(canvas) }
+                    } else {
+                        throw e
+                    }
+                }
+            }
         }.apply {
             isFillViewport = true
+            scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+            isScrollbarFadingEnabled = false
+            isHorizontalScrollBarEnabled = false
         }
 
         contentContainer = LinearLayout(activity).apply {
@@ -524,6 +554,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         }
 
         scrollView.addView(contentContainer)
+        applyNovelScrollbarSettings()
 
         // Allow descendants to receive focus so TextView text selection works.
         // The reader container typically sets FOCUS_BLOCK_DESCENDANTS which prevents
@@ -970,6 +1001,16 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                     reloadContent()
                 }
         }
+
+    }
+
+    private fun applyNovelScrollbarSettings() {
+        scrollView.isVerticalScrollBarEnabled = false
+        scrollView.isHorizontalScrollBarEnabled = false
+        scrollView.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+        scrollView.isScrollbarFadingEnabled = false
+        scrollView.layoutDirection = View.LAYOUT_DIRECTION_LTR
+        contentContainer.layoutDirection = View.LAYOUT_DIRECTION_LTR
     }
 
     private fun createSelectableTextView(): TextView {

@@ -568,11 +568,69 @@ internal fun ColumnScope.NovelControlsTab(screenModel: ReaderSettingsScreenModel
         pref = screenModel.preferences.novelTextSelectable,
     )
 
-    // Progress Slider
-    CheckboxItem(
-        label = stringResource(TDMR.strings.pref_novel_progress_slider),
-        pref = screenModel.preferences.novelShowProgressSlider,
+    // Progress slider mode
+    val showProgressSlider by screenModel.preferences.novelShowProgressSlider.collectAsState()
+    val showVerticalScrollbar by screenModel.preferences.novelVerticalScrollbar.collectAsState()
+    val verticalScrollbarPosition by screenModel.preferences.novelVerticalScrollbarPosition.collectAsState()
+    val scrollbarMode = when {
+        !showProgressSlider -> "none"
+        showVerticalScrollbar && verticalScrollbarPosition == "left" -> "vertical_left"
+        showVerticalScrollbar && verticalScrollbarPosition == "right" -> "vertical_right"
+        else -> "horizontal"
+    }
+    val scrollbarModeOptions = listOf(
+        stringResource(TDMR.strings.novel_scrollbar_none) to "none",
+        stringResource(TDMR.strings.novel_scrollbar_horizontal) to "horizontal",
+        stringResource(TDMR.strings.novel_vertical_scrollbar_left) to "vertical_left",
+        stringResource(TDMR.strings.novel_vertical_scrollbar_right) to "vertical_right",
     )
+    InlineSettingsChipRow(TDMR.strings.pref_novel_scrollbar_mode) {
+        scrollbarModeOptions.map { (label, value) ->
+            FilterChip(
+                selected = scrollbarMode == value,
+                onClick = {
+                    when (value) {
+                        "none" -> {
+                            screenModel.preferences.novelShowProgressSlider.set(false)
+                            screenModel.preferences.novelVerticalScrollbar.set(false)
+                        }
+                        "horizontal" -> {
+                            screenModel.preferences.novelShowProgressSlider.set(true)
+                            screenModel.preferences.novelVerticalScrollbar.set(false)
+                        }
+                        "vertical_left" -> {
+                            screenModel.preferences.novelShowProgressSlider.set(true)
+                            screenModel.preferences.novelVerticalScrollbarPosition.set("left")
+                            screenModel.preferences.novelVerticalScrollbar.set(true)
+                        }
+                        "vertical_right" -> {
+                            screenModel.preferences.novelShowProgressSlider.set(true)
+                            screenModel.preferences.novelVerticalScrollbarPosition.set("right")
+                            screenModel.preferences.novelVerticalScrollbar.set(true)
+                        }
+                    }
+                },
+                label = { Text(label) },
+            )
+        }
+    }
+
+    val verticalProgressSliderSize by screenModel.preferences.novelVerticalProgressSliderSize.collectAsState()
+    if (scrollbarMode == "vertical_left" || scrollbarMode == "vertical_right") {
+        val verticalSizeOptions = listOf(
+            stringResource(TDMR.strings.novel_vertical_progress_slider_half) to "half",
+            stringResource(TDMR.strings.novel_vertical_progress_slider_full) to "full",
+        )
+        InlineSettingsChipRow(TDMR.strings.pref_novel_vertical_progress_slider_size) {
+            verticalSizeOptions.map { (label, value) ->
+                FilterChip(
+                    selected = verticalProgressSliderSize == value,
+                    onClick = { screenModel.preferences.novelVerticalProgressSliderSize.set(value) },
+                    label = { Text(label) },
+                )
+            }
+        }
+    }
 
     // Infinite Scroll
     val infiniteScrollEnabled by screenModel.preferences.novelInfiniteScroll.collectAsState()

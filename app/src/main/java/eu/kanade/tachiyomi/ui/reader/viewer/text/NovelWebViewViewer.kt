@@ -360,6 +360,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         }.apply {
             isFocusable = true
             isFocusableInTouchMode = true
+            scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+            isScrollbarFadingEnabled = false
+            applyWebViewScrollbarSettings(this)
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
@@ -512,6 +515,15 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     currentChapters?.let { setChapters(it) }
                 }
         }
+
+    }
+
+    private fun applyWebViewScrollbarSettings(target: WebView = webView) {
+        target.isVerticalScrollBarEnabled = false
+        target.isHorizontalScrollBarEnabled = false
+        target.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+        target.isScrollbarFadingEnabled = false
+        target.layoutDirection = View.LAYOUT_DIRECTION_LTR
     }
 
     private fun buildCustomStylePayload(): CustomStylePayload {

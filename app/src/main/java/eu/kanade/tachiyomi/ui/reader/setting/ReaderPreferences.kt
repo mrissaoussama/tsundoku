@@ -272,6 +272,24 @@ class ReaderPreferences(
         true,
     )
 
+    // Show the platform vertical scrollbar in novel readers.
+    val novelVerticalScrollbar: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_novel_vertical_scrollbar",
+        false,
+    )
+
+    // Vertical scrollbar side in novel readers: "left" or "right".
+    val novelVerticalScrollbarPosition: Preference<String> = preferenceStore.getString(
+        "pref_novel_vertical_scrollbar_position",
+        "right",
+    )
+
+    // Vertical progress slider height mode: "half" or "full".
+    val novelVerticalProgressSliderSize: Preference<String> = preferenceStore.getString(
+        "pref_novel_vertical_progress_slider_size",
+        "half",
+    )
+
     // Hide chapter title in novel content
     val novelHideChapterTitle: Preference<Boolean> = preferenceStore.getBoolean("pref_novel_hide_chapter_title", false)
 

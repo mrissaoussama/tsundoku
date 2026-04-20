@@ -11,6 +11,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -23,9 +25,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -61,6 +65,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
@@ -78,6 +84,12 @@ import tachiyomi.presentation.core.i18n.stringResource
 
 private val readerBarsSlideAnimationSpec = tween<IntOffset>(200)
 private val readerBarsFadeAnimationSpec = tween<Float>(150)
+private const val PROGRESS_SLIDER_MODE_HORIZONTAL = "horizontal"
+private const val PROGRESS_SLIDER_MODE_VERTICAL_LEFT = "vertical_left"
+private const val PROGRESS_SLIDER_MODE_VERTICAL_RIGHT = "vertical_right"
+private const val VERTICAL_PROGRESS_SIZE_HALF = "half"
+private val VERTICAL_PROGRESS_CONTAINER_WIDTH = 40.dp
+private val VERTICAL_PROGRESS_EDGE_INSET = 6.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -100,6 +112,8 @@ fun NovelReaderAppBars(
 
     // Progress slider
     showProgressSlider: Boolean,
+    progressSliderMode: String,
+    verticalProgressSliderSize: String,
     currentProgress: Int, // 0-100 percentage
     onProgressChange: (Int) -> Unit,
 
@@ -137,89 +151,119 @@ fun NovelReaderAppBars(
         .surfaceColorAtElevation(3.dp)
         .copy(alpha = if (isSystemInDarkTheme()) 0.9f else 0.95f)
 
-    Column(modifier = Modifier.fillMaxHeight()) {
-        AnimatedVisibility(
-            visible = visible,
-            enter = slideInVertically(initialOffsetY = { -it }, animationSpec = readerBarsSlideAnimationSpec) +
-                fadeIn(animationSpec = readerBarsFadeAnimationSpec),
-            exit = slideOutVertically(targetOffsetY = { -it }, animationSpec = readerBarsSlideAnimationSpec) +
-                fadeOut(animationSpec = readerBarsFadeAnimationSpec),
-        ) {
-            NovelReaderTopBar(
-                modifier = Modifier
-                    .background(backgroundColor)
-                    .clickable(onClick = onClickTopAppBar),
-                novelTitle = novelTitle,
-                chapterTitle = chapterTitle,
-                navigateUp = navigateUp,
-                bookmarked = bookmarked,
-                onToggleBookmarked = onToggleBookmarked,
-                onOpenInWebView = onOpenInWebView,
-                onOpenInBrowser = onOpenInBrowser,
-                onShare = onShare,
-                onReloadLocal = onReloadLocal,
-                onReloadSource = onReloadSource,
-                onEditBottomBar = onEditBottomBar,
-                onRetranslate = onRetranslate,
-            )
-        }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        AnimatedVisibility(
-            visible = visible,
-            enter = slideInVertically(initialOffsetY = { it }, animationSpec = readerBarsSlideAnimationSpec) +
-                fadeIn(animationSpec = readerBarsFadeAnimationSpec),
-            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = readerBarsSlideAnimationSpec) +
-                fadeOut(animationSpec = readerBarsFadeAnimationSpec),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(backgroundColor)
-                    .windowInsetsPadding(WindowInsets.navigationBars),
+    Box(modifier = Modifier.fillMaxHeight()) {
+        Column(modifier = Modifier.fillMaxHeight()) {
+            AnimatedVisibility(
+                visible = visible,
+                enter = slideInVertically(initialOffsetY = { -it }, animationSpec = readerBarsSlideAnimationSpec) +
+                    fadeIn(animationSpec = readerBarsFadeAnimationSpec),
+                exit = slideOutVertically(targetOffsetY = { -it }, animationSpec = readerBarsSlideAnimationSpec) +
+                    fadeOut(animationSpec = readerBarsFadeAnimationSpec),
             ) {
-                // Progress slider (above bottom bar)
-                if (showProgressSlider) {
-                    NovelProgressSlider(
+                NovelReaderTopBar(
+                    modifier = Modifier
+                        .background(backgroundColor)
+                        .clickable(onClick = onClickTopAppBar),
+                    novelTitle = novelTitle,
+                    chapterTitle = chapterTitle,
+                    navigateUp = navigateUp,
+                    bookmarked = bookmarked,
+                    onToggleBookmarked = onToggleBookmarked,
+                    onOpenInWebView = onOpenInWebView,
+                    onOpenInBrowser = onOpenInBrowser,
+                    onShare = onShare,
+                    onReloadLocal = onReloadLocal,
+                    onReloadSource = onReloadSource,
+                    onEditBottomBar = onEditBottomBar,
+                    onRetranslate = onRetranslate,
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                if (visible && showProgressSlider &&
+                    (progressSliderMode == PROGRESS_SLIDER_MODE_VERTICAL_LEFT || progressSliderMode == PROGRESS_SLIDER_MODE_VERTICAL_RIGHT)
+                ) {
+                    val alignment = if (progressSliderMode == PROGRESS_SLIDER_MODE_VERTICAL_LEFT) {
+                        Alignment.CenterStart
+                    } else {
+                        Alignment.CenterEnd
+                    }
+                    val heightFraction = if (verticalProgressSliderSize == VERTICAL_PROGRESS_SIZE_HALF) {
+                        0.5f
+                    } else {
+                        1f
+                    }
+                    NovelVerticalProgressSlider(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = MaterialTheme.padding.medium),
+                            .align(alignment)
+                            .padding(horizontal = VERTICAL_PROGRESS_EDGE_INSET, vertical = MaterialTheme.padding.small)
+                            .fillMaxHeight(heightFraction),
                         currentProgress = currentProgress,
                         onProgressChange = onProgressChange,
                         backgroundColor = backgroundColor,
                     )
                 }
+            }
 
-                NovelReaderBottomBar(
+            AnimatedVisibility(
+                visible = visible,
+                enter = slideInVertically(initialOffsetY = { it }, animationSpec = readerBarsSlideAnimationSpec) +
+                    fadeIn(animationSpec = readerBarsFadeAnimationSpec),
+                exit = slideOutVertically(targetOffsetY = { it }, animationSpec = readerBarsSlideAnimationSpec) +
+                    fadeOut(animationSpec = readerBarsFadeAnimationSpec),
+            ) {
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = MaterialTheme.padding.small),
-                    items = bottomBarItems,
-                    onNextChapter = onNextChapter,
-                    enabledNext = enabledNext,
-                    onPreviousChapter = onPreviousChapter,
-                    enabledPrevious = enabledPrevious,
-                    orientation = orientation,
-                    onClickOrientation = onClickOrientation,
-                    onClickSettings = onClickSettings,
-                    onScrollToTop = onScrollToTop,
-                    isAutoScrolling = isAutoScrolling,
-                    onToggleAutoScroll = onToggleAutoScroll,
-                    isTranslating = isTranslating,
-                    onToggleTranslation = onToggleTranslation,
-                    onLongPressTranslation = onLongPressTranslation,
-                    isTtsActive = isTtsActive,
-                    isTtsPaused = isTtsPaused,
-                    onToggleTts = onToggleTts,
-                    onLongPressTts = onLongPressTts,
-                    isEditing = isEditing,
-                    isWebView = isWebView,
-                    onToggleEdit = onToggleEdit,
-                    onQuotes = onQuotes,
-                )
+                        .background(backgroundColor)
+                        .windowInsetsPadding(WindowInsets.navigationBars),
+                ) {
+                    if (showProgressSlider && progressSliderMode == PROGRESS_SLIDER_MODE_HORIZONTAL) {
+                        NovelProgressSlider(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = MaterialTheme.padding.medium),
+                            currentProgress = currentProgress,
+                            onProgressChange = onProgressChange,
+                            backgroundColor = backgroundColor,
+                        )
+                    }
+
+                    NovelReaderBottomBar(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = MaterialTheme.padding.small),
+                        items = bottomBarItems,
+                        onNextChapter = onNextChapter,
+                        enabledNext = enabledNext,
+                        onPreviousChapter = onPreviousChapter,
+                        enabledPrevious = enabledPrevious,
+                        orientation = orientation,
+                        onClickOrientation = onClickOrientation,
+                        onClickSettings = onClickSettings,
+                        onScrollToTop = onScrollToTop,
+                        isAutoScrolling = isAutoScrolling,
+                        onToggleAutoScroll = onToggleAutoScroll,
+                        isTranslating = isTranslating,
+                        onToggleTranslation = onToggleTranslation,
+                        onLongPressTranslation = onLongPressTranslation,
+                        isTtsActive = isTtsActive,
+                        isTtsPaused = isTtsPaused,
+                        onToggleTts = onToggleTts,
+                        onLongPressTts = onLongPressTts,
+                        isEditing = isEditing,
+                        isWebView = isWebView,
+                        onToggleEdit = onToggleEdit,
+                        onQuotes = onQuotes,
+                    )
+                }
             }
         }
+
     }
 }
 
@@ -607,5 +651,101 @@ private fun NovelProgressSlider(
         )
 
         Text(text = "100%")
+    }
+}
+
+@Composable
+private fun NovelVerticalProgressSlider(
+    currentProgress: Int,
+    onProgressChange: (Int) -> Unit,
+    backgroundColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val haptic = LocalHapticFeedback.current
+    var measuredTrackHeightPx by remember { mutableStateOf(0) }
+
+    fun progressFromOffset(y: Float, totalHeight: Float): Int {
+        if (totalHeight <= 0f) return currentProgress
+        val clamped = y.coerceIn(0f, totalHeight)
+        return ((clamped / totalHeight) * 100f).toInt().coerceIn(0, 100)
+    }
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(24.dp))
+            .background(backgroundColor)
+            .padding(horizontal = 10.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(text = "$currentProgress%")
+
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .width(VERTICAL_PROGRESS_CONTAINER_WIDTH)
+                .onSizeChanged { size ->
+                    measuredTrackHeightPx = size.height
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            val trackHeightPx = measuredTrackHeightPx.toFloat().coerceAtLeast(1f)
+            val progressFraction = (currentProgress / 100f).coerceIn(0f, 1f)
+
+            // Vertical track
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(4.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)),
+            )
+
+            // Filled progress from top down (progress increases as user scrolls down)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(progressFraction)
+                    .width(4.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+
+            // Full-height interaction layer to guarantee effective area matches visible area
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(VERTICAL_PROGRESS_CONTAINER_WIDTH)
+                    .pointerInput(measuredTrackHeightPx) {
+                        detectTapGestures { offset ->
+                            val newProgress = progressFromOffset(offset.y, trackHeightPx)
+                            if (newProgress != currentProgress) {
+                                onProgressChange(newProgress)
+                            }
+                        }
+                    }
+                    .pointerInput(measuredTrackHeightPx) {
+                        var lastSentProgress = currentProgress
+                        detectVerticalDragGestures(
+                            onDragStart = { offset ->
+                                val newProgress = progressFromOffset(offset.y, trackHeightPx)
+                                if (newProgress != lastSentProgress) {
+                                    onProgressChange(newProgress)
+                                    lastSentProgress = newProgress
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                            },
+                            onVerticalDrag = { change, _ ->
+                                val newProgress = progressFromOffset(change.position.y, trackHeightPx)
+                                if (newProgress != lastSentProgress) {
+                                    onProgressChange(newProgress)
+                                    lastSentProgress = newProgress
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                            },
+                        )
+                    },
+            )
+        }
     }
 }

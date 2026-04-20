@@ -214,6 +214,14 @@ object SettingsReaderScreen : SearchableSettings {
                     title = "Auto-split long chapters",
                     subtitle = "Split long novel chapters into multiple pages based on word count",
                 ),
+                Preference.PreferenceItem.ListPreference(
+                    preference = readerPreferences.novelVerticalProgressSliderSize,
+                    entries = persistentMapOf(
+                        "half" to "Vertical progress size: Half screen",
+                        "full" to "Vertical progress size: Full screen",
+                    ),
+                    title = "Vertical progress slider size",
+                ),
                 Preference.PreferenceItem.SliderPreference(
                     value = autoSplitWordCount / 50,
                     valueRange = 1..40,

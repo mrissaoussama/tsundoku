@@ -395,6 +395,16 @@
     <string name="pref_novel_infinite_scroll">Infinite scroll (auto-load next chapter)</string>
     <string name="pref_novel_chapter_sort_order">Chapter order</string>
     <string name="pref_novel_progress_slider">Show progress slider</string>
+    <string name="pref_novel_scrollbar_mode">Progress slider</string>
+    <string name="novel_scrollbar_none">None</string>
+    <string name="novel_scrollbar_horizontal">Horizontal</string>
+    <string name="pref_novel_vertical_progress_slider_size">Vertical size</string>
+    <string name="novel_vertical_progress_slider_half">Half screen</string>
+    <string name="novel_vertical_progress_slider_full">Full screen</string>
+    <string name="pref_novel_vertical_scrollbar">Show vertical scrollbar</string>
+    <string name="pref_novel_vertical_scrollbar_position">Vertical scrollbar side</string>
+    <string name="novel_vertical_scrollbar_left">Vertical left</string>
+    <string name="novel_vertical_scrollbar_right">Vertical right</string>
     <string name="pref_novel_css_snippets">CSS Snippets</string>
 
     <!-- Novel Download Throttling (category headers only) -->

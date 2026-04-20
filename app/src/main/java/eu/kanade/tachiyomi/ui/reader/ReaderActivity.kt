@@ -584,6 +584,15 @@ class ReaderActivity : BaseActivity() {
 
             // Get novel progress for slider - use state from ViewModel for real-time updates
             val showProgressSlider by readerPreferences.novelShowProgressSlider.collectAsState()
+            val showVerticalProgressSlider by readerPreferences.novelVerticalScrollbar.collectAsState()
+            val verticalProgressSliderPosition by readerPreferences.novelVerticalScrollbarPosition.collectAsState()
+            val verticalProgressSliderSize by readerPreferences.novelVerticalProgressSliderSize.collectAsState()
+            val progressSliderMode = when {
+                !showProgressSlider -> "none"
+                showVerticalProgressSlider && verticalProgressSliderPosition == "left" -> "vertical_left"
+                showVerticalProgressSlider && verticalProgressSliderPosition == "right" -> "vertical_right"
+                else -> "horizontal"
+            }
 
             // Use state.novelProgressPercent for slider value, which is updated via onNovelProgressChanged callback
             val novelProgressFromState = state.novelProgressPercent
@@ -674,6 +683,8 @@ class ReaderActivity : BaseActivity() {
                 onEditBottomBar = { showBottomBarEditor = true },
 
                 showProgressSlider = showProgressSlider,
+                progressSliderMode = progressSliderMode,
+                verticalProgressSliderSize = verticalProgressSliderSize,
                 currentProgress = novelProgressFromState,
                 onProgressChange = { newProgress ->
                     viewModel.updateNovelProgressPercent(newProgress)
