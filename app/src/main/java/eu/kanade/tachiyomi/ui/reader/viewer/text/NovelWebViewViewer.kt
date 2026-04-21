@@ -952,8 +952,15 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         }
     }
 
+    private fun shouldAutoMarkShortChapter(page: ReaderPage?): Boolean {
+        if (!preferences.novelMarkShortChapterAsRead.get()) return false
+        val chapter = page?.chapter?.chapter ?: return false
+        return !chapter.read && chapter.last_page_read <= 0
+    }
+
     private fun syncShortChapterProgressIfNeeded() {
         val page = currentPage ?: return
+        if (!shouldAutoMarkShortChapter(page)) return
         if (page.status != Page.State.Ready || page.text.isNullOrBlank()) return
 
         evaluateJavascriptSafe(

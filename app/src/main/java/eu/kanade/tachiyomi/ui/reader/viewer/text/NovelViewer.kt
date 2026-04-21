@@ -609,7 +609,10 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         if (textHeight <= 0) return lastSavedProgress.coerceIn(0f, 1f)
 
         // If the chapter text fits entirely within the viewport, it's 100% visible
-        if (textHeight <= scrollView.height) return 1f
+        if (textHeight <= scrollView.height) {
+            val page = loaded.chapter.pages?.firstOrNull() as? ReaderPage
+            return if (shouldAutoMarkShortChapter(page)) 1f else lastSavedProgress.coerceIn(0f, 1f)
+        }
 
         val scrollableHeight = (textHeight - scrollView.height).coerceAtLeast(1)
         val scrollInText = (scrollY - textTop).coerceIn(0, scrollableHeight)
@@ -635,6 +638,26 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             activity.saveNovelProgress(page, progressValue)
             logcat(LogPriority.DEBUG) { "NovelViewer: Saving progress $progressValue% for chapter" }
         }
+    }
+
+    private fun shouldAutoMarkShortChapter(page: ReaderPage?): Boolean {
+        if (!preferences.novelMarkShortChapterAsRead.get()) return false
+        val chapter = page?.chapter?.chapter ?: return false
+        return !chapter.read && chapter.last_page_read <= 0
+    }
+
+    private fun syncShortChapterProgressIfNeeded() {
+        val page = currentPage ?: return
+        if (!shouldAutoMarkShortChapter(page)) return
+        if (page.status != Page.State.Ready || page.text.isNullOrBlank()) return
+
+        val loaded = loadedChapters.getOrNull(currentChapterIndex) ?: return
+        val textHeight = loaded.textView.height
+        if (textHeight <= 0 || textHeight > scrollView.height) return
+
+        lastSavedProgress = 1f
+        saveProgress(1f)
+        activity.onNovelProgressChanged(1f)
     }
 
     private fun updateCurrentChapterFromScroll(scrollY: Int) {
@@ -1519,6 +1542,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         scrollView.post {
             isRestoringScroll = false
             chapterEntryTime = System.currentTimeMillis()
+            syncShortChapterProgressIfNeeded()
         }
     }
 
@@ -2056,7 +2080,13 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         }
         val child = scrollView.getChildAt(0)
         val totalHeight = if (child != null) child.height - scrollView.height else 0
-        if (totalHeight <= 0) return 100 // If no scrollable content, we're at 100%
+        if (totalHeight <= 0) {
+            return if (shouldAutoMarkShortChapter(currentPage)) {
+                100
+            } else {
+                (lastSavedProgress * 100).roundToInt().coerceIn(0, 100)
+            }
+        }
         val progress = scrollY.toFloat() / totalHeight
         // Round up if very close to 100% (within 2%) to allow reaching 100%
         val percent = if (progress >= 0.98f) 100 else (progress * 100).toInt()
