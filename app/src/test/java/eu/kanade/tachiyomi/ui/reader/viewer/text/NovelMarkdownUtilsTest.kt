@@ -57,5 +57,26 @@ class NovelMarkdownUtilsTest {
         val html = NovelMarkdownUtils.toHtml(markdown)
 
         assertEquals("<p>Use &lt;script&gt;alert(1)&lt;/script&gt; and &lt;tag&gt;.</p>", html)
+
+    @Test
+    fun `normalizeContentForHtml keeps txt content as escaped plain text`() {
+        val content = "Line 1\n\n<punch>\n  indented line"
+
+        val html = NovelViewerTextUtils.normalizeContentForHtml(content, "chapter.txt")
+
+        assertTrue(html.contains("data-tsundoku-plain-text=\"1\""))
+        assertTrue(html.contains("white-space: pre-wrap"))
+        assertTrue(html.contains("&lt;punch&gt;"))
+        assertTrue(html.contains("indented line"))
+    }
+
+    @Test
+    fun `normalizeContentForHtml treats angle bracket words as plain text when not html`() {
+        val content = "<punch> is not an html tag"
+
+        val html = NovelViewerTextUtils.normalizeContentForHtml(content, "chapter")
+
+        assertTrue(html.contains("data-tsundoku-plain-text=\"1\""))
+        assertTrue(html.contains("&lt;punch&gt; is not an html tag"))
     }
 }

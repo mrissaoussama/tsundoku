@@ -415,6 +415,10 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     private var isAutoScrolling = false
     private var autoScrollJob: Job? = null
 
+    private var navigator: eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation = eu.kanade.tachiyomi.ui.reader.viewer.navigation.DisabledNavigation()
+
+
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var loadJob: Job? = null
     private var currentPage: ReaderPage? = null
@@ -507,38 +511,26 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                 // Never toggle menu while the user has text selected
                 if (loadedChapters.any { it.textView.hasSelection() }) return false
 
-                val viewWidth = container.width.toFloat()
-                val viewHeight = container.height.toFloat()
-                val x = e.x
-                val y = e.y
+                val pos = android.graphics.PointF(
+                    e.x / container.width.toFloat(),
+                    e.y / container.height.toFloat(),
+                )
 
-                // Define center region (middle third of the screen)
-                val centerXStart = viewWidth / 3
-                val centerXEnd = viewWidth * 2 / 3
-                val centerYStart = viewHeight / 3
-                val centerYEnd = viewHeight * 2 / 3
-
-                if (x in centerXStart..centerXEnd && y in centerYStart..centerYEnd) {
-                    // Center tap - toggle menu
-                    activity.toggleMenu()
-                    return true
-                }
-
-                // Handle tap-to-scroll if enabled
-                if (preferences.novelTapToScroll.get()) {
-                    // Top zone - scroll up
-                    if (y < centerYStart) {
-                        scrollView.smoothScrollBy(0, -250)
-                        return true
+                when (navigator.getAction(pos)) {
+                    eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.MENU -> {
+                        activity.toggleMenu()
                     }
-                    // Bottom zone - scroll down
-                    if (y > centerYEnd) {
-                        scrollView.smoothScrollBy(0, 250)
-                        return true
+                    eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.NEXT,
+                    eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.RIGHT -> {
+                        scrollView.smoothScrollBy(0, (container.height * 0.8).toInt())
+                    }
+                    eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.PREV,
+                    eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.LEFT -> {
+                        scrollView.smoothScrollBy(0, -(container.height * 0.8).toInt())
                     }
                 }
 
-                return false
+                return true
             }
         },
     ).apply {
@@ -985,6 +977,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     }
 
     private fun observePreferences() {
+
+
         // Observe preference changes and refresh content
         scope.launch {
             merge(
@@ -1703,12 +1697,12 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                     val translatedContent = activity.translateContentIfEnabled(content)
                     withContext(Dispatchers.Main) {
                         if (!textView.isAttachedToWindow) return@withContext
-                        setTextViewContent(textView, translatedContent)
+                        setTextViewContent(textView, translatedContent, loadedChapter.chapter.chapter.url)
                     }
                 }
             } else {
                 // Show original content
-                setTextViewContent(textView, content)
+                setTextViewContent(textView, content, loadedChapter.chapter.chapter.url)
             }
         }
     }
@@ -1873,12 +1867,12 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         // Apply translation if enabled (async)
         val finalContent = content
         // Always show content immediately; translation (if enabled) replaces it asynchronously.
-        setTextViewContent(textView, finalContent)
+        setTextViewContent(textView, finalContent, chapter.chapter.url)
         if (activity.isTranslationEnabled() && !preferences.novelShowRawHtml.get()) {
             scope.launch {
                 val translatedContent = activity.translateContentIfEnabled(finalContent)
                 withContext(Dispatchers.Main) {
-                    setTextViewContent(textView, translatedContent)
+                    setTextViewContent(textView, translatedContent, chapter.chapter.url)
                 }
             }
         }
@@ -2129,7 +2123,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     private fun getThemeColors(theme: String): Pair<Int, Int> =
         NovelViewerTextUtils.getThemeColors(activity, preferences, theme)
 
-    private fun setTextViewContent(textView: TextView, content: String) {
+    private fun setTextViewContent(textView: TextView, content: String, chapterUrl: String?) {
         // Check if raw HTML mode is enabled (for debugging)
         val showRawHtml = preferences.novelShowRawHtml.get()
         if (showRawHtml) {
@@ -2141,7 +2135,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         }
 
         // Process content to ensure paragraph tags exist for styling
-        var processedContent = content
+    var processedContent = NovelViewerTextUtils.normalizeContentForHtml(content, chapterUrl)
 
         // Strip script tags and their content — they would render as visible text
         processedContent = processedContent.replace(Regex("<script[^>]*>.*?</script>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")

@@ -89,6 +89,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     private var isAutoScrolling = false
     private var autoScrollJob: Job? = null
 
+    private var navigator: eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation = eu.kanade.tachiyomi.ui.reader.viewer.navigation.DisabledNavigation()
+
     // TTS support
     private var tts: TextToSpeech? = null
     private var ttsInitialized = false
@@ -166,37 +168,26 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 if (isEditingMode) return false
 
-                val viewWidth = container.width.toFloat()
-                val viewHeight = container.height.toFloat()
-                val x = e.x
-                val y = e.y
+                val pos = android.graphics.PointF(
+                    e.x / container.width.toFloat(),
+                    e.y / container.height.toFloat(),
+                )
 
-                // Define center region (middle third of the screen)
-                val centerXStart = viewWidth / 3
-                val centerXEnd = viewWidth * 2 / 3
-                val centerYStart = viewHeight / 3
-                val centerYEnd = viewHeight * 2 / 3
-
-                if (x in centerXStart..centerXEnd && y in centerYStart..centerYEnd) {
-                    activity.toggleMenu()
-                    return true
-                }
-
-                // Handle tap-to-scroll if enabled
-                if (preferences.novelTapToScroll.get()) {
-                    // Top zone - scroll up
-                    if (y < centerYStart) {
-                        webView.evaluateJavascript("window.scrollBy(0, -${(viewHeight * 0.8).toInt()});", null)
-                        return true
+                when (navigator.getAction(pos)) {
+                    eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.MENU -> {
+                        activity.toggleMenu()
                     }
-                    // Bottom zone - scroll down
-                    if (y > centerYEnd) {
-                        webView.evaluateJavascript("window.scrollBy(0, ${(viewHeight * 0.8).toInt()});", null)
-                        return true
+                    eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.NEXT,
+                    eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.RIGHT -> {
+                        webView.evaluateJavascript("window.scrollBy(0, ${(container.height * 0.8).toInt()});", null)
+                    }
+                    eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.PREV,
+                    eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.LEFT -> {
+                        webView.evaluateJavascript("window.scrollBy(0, -${(container.height * 0.8).toInt()});", null)
                     }
                 }
 
-                return false
+                return true
             }
         },
     ).apply {
@@ -566,6 +557,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     }
 
     private fun observePreferences() {
+
         scope.launch {
             merge(
                 preferences.novelFontSize.changes().drop(1),
@@ -1154,11 +1146,11 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                 val translatedContent = activity.translateContentIfEnabled(finalContent)
                 withContext(Dispatchers.Main) {
                     loadingIndicator?.hide()
-                    loadHtmlContent(translatedContent, chapterId, chapter.chapter.name)
+                    loadHtmlContent(translatedContent, chapterId, chapter.chapter.name, chapter.chapter.url)
                 }
             }
         } else {
-            loadHtmlContent(finalContent, chapterId, chapter.chapter.name)
+            loadHtmlContent(finalContent, chapterId, chapter.chapter.name, chapter.chapter.url)
         }
     }
 
@@ -1398,6 +1390,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             } else {
                 finalContent
             }
+            val renderableContent = NovelViewerTextUtils.normalizeContentForHtml(
+                processedContent,
+                chapter.chapter.url,
+            )
 
             withContext(Dispatchers.Main) {
                 if (isAppendOrPrepend && preferences.novelInfiniteScroll.get()) {
@@ -1413,12 +1409,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                         }
                     }
                     if (isPrepend) {
-                        prependHtmlContent(processedContent, chapterId, chapter.chapter.name)
+                        prependHtmlContent(renderableContent, chapterId, chapter.chapter.name)
                     } else {
-                        appendHtmlContent(processedContent, chapterId, chapter.chapter.name)
+                        appendHtmlContent(renderableContent, chapterId, chapter.chapter.name)
                     }
                 } else {
-                    loadHtmlContent(processedContent, chapterId, chapter.chapter.name)
+                    loadHtmlContent(renderableContent, chapterId, chapter.chapter.name, chapter.chapter.url)
 
                     // Fresh load: reset tracking to this single chapter.
                     loadedChapterIds.clear()
@@ -1544,19 +1540,13 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         logcat(LogPriority.DEBUG) { "NovelWebViewViewer: Appended chapter $chapterId (${loadedChapterIds.size} total)" }
     }
 
-    private fun loadHtmlContent(content: String, chapterId: Long? = null, chapterName: String? = null) {
-        val sourceContent = if (NovelMarkdownUtils.isMarkdownUrl(getCurrentChapterUrl())) {
-            NovelMarkdownUtils.toHtml(content)
-        } else {
-            content
-        }
-
-        // Strip script tags from content to prevent unwanted JS execution
-        var cleanContent = sourceContent
-            .replace(Regex("<script[^>]*>.*?</script>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
-            .replace(Regex("<script[^>]*/>", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("<style[^>]*>.*?</style>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
-            .replace(Regex("<noscript[^>]*>.*?</noscript>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+    private fun loadHtmlContent(
+        content: String,
+        chapterId: Long? = null,
+        chapterName: String? = null,
+        chapterUrl: String? = null,
+    ) {
+        var cleanContent = NovelViewerTextUtils.normalizeContentForHtml(content, chapterUrl)
 
         val blockMedia = preferences.novelBlockMedia.get()
         if (blockMedia) {
@@ -1594,26 +1584,15 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         val chapterMetaScript = buildChapterMetaScript()
 
         var finalContent = cleanContent
-        var epubHead = ""
+        var embeddedHead = ""
 
         try {
             val doc = org.jsoup.Jsoup.parse(finalContent)
 
-            // Extract and filter EPUB styles
-            if (preferences.enableEpubStyles.get()) {
-                doc.select("style[data-epub-css]").forEach { style ->
-                    epubHead += "\n" + style.outerHtml()
-                }
-            }
-            doc.select("style[data-epub-css]").remove()
 
-            // Extract and filter EPUB scripts
-            if (preferences.enableEpubJs.get()) {
-                doc.select("script[data-epub-js]").forEach { script ->
-                    epubHead += "\n" + script.outerHtml()
-                }
-            }
-            doc.select("script[data-epub-js]").remove()
+            doc.select("style, link[rel=stylesheet]").remove()
+
+            doc.select("script, noscript").remove()
 
             val bodyNode = doc.body()
             if (bodyNode != null && bodyNode.hasText()) {
@@ -1666,7 +1645,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     $mediaBlockCss
                 </style>
                 <style id="tsundoku-custom-style">$escapedInitialStyle</style>
-                $epubHead
+                $embeddedHead
                 <script>$chapterMetaScript</script>
             </head>
             <body>
@@ -1678,12 +1657,6 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         """.trimIndent()
 
         webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-    }
-
-    private fun getCurrentChapterUrl(): String {
-        return currentPage?.url
-            ?: currentChapters?.currChapter?.chapter?.url
-            ?: ""
     }
 
     private fun stripMediaTags(content: String): String {
@@ -2132,6 +2105,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         }
 
         val processedContent = activity.translateContentIfEnabled(content)
+        val renderableContent = NovelViewerTextUtils.normalizeContentForHtml(
+            processedContent,
+            chapter.chapter.url,
+        )
 
         withContext(Dispatchers.Main) {
             if (isDestroyed) return@withContext
@@ -2145,9 +2122,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     loadedChapterIds.add(chapterId)
                     loadedChapters.add(chapter)
                 }
-                appendHtmlContent(processedContent, chapterId, chapter.chapter.name)
+                appendHtmlContent(renderableContent, chapterId, chapter.chapter.name)
             } else {
-                loadHtmlContent(processedContent, chapterId, chapter.chapter.name)
+                loadHtmlContent(renderableContent, chapterId, chapter.chapter.name, chapter.chapter.url)
                 loadedChapterIds.clear()
                 loadedChapters.clear()
                 loadedChapterIds.add(chapterId)
