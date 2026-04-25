@@ -432,22 +432,18 @@ class LibraryScreenModel(
         categories: List<Category>,
         showSystemCategory: Boolean,
     ): Map<Category, List</* LibraryItem */ Long>> {
-        val visibleCategories = categories.filter { showSystemCategory || !it.isSystemCategory }
-        if (visibleCategories.isEmpty()) return emptyMap()
-
-        val visibleCategoryIds = visibleCategories.asSequence().map { it.id }.toHashSet()
-        val visibleCategoryById = visibleCategories.associateBy { it.id }
-        val groupedItems = visibleCategories.associateWith { mutableListOf<Long>() }.toMutableMap()
-
+        val groupCache = mutableMapOf</* Category */ Long, MutableList</* LibraryItem */ Long>>()
         for (item in this) {
-            for (categoryId in item.libraryManga.categories) {
-                if (categoryId in visibleCategoryIds) {
-                    groupedItems[visibleCategoryById.getValue(categoryId)]?.add(item.id)
-                }
+            val cats = item.libraryManga.categories
+            for (categoryId in cats) {
+                groupCache.getOrPut(categoryId) { ArrayList() }.add(item.id)
             }
         }
 
-        return groupedItems.mapValues { it.value }
+        val visibleCategories = categories.filter { showSystemCategory || !it.isSystemCategory }
+        return visibleCategories.associateWith {
+            groupCache[it.id] ?: emptyList()
+        }
     }
 
     private fun Map<Category, List</* LibraryItem */ Long>>.applySort(
