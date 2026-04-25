@@ -305,6 +305,11 @@ object SettingsNovelReaderScreen : SearchableSettings {
                     onValueChanged = { readerPreferences.novelMarkAsReadThreshold.set(it) },
                 ),
                 Preference.PreferenceItem.SwitchPreference(
+                    preference = readerPreferences.novelMarkShortChapterAsRead,
+                    title = "Auto-mark short chapters as read",
+                    subtitle = "If a chapter fits the screen without scrolling, mark it read immediately",
+                ),
+                Preference.PreferenceItem.SwitchPreference(
                     preference = readerPreferences.novelHideChapterTitle,
                     title = "Hide chapter title",
                     subtitle = "Strip chapter title from content",

@@ -307,6 +307,10 @@ class ReaderPreferences(
     // Mark chapter as read when progress reaches this percentage
     val novelMarkAsReadThreshold: Preference<Int> = preferenceStore.getInt("pref_novel_mark_read_threshold", 95)
 
+    // If enabled, chapters that fully fit in the viewport are marked read immediately.
+    val novelMarkShortChapterAsRead: Preference<Boolean> =
+        preferenceStore.getBoolean("pref_novel_mark_short_chapter_read", true)
+
     // Show raw HTML (display HTML tags without parsing) - useful for debugging
     val novelShowRawHtml: Preference<Boolean> = preferenceStore.getBoolean("pref_novel_show_raw_html", false)
 

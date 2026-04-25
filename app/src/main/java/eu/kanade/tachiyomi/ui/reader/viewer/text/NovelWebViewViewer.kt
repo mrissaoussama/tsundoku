@@ -409,6 +409,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     injectCustomScript()
                     injectScrollTracking()
                     restoreScrollPosition()
+                    syncShortChapterProgressIfNeeded()
                     if (!preferences.novelInfiniteScroll.get()) {
                         injectNextChapterButton()
                     }
@@ -948,6 +949,34 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             val progressValue = (lastSavedProgress * 100).toInt().coerceIn(0, 100)
             activity.saveNovelProgress(page, progressValue)
             logcat(LogPriority.DEBUG) { "NovelWebViewViewer: Saving progress $progressValue%" }
+        }
+    }
+
+    private fun shouldAutoMarkShortChapter(page: ReaderPage?): Boolean {
+        if (!preferences.novelMarkShortChapterAsRead.get()) return false
+        val chapter = page?.chapter?.chapter ?: return false
+        return !chapter.read && chapter.last_page_read <= 0
+    }
+
+    private fun syncShortChapterProgressIfNeeded() {
+        val page = currentPage ?: return
+        if (!shouldAutoMarkShortChapter(page)) return
+        if (page.status != Page.State.Ready || page.text.isNullOrBlank()) return
+
+        evaluateJavascriptSafe(
+            """
+            (function() {
+                var maxScroll = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+                return maxScroll <= 0;
+            })();
+            """.trimIndent(),
+        ) { result ->
+            if (result == "true") {
+                // If the whole chapter fits in the viewport, treat it as fully read.
+                lastSavedProgress = 1f
+                saveProgress()
+                activity.onNovelProgressChanged(1f)
+            }
         }
     }
 
