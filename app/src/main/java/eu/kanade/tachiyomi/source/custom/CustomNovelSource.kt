@@ -46,6 +46,24 @@ internal fun rebaseCustomSourceUrl(
     return customBase + "/" + value.removePrefix("/")
 }
 
+internal fun mapCustomUrlToSourceUrl(
+    url: String?,
+    customBaseUrl: String,
+    sourceBaseUrl: String? = null,
+): String? {
+    val value = url?.trim().orEmpty()
+    if (value.isBlank()) return url
+
+    val customBase = customBaseUrl.trimEnd('/')
+    val sourceBase = sourceBaseUrl?.trimEnd('/') ?: return value
+
+    if (value.startsWith(customBase)) {
+        return sourceBase + value.removePrefix(customBase)
+    }
+
+    return value
+}
+
 internal fun rebaseCustomSourceManga(
     manga: SManga,
     customBaseUrl: String,
@@ -191,21 +209,21 @@ class CustomNovelSource(
 
     override suspend fun getMangaDetails(manga: SManga): SManga {
         baseSource?.let { source ->
-            return rebaseManga(source.getMangaDetails(manga))
+            return rebaseManga(source.getMangaDetails(toBaseSourceManga(manga)))
         }
         return super.getMangaDetails(manga)
     }
 
     override suspend fun getChapterList(manga: SManga): List<SChapter> {
         baseSource?.let { source ->
-            return source.getChapterList(manga).map { rebaseChapter(it) }
+            return source.getChapterList(toBaseSourceManga(manga)).map { rebaseChapter(it) }
         }
         return super.getChapterList(manga)
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
         baseSource?.let { source ->
-            return source.getPageList(chapter).map { rebasePage(it) }
+            return source.getPageList(toBaseSourceChapter(chapter)).map { rebasePage(it) }
         }
         return super.getPageList(chapter)
     }
@@ -329,7 +347,7 @@ class CustomNovelSource(
     override suspend fun fetchPageText(page: Page): String {
         val bs = baseSource
         if (bs != null && bs.isNovelSource()) {
-            return bs.fetchNovelPageText(rebasePage(page))
+            return bs.fetchNovelPageText(toBaseSourcePage(page))
         }
 
         // If based on extension but source is not a novel source, fall through to CSS selectors
@@ -557,6 +575,30 @@ class CustomNovelSource(
         }
 
         return customBase + "/" + value.removePrefix("/")
+    }
+
+    internal fun toBaseSourceUrl(url: String?, sourceBaseUrlOverride: String? = baseSourceUrl): String? {
+        return mapCustomUrlToSourceUrl(url, baseUrl, sourceBaseUrlOverride)
+    }
+
+    private fun toBaseSourceManga(manga: SManga, sourceBaseUrlOverride: String? = baseSourceUrl): SManga {
+        return manga.copy().apply {
+            url = toBaseSourceUrl(url, sourceBaseUrlOverride) ?: url
+            thumbnail_url = toBaseSourceUrl(thumbnail_url, sourceBaseUrlOverride) ?: thumbnail_url
+        }
+    }
+
+    private fun toBaseSourceChapter(chapter: SChapter, sourceBaseUrlOverride: String? = baseSourceUrl): SChapter {
+        return SChapter.create().also { sourceChapter ->
+            sourceChapter.copyFrom(chapter)
+            sourceChapter.url = toBaseSourceUrl(chapter.url, sourceBaseUrlOverride) ?: chapter.url
+        }
+    }
+
+    private fun toBaseSourcePage(page: Page, sourceBaseUrlOverride: String? = baseSourceUrl): Page {
+        return Page(page.index, toBaseSourceUrl(page.url, sourceBaseUrlOverride).orEmpty(), page.imageUrl, page.uri).also {
+            it.text = page.text
+        }
     }
 
     companion object {

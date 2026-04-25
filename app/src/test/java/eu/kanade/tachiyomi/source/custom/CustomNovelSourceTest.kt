@@ -54,4 +54,16 @@ class CustomNovelSourceTest {
         )
         assertTrue(rebaseCustomSourcePage(page, "https://custom.example", "https://old.example").url.startsWith("https://custom.example"))
     }
+
+    @Test
+    fun `toBaseSourceUrl restores delegated host from custom url`() {
+        assertEquals(
+            "https://old.example/series/test",
+            mapCustomUrlToSourceUrl("https://custom.example/series/test", "https://custom.example", "https://old.example"),
+        )
+        assertEquals(
+            "https://old.example/series/test",
+            mapCustomUrlToSourceUrl("https://old.example/series/test", "https://custom.example", "https://old.example"),
+        )
+    }
 }
