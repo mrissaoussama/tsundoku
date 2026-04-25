@@ -24,6 +24,90 @@ import tachiyomi.domain.source.service.SourceManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 
+internal fun rebaseCustomSourceUrl(
+    url: String?,
+    customBaseUrl: String,
+    sourceBaseUrl: String? = null,
+): String? {
+    val value = url?.trim().orEmpty()
+    if (value.isBlank()) return url
+
+    val customBase = customBaseUrl.trimEnd('/')
+    val sourceBase = sourceBaseUrl?.trimEnd('/')
+
+    if (sourceBase != null && value.startsWith(sourceBase)) {
+        return customBase + value.removePrefix(sourceBase)
+    }
+
+    if (value.startsWith("http://") || value.startsWith("https://")) {
+        return value
+    }
+
+    return customBase + "/" + value.removePrefix("/")
+}
+
+internal fun rebaseCustomSourceManga(
+    manga: SManga,
+    customBaseUrl: String,
+    sourceBaseUrl: String? = null,
+): SManga {
+    return manga.copy().apply {
+        url = rebaseCustomSourceUrl(url, customBaseUrl, sourceBaseUrl) ?: url
+        thumbnail_url = rebaseCustomSourceUrl(thumbnail_url, customBaseUrl, sourceBaseUrl) ?: thumbnail_url
+    }
+}
+
+internal fun rebaseCustomSourceChapter(
+    chapter: SChapter,
+    customBaseUrl: String,
+    sourceBaseUrl: String? = null,
+): SChapter {
+    return SChapter.create().also { rebased ->
+        rebased.copyFrom(chapter)
+        rebased.url = rebaseCustomSourceUrl(chapter.url, customBaseUrl, sourceBaseUrl) ?: chapter.url
+    }
+}
+
+internal fun rebaseCustomSourcePage(
+    page: Page,
+    customBaseUrl: String,
+    sourceBaseUrl: String? = null,
+): Page {
+    return Page(page.index, rebaseCustomSourceUrl(page.url, customBaseUrl, sourceBaseUrl).orEmpty(), page.imageUrl, page.uri).also {
+        it.text = page.text
+    }
+}
+
+internal fun rebaseCustomSourceMangasPage(
+    mangasPage: MangasPage,
+    customBaseUrl: String,
+    sourceBaseUrl: String? = null,
+): MangasPage {
+    return MangasPage(
+        mangas = mangasPage.mangas.map { rebaseCustomSourceManga(it, customBaseUrl, sourceBaseUrl) },
+        hasNextPage = mangasPage.hasNextPage,
+    )
+}
+
+internal fun stableCustomSourceId(name: String, baseUrl: String): Long {
+    return (name + baseUrl).hashCode().toLong() and 0x7FFFFFFF
+}
+
+internal fun customSourceStorageFileCandidates(
+    directory: java.io.File,
+    sourceId: Long,
+    sourceName: String,
+): List<java.io.File> {
+    return listOf(
+        java.io.File(directory, "$sourceId.json"),
+        java.io.File(directory, "${sanitizeCustomSourceFilename(sourceName)}.json"),
+    )
+}
+
+private fun sanitizeCustomSourceFilename(name: String): String {
+    return name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+}
+
 /**
  * Custom Novel Extension - User-defined novel source
  *
@@ -65,6 +149,15 @@ class CustomNovelSource(
         }
     }
 
+    private val baseSourceUrl: String? by lazy {
+        baseSource?.let { source ->
+            when (source) {
+                is HttpSource -> source.baseUrl.trimEnd('/')
+                else -> null
+            }
+        }
+    }
+
     override fun headersBuilder(): Headers.Builder = super.headersBuilder().apply {
         config.headers.forEach { (key, value) ->
             add(key, value)
@@ -76,32 +169,44 @@ class CustomNovelSource(
     // (protected request/parse methods aren't accessible on external instances)
 
     override suspend fun getPopularManga(page: Int): MangasPage {
-        baseSource?.let { return it.getPopularManga(page) }
+        baseSource?.let { source ->
+            return rebaseMangasPage(source.getPopularManga(page))
+        }
         return super.getPopularManga(page)
     }
 
     override suspend fun getLatestUpdates(page: Int): MangasPage {
-        baseSource?.let { return it.getLatestUpdates(page) }
+        baseSource?.let { source ->
+            return rebaseMangasPage(source.getLatestUpdates(page))
+        }
         return super.getLatestUpdates(page)
     }
 
     override suspend fun getSearchManga(page: Int, query: String, filters: FilterList): MangasPage {
-        baseSource?.let { return it.getSearchManga(page, query, filters) }
+        baseSource?.let { source ->
+            return rebaseMangasPage(source.getSearchManga(page, query, filters))
+        }
         return super.getSearchManga(page, query, filters)
     }
 
     override suspend fun getMangaDetails(manga: SManga): SManga {
-        baseSource?.let { return it.getMangaDetails(manga) }
+        baseSource?.let { source ->
+            return rebaseManga(source.getMangaDetails(manga))
+        }
         return super.getMangaDetails(manga)
     }
 
     override suspend fun getChapterList(manga: SManga): List<SChapter> {
-        baseSource?.let { return it.getChapterList(manga) }
+        baseSource?.let { source ->
+            return source.getChapterList(manga).map { rebaseChapter(it) }
+        }
         return super.getChapterList(manga)
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
-        baseSource?.let { return it.getPageList(chapter) }
+        baseSource?.let { source ->
+            return source.getPageList(chapter).map { rebasePage(it) }
+        }
         return super.getPageList(chapter)
     }
 
@@ -224,7 +329,7 @@ class CustomNovelSource(
     override suspend fun fetchPageText(page: Page): String {
         val bs = baseSource
         if (bs != null && bs.isNovelSource()) {
-            return bs.fetchNovelPageText(page)
+            return bs.fetchNovelPageText(rebasePage(page))
         }
 
         // If based on extension but source is not a novel source, fall through to CSS selectors
@@ -407,6 +512,51 @@ class CustomNovelSource(
     private fun String.buildAjaxUrl(baseUrl: String, novelId: String): String {
         return this.replace("{baseUrl}", baseUrl)
             .replace("{novelId}", novelId)
+    }
+
+    internal fun rebaseMangasPage(
+        mangasPage: MangasPage,
+        sourceBaseUrlOverride: String? = baseSourceUrl,
+    ): MangasPage {
+        return MangasPage(mangasPage.mangas.map { rebaseManga(it, sourceBaseUrlOverride) }, mangasPage.hasNextPage)
+    }
+
+    internal fun rebaseManga(manga: SManga, sourceBaseUrlOverride: String? = baseSourceUrl): SManga {
+        return manga.copy().apply {
+            url = rebaseUrl(url, sourceBaseUrlOverride) ?: url
+            thumbnail_url = rebaseUrl(thumbnail_url, sourceBaseUrlOverride) ?: thumbnail_url
+        }
+    }
+
+    internal fun rebaseChapter(chapter: SChapter, sourceBaseUrlOverride: String? = baseSourceUrl): SChapter {
+        return SChapter.create().also { rebased ->
+            rebased.copyFrom(chapter)
+            rebased.url = rebaseUrl(chapter.url, sourceBaseUrlOverride) ?: chapter.url
+        }
+    }
+
+    internal fun rebasePage(page: Page, sourceBaseUrlOverride: String? = baseSourceUrl): Page {
+        return Page(page.index, rebaseUrl(page.url, sourceBaseUrlOverride).orEmpty(), page.imageUrl, page.uri).also {
+            it.text = page.text
+        }
+    }
+
+    internal fun rebaseUrl(url: String?, sourceBaseUrlOverride: String? = baseSourceUrl): String? {
+        val value = url?.trim().orEmpty()
+        if (value.isBlank()) return url
+
+        val customBase = baseUrl.trimEnd('/')
+        val sourceBase = sourceBaseUrlOverride
+
+        if (sourceBase != null && value.startsWith(sourceBase)) {
+            return customBase + value.removePrefix(sourceBase)
+        }
+
+        if (value.startsWith("http://") || value.startsWith("https://")) {
+            return value
+        }
+
+        return customBase + "/" + value.removePrefix("/")
     }
 
     companion object {

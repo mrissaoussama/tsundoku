@@ -50,7 +50,7 @@ class CustomSourceManager(
         customSourcesDir.listFiles { file -> file.extension == "json" }?.forEach { file ->
             try {
                 val config = json.decodeFromString<CustomSourceConfig>(file.readText())
-                sources.add(CustomNovelSource(config))
+                sources.add(CustomNovelSource(config.withStableId()))
                 logcat(LogPriority.DEBUG) { "Loaded custom source: ${config.name}" }
             } catch (e: Exception) {
                 logcat(LogPriority.ERROR, e) { "Failed to load custom source: ${file.name}" }
@@ -71,13 +71,14 @@ class CustomSourceManager(
     fun createSource(config: CustomSourceConfig): Result<CustomNovelSource> {
         return try {
             // Validate config
-            validateConfig(config)
+            val normalizedConfig = config.withStableId()
+            validateConfig(normalizedConfig)
 
             // Create source
-            val source = CustomNovelSource(config)
+            val source = CustomNovelSource(normalizedConfig)
 
             // Save to disk
-            saveSourceConfig(config)
+            saveSourceConfig(normalizedConfig)
 
             // Add to list
             _customSources.update { it + source }
@@ -93,13 +94,14 @@ class CustomSourceManager(
      */
     fun updateSource(oldId: Long, newConfig: CustomSourceConfig): Result<CustomNovelSource> {
         return try {
-            validateConfig(newConfig)
+            val normalizedConfig = newConfig.withStableId(oldId)
+            validateConfig(normalizedConfig)
 
             // Remove old source
             deleteSource(oldId)
 
             // Create new source
-            createSource(newConfig)
+            createSource(normalizedConfig)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -114,9 +116,9 @@ class CustomSourceManager(
         // Remove from list
         _customSources.update { it.filter { s -> s.id != sourceId } }
 
-        // Delete file
-        val file = File(customSourcesDir, "${sanitizeFilename(source.name)}.json")
-        return file.delete()
+        // Delete both the stable id file and the legacy name-based file.
+        val filesToDelete = customSourceStorageFileCandidates(customSourcesDir, source.id, source.name)
+        return filesToDelete.any { it.delete() }
     }
 
     /**
@@ -124,8 +126,9 @@ class CustomSourceManager(
      */
     fun exportSource(sourceId: Long): String? {
         val source = _customSources.value.find { it.id == sourceId } ?: return null
-        val file = File(customSourcesDir, "${sanitizeFilename(source.name)}.json")
-        return if (file.exists()) file.readText() else null
+        val files = customSourceStorageFileCandidates(customSourcesDir, source.id, source.name)
+        val file = files.firstOrNull { it.exists() } ?: return null
+        return file.readText()
     }
 
     /**
@@ -420,12 +423,16 @@ class CustomSourceManager(
     }
 
     private fun saveSourceConfig(config: CustomSourceConfig) {
-        val file = File(customSourcesDir, "${sanitizeFilename(config.name)}.json")
+        val file = File(customSourcesDir, "${config.id ?: stableCustomSourceId(config.name, config.baseUrl)}.json")
         file.writeText(json.encodeToString(config))
     }
 
-    private fun sanitizeFilename(name: String): String {
-        return name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+    private fun CustomSourceConfig.withStableId(id: Long? = this.id): CustomSourceConfig {
+        return if (id != null) {
+            copy(id = id)
+        } else {
+            copy(id = stableCustomSourceId(name, baseUrl))
+        }
     }
 }
 
