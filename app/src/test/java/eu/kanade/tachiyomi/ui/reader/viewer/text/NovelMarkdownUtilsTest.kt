@@ -57,6 +57,7 @@ class NovelMarkdownUtilsTest {
         val html = NovelMarkdownUtils.toHtml(markdown)
 
         assertEquals("<p>Use &lt;script&gt;alert(1)&lt;/script&gt; and &lt;tag&gt;.</p>", html)
+    }
 
     @Test
     fun `normalizeContentForHtml keeps txt content as escaped plain text`() {

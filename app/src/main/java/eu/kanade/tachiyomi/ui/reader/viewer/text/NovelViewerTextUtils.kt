@@ -107,6 +107,7 @@ object NovelViewerTextUtils {
             .replace("\"", "&quot;")
             .replace("'", "&#39;")
     }
+
     /**
      * Apply user-configured find & replace rules to content.
      * Rules are stored as JSON in the novelRegexReplacements preference.
