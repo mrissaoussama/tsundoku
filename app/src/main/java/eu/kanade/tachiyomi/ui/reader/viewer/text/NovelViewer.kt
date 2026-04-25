@@ -1783,6 +1783,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             content = stripChapterTitle(content, chapter.chapter.name)
         }
 
+        content = normalizeContentForHtml(content, chapter.chapter.url)
+
         // Optionally force lowercase
         if (preferences.novelForceTextLowercase.get()) {
             content = content.lowercase()
@@ -2274,6 +2276,9 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
      */
     private fun applyRegexReplacements(content: String): String =
         NovelViewerTextUtils.applyRegexReplacements(content, preferences)
+
+    private fun normalizeContentForHtml(content: String, chapterUrl: String?): String =
+        NovelViewerTextUtils.normalizeContentForHtml(content, chapterUrl)
 
     /**
      * Dismiss any active text selection (action mode / handles) without toggling

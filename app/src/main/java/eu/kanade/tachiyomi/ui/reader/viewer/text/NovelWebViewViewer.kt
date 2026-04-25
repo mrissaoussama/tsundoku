@@ -1390,11 +1390,6 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
             } else {
                 finalContent
             }
-            val renderableContent = NovelViewerTextUtils.normalizeContentForHtml(
-                processedContent,
-                chapter.chapter.url,
-            )
-
             withContext(Dispatchers.Main) {
                 if (isAppendOrPrepend && preferences.novelInfiniteScroll.get()) {
                     if (!loadedChapterIds.contains(chapterId)) {
@@ -1409,12 +1404,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                         }
                     }
                     if (isPrepend) {
-                        prependHtmlContent(renderableContent, chapterId, chapter.chapter.name)
+                        prependHtmlContent(processedContent, chapterId, chapter.chapter.name, chapter.chapter.url)
                     } else {
-                        appendHtmlContent(renderableContent, chapterId, chapter.chapter.name)
+                        appendHtmlContent(processedContent, chapterId, chapter.chapter.name, chapter.chapter.url)
                     }
                 } else {
-                    loadHtmlContent(renderableContent, chapterId, chapter.chapter.name, chapter.chapter.url)
+                    loadHtmlContent(processedContent, chapterId, chapter.chapter.name, chapter.chapter.url)
 
                     // Fresh load: reset tracking to this single chapter.
                     loadedChapterIds.clear()
@@ -1430,9 +1425,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     /**
      * Prepend content to the existing WebView for infinite scroll (loading previous chapter)
      */
-    private fun prependHtmlContent(content: String, chapterId: Long, chapterName: String) {
+    private fun prependHtmlContent(content: String, chapterId: Long, chapterName: String, chapterUrl: String?) {
         // Strip script/style/noscript tags from content
-        var cleanContent = content
+        var cleanContent = normalizeContentForHtml(content, chapterUrl)
             .replace(Regex("<script[^>]*>.*?</script>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
             .replace(Regex("<script[^>]*/>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<style[^>]*>.*?</style>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
@@ -1494,9 +1489,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
     /**
      * Append content to the existing WebView for infinite scroll
      */
-    private fun appendHtmlContent(content: String, chapterId: Long, chapterName: String) {
+    private fun appendHtmlContent(content: String, chapterId: Long, chapterName: String, chapterUrl: String?) {
         // Strip script/style/noscript tags from content
-        var cleanContent = content
+        var cleanContent = normalizeContentForHtml(content, chapterUrl)
             .replace(Regex("<script[^>]*>.*?</script>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
             .replace(Regex("<script[^>]*/>", RegexOption.IGNORE_CASE), "")
             .replace(Regex("<style[^>]*>.*?</style>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
@@ -1547,6 +1542,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
         chapterUrl: String? = null,
     ) {
         var cleanContent = NovelViewerTextUtils.normalizeContentForHtml(content, chapterUrl)
+            .replace(Regex("<script[^>]*>.*?</script>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+            .replace(Regex("<script[^>]*/>", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("<style[^>]*>.*?</style>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+            .replace(Regex("<noscript[^>]*>.*?</noscript>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
 
         val blockMedia = preferences.novelBlockMedia.get()
         if (blockMedia) {
@@ -1723,6 +1722,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
      */
     private fun applyRegexReplacements(content: String): String =
         NovelViewerTextUtils.applyRegexReplacements(content, preferences)
+
+    private fun normalizeContentForHtml(content: String, chapterUrl: String?): String =
+        NovelViewerTextUtils.normalizeContentForHtml(content, chapterUrl)
 
     /**
      * Strips the chapter title from the beginning of the content.
@@ -2122,9 +2124,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.On
                     loadedChapterIds.add(chapterId)
                     loadedChapters.add(chapter)
                 }
-                appendHtmlContent(renderableContent, chapterId, chapter.chapter.name)
+                appendHtmlContent(processedContent, chapterId, chapter.chapter.name, chapter.chapter.url)
             } else {
-                loadHtmlContent(renderableContent, chapterId, chapter.chapter.name, chapter.chapter.url)
+                loadHtmlContent(processedContent, chapterId, chapter.chapter.name, chapter.chapter.url)
                 loadedChapterIds.clear()
                 loadedChapters.clear()
                 loadedChapterIds.add(chapterId)

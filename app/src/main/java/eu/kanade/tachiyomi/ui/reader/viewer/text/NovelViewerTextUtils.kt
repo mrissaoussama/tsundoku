@@ -13,9 +13,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import logcat.LogPriority
 import logcat.logcat
-import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
-import org.intellij.markdown.html.HtmlGenerator
-import org.intellij.markdown.parser.MarkdownParser
 
 /**
  * Shared utility functions used by both [NovelViewer] (native TextView) and
@@ -25,11 +22,8 @@ object NovelViewerTextUtils {
 
     private enum class ChapterTextKind {
         HTML,
-        MARKDOWN,
         PLAIN_TEXT,
     }
-
-    private val frontMatterRegex = Regex("^\\uFEFF?---\\s*\\r?\\n([\\s\\S]*?)\\r?\\n---\\s*(\\r?\\n|$)")
 
     /**
      * Normalizes chapter content to HTML so both WebView and TextView pipelines
@@ -39,7 +33,6 @@ object NovelViewerTextUtils {
         val normalized = content.replace("\u0000", "")
         return when (detectTextKind(chapterUrl, normalized)) {
             ChapterTextKind.HTML -> normalized
-            ChapterTextKind.MARKDOWN -> markdownToHtml(stripFrontMatter(normalized))
             ChapterTextKind.PLAIN_TEXT -> plainTextToHtml(normalized)
         }
     }
@@ -54,7 +47,6 @@ object NovelViewerTextUtils {
             .orEmpty()
 
         return when (ext) {
-            "md", "markdown" -> ChapterTextKind.MARKDOWN
             "txt", "text" -> ChapterTextKind.PLAIN_TEXT
             "html", "htm", "xhtml", "epub" -> ChapterTextKind.HTML
             else -> {
@@ -70,22 +62,6 @@ object NovelViewerTextUtils {
                     ChapterTextKind.PLAIN_TEXT
                 }
             }
-        }
-    }
-
-    private fun stripFrontMatter(markdown: String): String {
-        return frontMatterRegex.replaceFirst(markdown, "")
-    }
-
-    private fun markdownToHtml(markdown: String): String {
-        return try {
-            val flavour = GFMFlavourDescriptor()
-            val parsedTree = MarkdownParser(flavour).buildMarkdownTreeFromString(markdown)
-            val rendered = HtmlGenerator(markdown, parsedTree, flavour).generateHtml()
-            "<div data-tsundoku-markdown=\"1\">$rendered</div>"
-        } catch (e: Exception) {
-            logcat(LogPriority.WARN) { "Markdown render fallback to plain text: ${e.message}" }
-            plainTextToHtml(markdown)
         }
     }
 
