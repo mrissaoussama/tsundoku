@@ -13,6 +13,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 ## [Unreleased]
 ### Added
 - Move by URL [@mrissaoussama](https://github.com/mrissaoussama) [#163](https://github.com/tsundoku-otaku/tsundoku/pull/163)
+- Add ability to mark short (non-scroll) chapters as read instantly [@mrissaoussama](https://github.com/mrissaoussama) [#175](https://github.com/tsundoku-otaku/tsundoku/pull/175)
 - Ability to remove local novels via popup after removing from library [@mrissaoussama](https://github.com/mrissaoussama) [#164](https://github.com/tsundoku-otaku/tsundoku/pull/164)
 
 
