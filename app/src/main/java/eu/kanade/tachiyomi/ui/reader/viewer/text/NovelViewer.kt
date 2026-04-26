@@ -514,30 +514,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             }
 
             override fun draw(canvas: Canvas) {
-                try {
                     super.draw(canvas)
-                } catch (e: NullPointerException) {
-                    val isScrollbarDrawableBug =
-                        e.message?.contains("ScrollBarDrawable", ignoreCase = true) == true
-
-                    // Some Android builds can crash in View.onDrawScrollBars()
-                    // when ScrollBarDrawable is unexpectedly null.
-                    if (isScrollbarDrawableBug) {
-                        logcat(LogPriority.WARN) {
-                            "NovelViewer: disabling native scrollbars after framework draw crash: ${e.message}"
-                        }
-                        disableScrollbarForSession = true
-                        isVerticalScrollBarEnabled = false
-                        isHorizontalScrollBarEnabled = false
-
-                        // Try one safe redraw after scrollbars are disabled.
-                        // If framework still throws, skip this frame instead of crashing.
-                        runCatching { super.draw(canvas) }
-                    } else {
-                        throw e
-                    }
                 }
-            }
         }.apply {
             isFillViewport = true
             scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY

@@ -700,7 +700,7 @@ private fun NovelVerticalProgressSlider(
                     .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)),
             )
 
-            // Filled progress from top down (progress increases as user scrolls down)
+            // Filled progress from top down
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -711,7 +711,6 @@ private fun NovelVerticalProgressSlider(
                     .background(MaterialTheme.colorScheme.primary),
             )
 
-            // Full-height interaction layer to guarantee effective area matches visible area
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
