@@ -238,13 +238,9 @@ class LibraryScreenModel(
                     }
                 }
                 .map { data ->
-                    val favoritesById = HashMap<Long, LibraryItem>(data.favorites.size * 2)
-                    for (item in data.favorites) {
-                        favoritesById[item.id] = item
-                    }
                     data.favorites
                         .applyGrouping(data.categories, data.showSystemCategory)
-                        .applySort(favoritesById, data.tracksMap, data.loggedInTrackerIds)
+                        .applySort(itemCache, data.tracksMap, data.loggedInTrackerIds)
                 }
                 .collectLatest {
                     mutableState.update { state ->
@@ -432,22 +428,30 @@ class LibraryScreenModel(
         categories: List<Category>,
         showSystemCategory: Boolean,
     ): Map<Category, List</* LibraryItem */ Long>> {
-        val visibleCategories = categories.filter { showSystemCategory || !it.isSystemCategory }
+        val visibleCategories = ArrayList<Category>(categories.size)
+        for (category in categories) {
+            if (showSystemCategory || !category.isSystemCategory) {
+                visibleCategories += category
+            }
+        }
         if (visibleCategories.isEmpty()) return emptyMap()
 
-        val visibleCategoryIds = visibleCategories.asSequence().map { it.id }.toHashSet()
-        val visibleCategoryById = visibleCategories.associateBy { it.id }
-        val groupedItems = visibleCategories.associateWith { mutableListOf<Long>() }.toMutableMap()
+        val visibleCategoryById = HashMap<Long, Category>(visibleCategories.size * 2)
+        val groupedItems = LinkedHashMap<Category, MutableList<Long>>(visibleCategories.size)
+        for (category in visibleCategories) {
+            visibleCategoryById[category.id] = category
+            groupedItems[category] = mutableListOf()
+        }
 
         for (item in this) {
             for (categoryId in item.libraryManga.categories) {
-                if (categoryId in visibleCategoryIds) {
-                    groupedItems[visibleCategoryById.getValue(categoryId)]?.add(item.id)
+                val category = visibleCategoryById[categoryId] ?: continue
+                groupedItems[category]?.add(item.id)
                 }
             }
         }
 
-        return groupedItems.mapValues { it.value }
+        return groupedItems
     }
 
     private fun Map<Category, List</* LibraryItem */ Long>>.applySort(
