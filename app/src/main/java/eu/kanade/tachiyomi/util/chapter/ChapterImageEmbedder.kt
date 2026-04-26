@@ -69,7 +69,7 @@ class ChapterImageEmbedder(
         var imageCounter = 0
         for (imageUrl in imageUrls) {
             // Already local or data URI, do not process
-            if (imageUrl.startsWith("tsundoku-novel-image://") || imageUrl.startsWith("file://") ||
+            if (imageUrl.startsWith("@tsundoku-novel-image://") || imageUrl.startsWith("file://") ||
                 imageUrl.startsWith("data:")
             ) {
                 continue

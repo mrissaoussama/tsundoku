@@ -7,7 +7,7 @@ internal fun resolveJsPluginSite(metadataSite: String?, code: String): String {
     }
 
     // Direct single-source pattern: this.site = "https://example.com"
-    val directSite = """this\\.site\\s*=\\s*[\"']([^\"']+)[\"']""".toRegex()
+    val directSite = """this\.site\s*=\s*[\"']([^\"']+)[\"']""".toRegex()
         .find(code)
         ?.groupValues
         ?.getOrNull(1)
@@ -18,7 +18,7 @@ internal fun resolveJsPluginSite(metadataSite: String?, code: String): String {
     }
 
     // Multisrc pattern: new Source({ sourceSite: "https://example.com/", ... })
-    val sourceSite = """sourceSite\\s*:\\s*[\"']([^\"']+)[\"']""".toRegex()
+    val sourceSite = """sourceSite\s*:\s*[\"']([^\"']+)[\"']""".toRegex()
         .find(code)
         ?.groupValues
         ?.getOrNull(1)

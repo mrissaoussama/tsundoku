@@ -161,7 +161,11 @@ class CustomNovelSource(
     private val baseSource: CatalogueSource? by lazy {
         config.basedOnSourceId?.let { sourceId ->
             try {
-                Injekt.get<SourceManager>().get(sourceId) as? CatalogueSource
+                val source = Injekt.get<SourceManager>().get(sourceId) as? CatalogueSource
+                when (source) {
+                    is JsSource -> source.withSiteOverride(baseUrl)
+                    else -> source
+                }
             } catch (_: Exception) {
                 null
             }
@@ -585,12 +589,13 @@ class CustomNovelSource(
 
         if (baseSource is JsSource) {
             val customBase = baseUrl.trimEnd('/')
-            val relativePath = if (value.startsWith(customBase)) {
-                value.removePrefix(customBase)
-            } else {
-                value
+            val sourceBase = sourceBaseUrlOverride?.trimEnd('/')
+            val relativePath = when {
+                value.startsWith(customBase) -> value.removePrefix(customBase)
+                sourceBase != null && value.startsWith(sourceBase) -> value.removePrefix(sourceBase)
+                else -> value
             }
-            return if (relativePath.startsWith("/")) relativePath else "/$relativePath"
+            return if (relativePath.startsWith("/")) relativePath else "/${relativePath.removePrefix("/")}"
         }
 
         return mapCustomUrlToSourceUrl(url, baseUrl, sourceBaseUrlOverride)
@@ -714,3 +719,4 @@ data class ContentSelectors(
 
 // Templates removed — use extension repos for pre-built novel source themes
 // (Madara, LightNovelWP, ReadNovelFull, ReadWN, WordPress Novel)
+
