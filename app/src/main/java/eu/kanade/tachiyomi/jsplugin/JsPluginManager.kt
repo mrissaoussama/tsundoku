@@ -531,12 +531,11 @@ class JsPluginManager(
         // Try to extract plugin info from the minified JS code
         val idRegex = """this\.id\s*=\s*["']([^"']+)["']""".toRegex()
         val nameRegex = """this\.name\s*=\s*["']([^"']+)["']""".toRegex()
-        val siteRegex = """this\.site\s*=\s*["']([^"']+)["']""".toRegex()
         val versionRegex = """this\.version\s*=\s*["']([^"']+)["']""".toRegex()
 
         val id = idRegex.find(code)?.groupValues?.get(1) ?: fallbackId
         val name = nameRegex.find(code)?.groupValues?.get(1) ?: fallbackId
-        val site = siteRegex.find(code)?.groupValues?.get(1) ?: ""
+        val site = resolveJsPluginSite(metadataSite = null, code = code)
         val version = versionRegex.find(code)?.groupValues?.get(1) ?: "1.0.0"
 
         return JsPlugin(

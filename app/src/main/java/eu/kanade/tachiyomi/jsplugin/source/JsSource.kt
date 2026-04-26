@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.jsplugin.model.InstalledJsPlugin
 import eu.kanade.tachiyomi.jsplugin.model.JsPlugin
+import eu.kanade.tachiyomi.jsplugin.resolveJsPluginSite
 import eu.kanade.tachiyomi.jsplugin.runtime.PluginRuntime
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.NetworkHelper
@@ -89,7 +90,8 @@ class JsSource(
     // Visible name of the source with language and JS marker
     override fun toString(): String = "$name (${lang.uppercase()}) (JS)"
 
-    val baseUrl: String = plugin.site?.takeIf { it.isNotBlank() }?.trimEnd('/') ?: "https://example.com"
+    val baseUrl: String = resolveJsPluginSite(metadataSite = plugin.site, code = jsCode)
+        .ifBlank { "https://example.com" }
     val iconUrl: String = plugin.iconUrl
     val version: String = plugin.version
 

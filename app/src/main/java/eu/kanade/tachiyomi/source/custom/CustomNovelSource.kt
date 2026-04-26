@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.source.custom
 
+import eu.kanade.tachiyomi.jsplugin.source.JsSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.source.CatalogueSource
@@ -171,6 +172,7 @@ class CustomNovelSource(
         baseSource?.let { source ->
             when (source) {
                 is HttpSource -> source.baseUrl.trimEnd('/')
+                is JsSource -> source.baseUrl.trimEnd('/')
                 else -> null
             }
         }
@@ -578,6 +580,19 @@ class CustomNovelSource(
     }
 
     internal fun toBaseSourceUrl(url: String?, sourceBaseUrlOverride: String? = baseSourceUrl): String? {
+        val value = url?.trim().orEmpty()
+        if (value.isBlank()) return url
+
+        if (baseSource is JsSource) {
+            val customBase = baseUrl.trimEnd('/')
+            val relativePath = if (value.startsWith(customBase)) {
+                value.removePrefix(customBase)
+            } else {
+                value
+            }
+            return if (relativePath.startsWith("/")) relativePath else "/$relativePath"
+        }
+
         return mapCustomUrlToSourceUrl(url, baseUrl, sourceBaseUrlOverride)
     }
 
