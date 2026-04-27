@@ -172,19 +172,19 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             return ImportResult(added = 0, skipped = 0, errored = urls.size)
         }
 
-        val libraryUrlIndex = try {
-            mangaRepository.getFavoriteSourceUrlPairs()
-                .asSequence()
-                .map { it.first to normalizeUrl(it.second) }
-                .toSet()
-        } catch (e: Exception) {
-            emptySet<Pair<Long, String>>()
-        }
-
         // Cache source lookups to avoid N+1 queries
         val sourceCache = ConcurrentHashMap<String, CatalogueSource?>()
         fun getCachedSource(url: String): CatalogueSource? {
             return sourceCache.getOrPut(url) { findMatchingSource(url, importSources) }
+        }
+        
+        // Cache DB lookups to avoid repeated queries for same URL
+        val dbCache = ConcurrentHashMap<Pair<Long, String>, Boolean>()
+        suspend fun isAlreadyInLibrary(sourceId: Long, path: String): Boolean {
+            val key = sourceId to path
+            return dbCache.getOrPut(key) {
+                getMangaByUrlAndSourceId.await(path, sourceId)?.favorite ?: false
+            }
         }
 
         // Stream URLs without materializing full list upfront
@@ -192,20 +192,24 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         val validUrlsSequence = urls.asSequence()
             .filter { it.isNotBlank() }
             .filter { url -> url.startsWith("http://") || url.startsWith("https://") }
-            .filter { url ->
-                val source = getCachedSource(url) ?: return@filter false
-                val path = normalizeUrl(extractPathFromUrl(url, getSourceBaseUrl(source)))
-                !libraryUrlIndex.contains(source.id to path)
-            }
 
-        // Materialize only count for UI, don't hold all URLs in memory yet
+        // Materialize and validate URLs asynchronously to check DB per-URL
         var validCount = 0
         val validUrlsList = mutableListOf<String>()
         for (url in validUrlsSequence) {
-            validUrlsList.add(url)
-            validCount++
+            try {
+                val source = getCachedSource(url)
+                if (source != null) {
+                    val path = normalizeUrl(extractPathFromUrl(url, getSourceBaseUrl(source)))
+                    if (path.isNotEmpty() && !isAlreadyInLibrary(source.id, path)) {
+                        validUrlsList.add(url)
+                        validCount++
+                    }
+                }
+            } catch (e: Exception) {
+                logcat(LogPriority.DEBUG, e) { "Error validating URL: $url" }
+            }
         }
-
         if (validCount == 0) {
             val skippedCount = urls.size - validCount
             showCompletionNotification(0, skippedCount, 0, "All novels already in library")
