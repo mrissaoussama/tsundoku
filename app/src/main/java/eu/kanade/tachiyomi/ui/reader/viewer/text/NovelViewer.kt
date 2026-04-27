@@ -514,8 +514,16 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             }
 
             override fun draw(canvas: Canvas) {
+                try {
                     super.draw(canvas)
+                } catch (e: NullPointerException) {
+
+                        disableScrollbarForSession = true
+                        isVerticalScrollBarEnabled = false
+                        isHorizontalScrollBarEnabled = false
+                         runCatching { super.draw(canvas) }
                 }
+            }
         }.apply {
             isFillViewport = true
             scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
@@ -711,10 +719,10 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     private fun loadNextChapterIfAvailable() {
         val anchor = loadedChapters.getOrNull(currentChapterIndex)?.chapter
             ?: currentChapters?.currChapter ?: run {
-            logcat(LogPriority.ERROR) { "NovelViewer: loadNext failed, no anchor (loadedCount=${loadedChapters.size})" }
-            showInlineError("No anchor chapter for infinite scroll", isPrepend = false)
-            return
-        }
+                logcat(LogPriority.ERROR) { "NovelViewer: loadNext failed, no anchor (loadedCount=${loadedChapters.size})" }
+                showInlineError("No anchor chapter for infinite scroll", isPrepend = false)
+                return
+            }
 
         if (isLoadingNext) {
             logcat(LogPriority.DEBUG) { "NovelViewer: loadNext ignored, already loading" }
