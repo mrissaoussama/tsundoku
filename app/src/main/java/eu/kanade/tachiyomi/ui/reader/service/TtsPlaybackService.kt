@@ -9,10 +9,6 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import androidx.media.app.NotificationCompat.MediaStyle
-import android.support.v4.media.session.MediaSessionCompat
-import android.support.v4.media.session.PlaybackStateCompat
-import android.support.v4.media.MediaMetadataCompat
 
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.notification.Notifications
@@ -28,14 +24,8 @@ class TtsPlaybackService : Service() {
     private var mangaId: Long = -1L
     private var chapterId: Long = -1L
 
-    private lateinit var mediaSession: MediaSessionCompat
-
     override fun onCreate() {
         super.onCreate()
-
-        mediaSession = MediaSessionCompat(this, "TtsPlaybackService").apply {
-            isActive = true
-        }
 
         startForegroundWithNotification()
     }
@@ -69,46 +59,23 @@ class TtsPlaybackService : Service() {
             }
         }
 
-        updateMediaSession()
         startForegroundWithNotification()
 
         return START_STICKY
     }
 
     override fun onDestroy() {
-        mediaSession.release()
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
-
-    private fun updateMediaSession() {
-        val state = if (isPaused) {
-            PlaybackStateCompat.STATE_PAUSED
-        } else {
-            PlaybackStateCompat.STATE_PLAYING
-        }
-
-        val playbackState = PlaybackStateCompat.Builder()
-            .setActions(
-                PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                    PlaybackStateCompat.ACTION_PLAY or
-                    PlaybackStateCompat.ACTION_PAUSE or
-                    PlaybackStateCompat.ACTION_STOP
-            )
-            .setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 1f)
-            .build()
-
-        mediaSession.setPlaybackState(playbackState)
-
-        val metadata = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, novelTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, chapterTitle)
-            .build()
-
-        mediaSession.setMetadata(metadata)
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
+
+    override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startForegroundWithNotification() {
 
@@ -160,12 +127,6 @@ class TtsPlaybackService : Service() {
             setOnlyAlertOnce(true)
             setShowWhen(false)
             setProgress(100, progressPercent, false)
-
-            setStyle(
-                MediaStyle()
-                    .setMediaSession(mediaSession.sessionToken)
-                    .setShowActionsInCompactView(0, 1)
-            )
 
             addAction(
                 if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,

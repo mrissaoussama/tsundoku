@@ -95,7 +95,7 @@ object Notifications {
      * Notification channel and ids used by reader TTS background playback.
      */
     const val CHANNEL_TTS_PLAYBACK = "tts_playback_channel"
-    const val ID_TTS_PLAYBACK = -612
+    const val ID_TTS_PLAYBACK = 612
 
     /**
      * Notification channel and ids used by EPUB export.
