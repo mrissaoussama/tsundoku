@@ -85,7 +85,12 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
     override suspend fun doWork(): Result {
         val urls = inputData.getStringArray(KEY_URLS)?.toList()
             ?: inputData.getString(KEY_URLS_FILE)?.let { path ->
-                runCatching { File(path).readLines().filter { it.isNotBlank() } }.getOrNull()
+                // Stream file reading instead of loading entire file into memory
+                runCatching {
+                    File(path).bufferedReader().use { reader ->
+                        reader.lineSequence().filter { it.isNotBlank() }.toList()
+                    }
+                }.getOrNull()
             }
             ?: return Result.failure()
         val categoryId = inputData.getLong(KEY_CATEGORY_ID, 0L)
@@ -176,25 +181,43 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             emptySet<Pair<Long, String>>()
         }
 
-        // Filter valid URLs (protocols and not already in library)
-        val validUrls = urls.filter { url ->
-            url.startsWith("http://") || url.startsWith("https://")
-        }.filter { url ->
-            val source = findMatchingSource(url, importSources) ?: return@filter false
-            val path = normalizeUrl(extractPathFromUrl(url, getSourceBaseUrl(source)))
-            !libraryUrlIndex.contains(source.id to path)
+        // Cache source lookups to avoid N+1 queries
+        val sourceCache = ConcurrentHashMap<String, CatalogueSource?>()
+        fun getCachedSource(url: String): CatalogueSource? {
+            return sourceCache.getOrPut(url) { findMatchingSource(url, importSources) }
         }
 
-        if (validUrls.isEmpty()) {
-            showCompletionNotification(0, urls.size - validUrls.size, 0, "All novels already in library")
+        // Stream URLs without materializing full list upfront
+        // Validate on first pass: count valid URLs for progress tracking
+        val validUrlsSequence = urls.asSequence()
+            .filter { it.isNotBlank() }
+            .filter { url -> url.startsWith("http://") || url.startsWith("https://") }
+            .filter { url ->
+                val source = getCachedSource(url) ?: return@filter false
+                val path = normalizeUrl(extractPathFromUrl(url, getSourceBaseUrl(source)))
+                !libraryUrlIndex.contains(source.id to path)
+            }
+
+        // Materialize only count for UI, don't hold all URLs in memory yet
+        var validCount = 0
+        val validUrlsList = mutableListOf<String>()
+        for (url in validUrlsSequence) {
+            validUrlsList.add(url)
+            validCount++
+        }
+
+        if (validCount == 0) {
+            val skippedCount = urls.size - validCount
+            showCompletionNotification(0, skippedCount, 0, "All novels already in library")
             updateBatchStatus(batchId, BatchStatus.Completed)
-            return ImportResult(added = 0, skipped = urls.size - validUrls.size, errored = 0)
+            return ImportResult(added = 0, skipped = skippedCount, errored = 0)
         }
 
-        // Update batch total to reflect actual work items (validUrls, not all urls)
+        // Update batch total to reflect actual work items
         _sharedQueue.update { list ->
-            list.map { if (it.id == batchId) it.copy(total = validUrls.size) else it }
+            list.map { if (it.id == batchId) it.copy(total = validCount) else it }
         }
+        val validUrls = validUrlsList
 
         val concurrency = if (!fetchDetails && !fetchChapters) {
             // Offline mode: skip thread limits, use maximum concurrency
@@ -237,17 +260,13 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             return Pair(globalBaseDelay, globalRandomRange)
         }
 
-        // Group URLs by source for smarter scheduling
-        val urlsWithSource = validUrls.mapNotNull { url ->
-            val source = findMatchingSource(url, importSources) ?: return@mapNotNull null
-            url to source
-        }
-
         // Per-source semaphores to serialize requests to the same source
         val sourceSemaphores = ConcurrentHashMap<Long, Semaphore>()
 
-        urlsWithSource.asFlow()
-            .flatMapMerge(concurrency) { (url, source) ->
+        validUrls.asFlow()
+            .flatMapMerge(concurrency) { url ->
+                val source = getCachedSource(url) ?: return@flatMapMerge flow<Unit> { } // Skip if no source
+
                 flow {
                     // Apply per-source throttling before processing
                     if (shouldThrottle) {
