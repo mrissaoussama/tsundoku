@@ -215,8 +215,6 @@ actual class LocalNovelSource(
             }
 
         val hasMultipleEpubFiles = chapterFiles.count { it.extension.equals("epub", true) } > 1
-        var orderedTocChapterNumber = 0
-
         chapterFiles.forEachIndexed { fileIndex, chapterFile ->
             // Check if this is a multi-chapter EPUB
             if (chapterFile.extension.equals("epub", true)) {
@@ -249,69 +247,18 @@ actual class LocalNovelSource(
                         }
 
                         val tocChapters = epub.getNormalizedTableOfContents()
-                        val spineHrefs = extractSpineHrefs(epub)
-                        val guideTitleByHref = extractGuideTitlesByHref(epub)
-
-                        // If EPUB has multiple TOC entries, build chapter list from spine order so
-                        // preface/cover/titlepage entries not present in ToC are still accessible.
-                        if (tocChapters.size > 1) {
-                            val tocByHrefKey = tocChapters
-                                .associateBy { it.href.substringBefore('#') }
-                                .toMutableMap()
-                            val emittedUrls = LinkedHashSet<String>()
-
-                            if (spineHrefs.isNotEmpty()) {
-                                spineHrefs.forEachIndexed { index, spineHref ->
-                                    val tocEntry = tocByHrefKey[spineHref.substringBefore('#')]
-                                    val chapterHref = tocEntry?.href ?: spineHref
-                                    if (!emittedUrls.add(chapterHref)) return@forEachIndexed
-
-                                    orderedTocChapterNumber += 1
-                                    val generatedTitle = tocEntry?.title
-                                        ?: guideTitleByHref[spineHref.substringBefore('#')]
-                                        ?: "Chapter 0.${index + 1}"
-                                    val chapterDisplayName = if (hasMultipleEpubFiles) {
-                                        "${chapterFile.nameWithoutExtension.orEmpty()} - $generatedTitle"
-                                    } else {
-                                        generatedTitle
-                                    }
-
-                                    allChapters.add(
-                                        SChapter.create().apply {
-                                            // URL format: novelDir/epubFile.epub#chapterHref
-                                            url = "${manga.url}/${chapterFile.name}#$chapterHref"
-                                            name = chapterDisplayName
-                                            date_upload = chapterFile.lastModified()
-                                            chapter_number = orderedTocChapterNumber.toFloat()
-                                        },
-                                    )
-                                }
-                            }
-
-                            // Keep any ToC-only entries that weren't part of the spine map.
-                            tocChapters.forEach { tocEntry ->
-                                if (!emittedUrls.add(tocEntry.href)) return@forEach
-
-                                orderedTocChapterNumber += 1
-
-                                val resolvedTitle = tocEntry.title.trim().ifBlank { "Chapter $orderedTocChapterNumber" }
-
-                                val chapterDisplayName = if (hasMultipleEpubFiles) {
-                                    "${chapterFile.nameWithoutExtension.orEmpty()} - $resolvedTitle"
-                                } else {
-                                    resolvedTitle
-                                }
-
-                                allChapters.add(
-                                    SChapter.create().apply {
-                                        url = "${manga.url}/${chapterFile.name}#${tocEntry.href}"
-                                        name = chapterDisplayName
-                                        date_upload = chapterFile.lastModified()
-                                        chapter_number = orderedTocChapterNumber.toFloat()
-                                    },
-                                )
-                            }
-                            return@forEachIndexed // Don't add the EPUB as a single chapter
+                        if (tocChapters.isNotEmpty()) {
+                            allChapters.addAll(
+                                buildEpubChaptersFromToc(
+                                    mangaUrl = manga.url,
+                                    chapterFileName = chapterFile.name,
+                                    chapterFileNameWithoutExtension = chapterFile.nameWithoutExtension.orEmpty(),
+                                    chapterLastModified = chapterFile.lastModified(),
+                                    tocChapters = tocChapters,
+                                    hasMultipleEpubFiles = hasMultipleEpubFiles,
+                                ),
+                            )
+                            return@forEachIndexed
                         }
 
                         // Single chapter EPUB - treat as before
@@ -358,50 +305,6 @@ actual class LocalNovelSource(
             chapter_number = ChapterRecognition
                 .parseChapterNumber(manga.title, this.name, this.chapter_number.toDouble())
                 .toFloat()
-        }
-    }
-
-    private fun extractSpineHrefs(epub: EpubReader): List<String> {
-        return runCatching {
-            val packageDoc = epub.getPackageDocument(epub.getPackageHref())
-            val manifest = packageDoc
-                .select("manifest > item[id]")
-                .associate { item ->
-                    item.attr("id") to item.attr("href")
-                }
-
-            packageDoc
-                .select("spine > itemref[idref]")
-                .mapNotNull { itemRef ->
-                    manifest[itemRef.attr("idref")]
-                }
-                .map { href -> href.trim() }
-                .filter { href -> href.isNotEmpty() }
-                .distinctBy { href -> href.substringBefore('#') }
-        }.getOrElse {
-            emptyList()
-        }
-    }
-
-    private fun extractGuideTitlesByHref(epub: EpubReader): Map<String, String> {
-        return runCatching {
-            val packageDoc = epub.getPackageDocument(epub.getPackageHref())
-            packageDoc
-                .select("guide > reference[href]")
-                .mapNotNull { ref ->
-                    val href = ref.attr("href").substringBefore('#').trim()
-                    val title = ref.attr("title").trim()
-                    if (href.isEmpty()) {
-                        null
-                    } else {
-                        href to if (title.isNotEmpty()) title else null
-                    }
-                }
-                .associate { (href, title) ->
-                    href to (title ?: href.substringAfterLast('/').substringBeforeLast('.').replace('_', ' '))
-                }
-        }.getOrElse {
-            emptyMap()
         }
     }
 
