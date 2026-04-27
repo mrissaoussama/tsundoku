@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import logcat.LogPriority
 import okhttp3.FormBody
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -44,6 +45,7 @@ import javax.crypto.spec.SecretKeySpec
  */
 class JSLibraryProvider(
     private val pluginId: String,
+    private val siteUrl: String? = null,
 ) {
     private val networkHelper: NetworkHelper = Injekt.get()
     private val client = networkHelper.client
@@ -172,8 +174,10 @@ class JSLibraryProvider(
 
     private suspend fun doFetch(url: String, init: Map<String, Any?>?): FetchResponse {
         return withContext(Dispatchers.IO) {
+            val normalizedUrl = resolveFetchUrl(url)
+
             try {
-                logcat(LogPriority.DEBUG) { "[$pluginId] Fetching: $url" }
+                logcat(LogPriority.DEBUG) { "[$pluginId] Fetching: $normalizedUrl" }
 
                 val method = (init?.get("method") as? String)?.uppercase() ?: "GET"
                 val headersMap = extractHeaders(init).toMutableMap()
@@ -181,7 +185,7 @@ class JSLibraryProvider(
                 // Bridge cookies solved in WebView challenges into JS plugin fetch requests.
                 if (headersMap.keys.none { it.equals("cookie", ignoreCase = true) }) {
                     try {
-                        val webViewCookies = CookieManager.getInstance().getCookie(url)
+                        val webViewCookies = CookieManager.getInstance().getCookie(normalizedUrl)
                         if (!webViewCookies.isNullOrBlank()) {
                             headersMap["Cookie"] = webViewCookies
 
@@ -214,7 +218,7 @@ class JSLibraryProvider(
 
                 val body = extractBody(init, headersMap)
 
-                val requestBuilder = Request.Builder().url(url)
+                val requestBuilder = Request.Builder().url(normalizedUrl)
 
                 // Build headers - skip certain headers that OkHttp handles
                 val headersBuilder = Headers.Builder()
@@ -264,18 +268,59 @@ class JSLibraryProvider(
                     )
                 }
             } catch (e: Exception) {
-                logcat(LogPriority.ERROR, e) { "[$pluginId] Fetch error: $url" }
+                logcat(LogPriority.ERROR, e) { "[$pluginId] Fetch error: $normalizedUrl" }
                 FetchResponse(
                     ok = false,
                     status = 0,
                     statusText = "Network Error",
-                    url = url,
+                    url = normalizedUrl,
                     text = "",
                     headers = emptyMap(),
                     error = e.message ?: "Unknown error",
                 )
             }
         }
+    }
+
+    private fun resolveFetchUrl(rawUrl: String): String {
+        val value = rawUrl.trim()
+        if (value.isBlank()) return value
+
+        val base = siteUrl.orEmpty().trim().trimEnd('/')
+        val baseHttpUrl = base.toHttpUrlOrNull()
+
+        if (value.startsWith("http://") || value.startsWith("https://")) {
+            // Handle malformed joins like: https://novel-bin.comsort/top-view-novel
+            if (base.isNotBlank() && value.startsWith(base)) {
+                val suffix = value.removePrefix(base)
+                if (suffix.isNotEmpty() && !suffix.startsWith("/") && !suffix.startsWith("?") && !suffix.startsWith("#")) {
+                    return "$base/${suffix.removePrefix("/")}"
+                }
+            }
+
+            // Handle hostless pseudo-absolute URLs like: https://novelbin/m/sort/...
+            val absolute = value.toHttpUrlOrNull()
+            if (absolute != null && baseHttpUrl != null) {
+                val hostLooksInvalidForPublicSite = !absolute.host.contains('.') && absolute.host != "localhost"
+                if (hostLooksInvalidForPublicSite) {
+                    val relative = buildString {
+                        append(absolute.encodedPath)
+                        absolute.encodedQuery?.let { append('?').append(it) }
+                        absolute.encodedFragment?.let { append('#').append(it) }
+                    }.ifBlank { "/" }
+                    return baseHttpUrl.resolve(relative)?.toString() ?: value
+                }
+            }
+
+            return value
+        }
+
+        if (baseHttpUrl != null) {
+            val relative = if (value.startsWith('/')) value else "/$value"
+            return baseHttpUrl.resolve(relative)?.toString() ?: (base + relative)
+        }
+
+        return if (value.startsWith('/')) value else "/$value"
     }
 
     @Suppress("UNCHECKED_CAST")

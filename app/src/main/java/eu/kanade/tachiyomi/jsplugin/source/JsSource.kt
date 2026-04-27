@@ -171,13 +171,27 @@ class JsSource(
 
         // Create new instance outside lock to avoid blocking
         val codeToUse = maybeHealCode(jsCode)
-        val runtime = PluginRuntime(pluginId, context, jsDispatcher)
+        val runtime = PluginRuntime(pluginId, context, jsDispatcher, baseUrl)
         val newInstance = try {
             runtime.executePlugin(codeToUse)
         } catch (e: Exception) {
             // If plugin execution fails, log and rethrow
             logcat(LogPriority.ERROR, e) { "JsSource[$pluginId]: Failed to execute plugin" }
             throw e
+        }
+
+        if (!siteOverride.isNullOrBlank()) {
+            val escapedSiteOverride = siteOverride
+                .replace("\\", "\\\\")
+                .replace("'", "\\'")
+            newInstance.execute(
+                """
+                if (globalThis.plugin) {
+                    globalThis.plugin.site = '$escapedSiteOverride';
+                    globalThis.plugin.sourceSite = globalThis.plugin.site;
+                }
+                """.trimIndent(),
+            )
         }
 
         synchronized(instanceLock) {
@@ -240,7 +254,14 @@ class JsSource(
             ?.replace("'", "\\'")
         try {
             if (escapedSiteOverride != null) {
-                instance.execute("if (globalThis.plugin) { globalThis.plugin.site = '$escapedSiteOverride'; }")
+                instance.execute(
+                    """
+                    if (globalThis.plugin) {
+                        globalThis.plugin.site = '$escapedSiteOverride';
+                        globalThis.plugin.sourceSite = globalThis.plugin.site;
+                    }
+                    """.trimIndent(),
+                )
             }
             logcat(LogPriority.DEBUG) { "JsSource[$pluginId]: Executing: $methodCall" }
 

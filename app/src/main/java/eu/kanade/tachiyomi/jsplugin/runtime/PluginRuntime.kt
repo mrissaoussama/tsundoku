@@ -21,8 +21,9 @@ class PluginRuntime(
     private val pluginId: String,
     private val context: Context,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val siteUrl: String? = null,
 ) {
-    private val libraryProvider = JSLibraryProvider(pluginId)
+    private val libraryProvider = JSLibraryProvider(pluginId, siteUrl)
 
     /**
      * Execute plugin code and return an instance ready to call methods.

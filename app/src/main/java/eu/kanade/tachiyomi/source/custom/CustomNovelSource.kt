@@ -17,6 +17,7 @@ import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.Headers
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
@@ -112,6 +113,63 @@ internal fun stableCustomSourceId(name: String, baseUrl: String): Long {
     return (name + baseUrl).hashCode().toLong() and 0x7FFFFFFF
 }
 
+private fun trySetFieldRecursively(target: Any, fieldName: String, value: Any): Boolean {
+    var current: Class<*>? = target.javaClass
+    while (current != null) {
+        val field = runCatching { current.getDeclaredField(fieldName) }.getOrNull()
+        if (field != null) {
+            return runCatching {
+                field.isAccessible = true
+                field.set(target, value)
+                true
+            }.getOrDefault(false)
+        }
+        current = current.superclass
+    }
+    return false
+}
+
+private fun createBaseUrlRewriteClient(
+    client: OkHttpClient,
+    sourceBaseUrl: String,
+    customBaseUrl: String,
+): OkHttpClient {
+    val sourceBase = sourceBaseUrl.trimEnd('/')
+    val customBase = customBaseUrl.trimEnd('/')
+    return client.newBuilder()
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val requestUrl = request.url.toString()
+            val rewrittenUrl = if (requestUrl.startsWith(sourceBase)) {
+                customBase + requestUrl.removePrefix(sourceBase)
+            } else {
+                requestUrl
+            }
+
+            val nextRequest = if (rewrittenUrl != requestUrl) {
+                request.newBuilder().url(rewrittenUrl).build()
+            } else {
+                request
+            }
+            chain.proceed(nextRequest)
+        }
+        .build()
+}
+
+private fun patchHttpSourceForCustomBaseUrl(source: HttpSource, customBaseUrl: String): HttpSource {
+    val sourceBaseUrl = source.baseUrl.trimEnd('/')
+    val targetBaseUrl = customBaseUrl.trimEnd('/')
+    if (targetBaseUrl.isBlank() || sourceBaseUrl == targetBaseUrl) return source
+
+    val rewrittenClient = createBaseUrlRewriteClient(source.client, sourceBaseUrl, targetBaseUrl)
+    trySetFieldRecursively(source, "client", rewrittenClient)
+    // DO NOT change source.baseUrl - keep it as original so the interceptor can match requests
+    // The interceptor is configured to rewrite sourceBaseUrl -> targetBaseUrl
+    // If we change baseUrl here, HttpSource will build requests with the new URL, and the 
+    // interceptor won't match because it's looking for the old sourceBaseUrl
+    return source
+}
+
 internal fun customSourceStorageFileCandidates(
     directory: java.io.File,
     sourceId: Long,
@@ -162,8 +220,17 @@ class CustomNovelSource(
         config.basedOnSourceId?.let { sourceId ->
             try {
                 val source = Injekt.get<SourceManager>().get(sourceId) as? CatalogueSource
-                when (source) {
-                    is JsSource -> source.withSiteOverride(baseUrl)
+                // Capture original base URL BEFORE any patching
+                val originalBaseUrl = when (source) {
+                    is JsSource -> source.baseUrl.trimEnd('/')
+                    is HttpSource -> source.baseUrl.trimEnd('/')
+                    else -> null
+                }
+                baseSourceOriginalUrl = originalBaseUrl
+                
+                when {
+                    source is JsSource && baseUrl.isNotBlank() -> source.withSiteOverride(baseUrl)
+                    source is HttpSource && baseUrl.isNotBlank() -> patchHttpSourceForCustomBaseUrl(source, baseUrl)
                     else -> source
                 }
             } catch (_: Exception) {
@@ -172,15 +239,22 @@ class CustomNovelSource(
         }
     }
 
+    // Store the original source base URL before any patching/overrides
+    private var baseSourceOriginalUrl: String? = null
+
     private val baseSourceUrl: String? by lazy {
-        baseSource?.let { source ->
-            when (source) {
-                is HttpSource -> source.baseUrl.trimEnd('/')
-                is JsSource -> source.baseUrl.trimEnd('/')
-                else -> null
-            }
-        }
+        // Ensure baseSource initialization happens first (which sets baseSourceOriginalUrl),
+        // then return the captured original URL
+        baseSource
+        baseSourceOriginalUrl
     }
+
+    /**
+     * The base URL to use when translating between the custom source and the delegated source.
+     * Prefer the delegated source URL so absolute links can be mapped back correctly.
+     */
+    private val effectiveRebaseUrl: String?
+        get() = baseSourceUrl ?: baseUrl.trimEnd('/')
 
     override fun headersBuilder(): Headers.Builder = super.headersBuilder().apply {
         config.headers.forEach { (key, value) ->
@@ -540,37 +614,42 @@ class CustomNovelSource(
 
     internal fun rebaseMangasPage(
         mangasPage: MangasPage,
-        sourceBaseUrlOverride: String? = baseSourceUrl,
+        sourceBaseUrlOverride: String? = null,
     ): MangasPage {
-        return MangasPage(mangasPage.mangas.map { rebaseManga(it, sourceBaseUrlOverride) }, mangasPage.hasNextPage)
+        val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
+        return MangasPage(mangasPage.mangas.map { rebaseManga(it, override) }, mangasPage.hasNextPage)
     }
 
-    internal fun rebaseManga(manga: SManga, sourceBaseUrlOverride: String? = baseSourceUrl): SManga {
+    internal fun rebaseManga(manga: SManga, sourceBaseUrlOverride: String? = null): SManga {
+        val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
         return manga.copy().apply {
-            url = rebaseUrl(url, sourceBaseUrlOverride) ?: url
-            thumbnail_url = rebaseUrl(thumbnail_url, sourceBaseUrlOverride) ?: thumbnail_url
+            url = rebaseUrl(url, override) ?: url
+            thumbnail_url = rebaseUrl(thumbnail_url, override) ?: thumbnail_url
         }
     }
 
-    internal fun rebaseChapter(chapter: SChapter, sourceBaseUrlOverride: String? = baseSourceUrl): SChapter {
+    internal fun rebaseChapter(chapter: SChapter, sourceBaseUrlOverride: String? = null): SChapter {
+        val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
         return SChapter.create().also { rebased ->
             rebased.copyFrom(chapter)
-            rebased.url = rebaseUrl(chapter.url, sourceBaseUrlOverride) ?: chapter.url
+            rebased.url = rebaseUrl(chapter.url, override) ?: chapter.url
         }
     }
 
-    internal fun rebasePage(page: Page, sourceBaseUrlOverride: String? = baseSourceUrl): Page {
-        return Page(page.index, rebaseUrl(page.url, sourceBaseUrlOverride).orEmpty(), page.imageUrl, page.uri).also {
+    internal fun rebasePage(page: Page, sourceBaseUrlOverride: String? = null): Page {
+        val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
+        return Page(page.index, rebaseUrl(page.url, override).orEmpty(), page.imageUrl, page.uri).also {
             it.text = page.text
         }
     }
 
-    internal fun rebaseUrl(url: String?, sourceBaseUrlOverride: String? = baseSourceUrl): String? {
+    internal fun rebaseUrl(url: String?, sourceBaseUrlOverride: String? = null): String? {
+        val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
         val value = url?.trim().orEmpty()
         if (value.isBlank()) return url
 
         val customBase = baseUrl.trimEnd('/')
-        val sourceBase = sourceBaseUrlOverride
+        val sourceBase = override
 
         if (sourceBase != null && value.startsWith(sourceBase)) {
             return customBase + value.removePrefix(sourceBase)
@@ -583,13 +662,14 @@ class CustomNovelSource(
         return customBase + "/" + value.removePrefix("/")
     }
 
-    internal fun toBaseSourceUrl(url: String?, sourceBaseUrlOverride: String? = baseSourceUrl): String? {
+    internal fun toBaseSourceUrl(url: String?, sourceBaseUrlOverride: String? = null): String? {
+        val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
         val value = url?.trim().orEmpty()
         if (value.isBlank()) return url
 
         if (baseSource is JsSource) {
             val customBase = baseUrl.trimEnd('/')
-            val sourceBase = sourceBaseUrlOverride?.trimEnd('/')
+            val sourceBase = override?.trimEnd('/')
             val relativePath = when {
                 value.startsWith(customBase) -> value.removePrefix(customBase)
                 sourceBase != null && value.startsWith(sourceBase) -> value.removePrefix(sourceBase)
@@ -598,25 +678,28 @@ class CustomNovelSource(
             return if (relativePath.startsWith("/")) relativePath else "/${relativePath.removePrefix("/")}"
         }
 
-        return mapCustomUrlToSourceUrl(url, baseUrl, sourceBaseUrlOverride)
+        return mapCustomUrlToSourceUrl(url, baseUrl, override)
     }
 
-    private fun toBaseSourceManga(manga: SManga, sourceBaseUrlOverride: String? = baseSourceUrl): SManga {
+    private fun toBaseSourceManga(manga: SManga, sourceBaseUrlOverride: String? = null): SManga {
+        val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
         return manga.copy().apply {
-            url = toBaseSourceUrl(url, sourceBaseUrlOverride) ?: url
-            thumbnail_url = toBaseSourceUrl(thumbnail_url, sourceBaseUrlOverride) ?: thumbnail_url
+            url = toBaseSourceUrl(url, override) ?: url
+            thumbnail_url = toBaseSourceUrl(thumbnail_url, override) ?: thumbnail_url
         }
     }
 
-    private fun toBaseSourceChapter(chapter: SChapter, sourceBaseUrlOverride: String? = baseSourceUrl): SChapter {
+    private fun toBaseSourceChapter(chapter: SChapter, sourceBaseUrlOverride: String? = null): SChapter {
+        val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
         return SChapter.create().also { sourceChapter ->
             sourceChapter.copyFrom(chapter)
-            sourceChapter.url = toBaseSourceUrl(chapter.url, sourceBaseUrlOverride) ?: chapter.url
+            sourceChapter.url = toBaseSourceUrl(chapter.url, override) ?: chapter.url
         }
     }
 
-    private fun toBaseSourcePage(page: Page, sourceBaseUrlOverride: String? = baseSourceUrl): Page {
-        return Page(page.index, toBaseSourceUrl(page.url, sourceBaseUrlOverride).orEmpty(), page.imageUrl, page.uri).also {
+    private fun toBaseSourcePage(page: Page, sourceBaseUrlOverride: String? = null): Page {
+        val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
+        return Page(page.index, toBaseSourceUrl(page.url, override).orEmpty(), page.imageUrl, page.uri).also {
             it.text = page.text
         }
     }
