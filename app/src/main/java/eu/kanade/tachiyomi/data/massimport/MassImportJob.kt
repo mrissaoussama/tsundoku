@@ -196,7 +196,12 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             list.map { if (it.id == batchId) it.copy(total = validUrls.size) else it }
         }
 
-        val concurrency = novelDownloadPreferences.parallelMassImport().get()
+        val concurrency = if (!fetchDetails && !fetchChapters) {
+            // Offline mode: skip thread limits, use maximum concurrency
+            Int.MAX_VALUE
+        } else {
+            novelDownloadPreferences.parallelMassImport().get()
+        }
         val completedCount = AtomicInteger(0)
         val addedCount = AtomicInteger(0)
         val skippedCount = AtomicInteger(urls.size - validUrls.size)
@@ -216,6 +221,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
 
         val throttlingEnabled = novelDownloadPreferences.enableMassImportThrottling().get()
         // Skip throttling if neither fetch details nor fetch chapters is enabled (dummy entries only)
+        // This applies to offline queue mode where only DB check is needed
         val shouldThrottle = throttlingEnabled && (fetchDetails || fetchChapters)
         val globalBaseDelay = novelDownloadPreferences.massImportDelay().get().toLong() // Already in ms
         val globalRandomRange = novelDownloadPreferences.randomDelayRange().get().toLong() // Already in ms
@@ -771,6 +777,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         val categoryId: Long,
         val addToLibrary: Boolean,
         val fetchChapters: Boolean,
+        val fetchDetails: Boolean = true,
         val status: BatchStatus = BatchStatus.Pending,
         val progress: Int = 0,
         val total: Int = 0,
@@ -901,6 +908,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                 categoryId = categoryId,
                 addToLibrary = addToLibrary,
                 fetchChapters = fetchChapters,
+                fetchDetails = fetchDetails,
                 total = urls.size,
             )
 
