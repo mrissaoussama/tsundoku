@@ -59,7 +59,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 
-private const val MEMORY_PRESSURE_THRESHOLD = 0.70
+// Clamp at 50% to trigger GC early and avoid heap fragmentation near 512MB limit
+private const val MEMORY_PRESSURE_THRESHOLD = 0.50
+private const val MAX_HEAP_BYTES = 512 * 1024 * 1024L // 512MB hard limit
 
 class MassImportJob(private val context: Context, workerParams: WorkerParameters) :
     CoroutineWorker(context, workerParams) {
@@ -73,6 +75,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
     private val syncChaptersWithSource: SyncChaptersWithSource = Injekt.get()
     private val refreshLibraryCache: RefreshLibraryCache = Injekt.get()
     private val getLibraryManga: tachiyomi.domain.manga.interactor.GetLibraryManga = Injekt.get()
+    private val storageManager: StorageManager = Injekt.get()
 
     private val notificationBuilder = context.notificationBuilder(Notifications.CHANNEL_MASS_IMPORT) {
         setSmallIcon(android.R.drawable.stat_sys_download)
@@ -165,6 +168,8 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
     ): ImportResult {
         updateBatchStatus(batchId, BatchStatus.Running)
 
+        // Clear any previous import state is no longer needed; pendingAddIds is local
+
         val importSources = getImportSources()
         if (importSources.isEmpty()) {
             showCompletionNotification(0, 0, urls.size, "No compatible sources installed")
@@ -234,6 +239,9 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         val addedCount = AtomicInteger(0)
         val skippedCount = AtomicInteger(urls.size - validUrls.size)
         val erroredCount = AtomicInteger(0)
+        // Buffer for bulk library adds - flush every 50 items to spread UI updates
+        val pendingAddIds = java.util.Collections.synchronizedList(mutableListOf<Long>())
+        val flushBatchSize = 50
         val activeImports = ConcurrentHashMap<String, Boolean>()
 
         val skippedUrls = java.util.Collections.synchronizedList(mutableListOf<String>())
@@ -301,8 +309,11 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                                         fetchDetails,
                                         categoryId,
                                         fetchChapters,
+                                        pendingAddIds,
+                                        flushBatchSize,
                                     )
                                 if (success) {
+                                    // processUrlWithSource buffers and flushes manga ids
                                     addedCount.incrementAndGet()
                                 } else {
                                     skippedCount.incrementAndGet()
@@ -354,8 +365,9 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
 
                         try {
                             val success =
-                                processUrlWithSource(url, source, addToLibrary, fetchDetails, categoryId, fetchChapters)
+                                processUrlWithSource(url, source, addToLibrary, fetchDetails, categoryId, fetchChapters, pendingAddIds, flushBatchSize)
                             if (success) {
+                                // processUrlWithSource buffers and flushes manga ids
                                 addedCount.incrementAndGet()
                             } else {
                                 skippedCount.incrementAndGet()
@@ -405,6 +417,11 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
 
         _sharedResult.update {
             finalResult
+        }
+
+        // Flush any remaining pending IDs to library (in case there were < flushBatchSize at end)
+        if (pendingAddIds.isNotEmpty()) {
+            flushPendingToLibrary(pendingAddIds)
         }
 
         updateBatchStatus(batchId, BatchStatus.Completed)
@@ -459,6 +476,8 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         fetchDetails: Boolean,
         categoryId: Long,
         fetchChapters: Boolean,
+        pendingAddIds: MutableList<Long>,
+        flushBatchSize: Int,
     ): Boolean {
         val rawPath = extractPathFromUrl(url, getSourceBaseUrl(source))
         if (rawPath.isEmpty()) return false
@@ -492,7 +511,11 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                             dateAdded = System.currentTimeMillis(),
                         ),
                     )
-                    getLibraryManga.addToLibrary(manga.id)
+                    // Buffer for batched library updates to reduce reactive churn
+                    pendingAddIds.add(manga.id)
+                    if (pendingAddIds.size >= flushBatchSize) {
+                        flushPendingToLibrary(pendingAddIds)
+                    }
                     if (categoryId > 0L) {
                         setMangaCategories.await(manga.id, listOf(categoryId))
                     }
@@ -505,7 +528,11 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                         dateAdded = System.currentTimeMillis(),
                     ),
                 )
-                getLibraryManga.addToLibrary(existingManga.id)
+                // Buffer for batched library updates to reduce reactive churn
+                pendingAddIds.add(existingManga.id)
+                if (pendingAddIds.size >= flushBatchSize) {
+                    flushPendingToLibrary(pendingAddIds)
+                }
                 if (categoryId > 0L) {
                     setMangaCategories.await(existingManga.id, listOf(categoryId))
                 }
@@ -533,7 +560,11 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                 ),
             )
 
-            getLibraryManga.addToLibrary(manga.id)
+            // Buffer for batched library updates to reduce reactive churn
+            pendingAddIds.add(manga.id)
+            if (pendingAddIds.size >= flushBatchSize) {
+                flushPendingToLibrary(pendingAddIds)
+            }
 
             if (categoryId > 0L) {
                 setMangaCategories.await(manga.id, listOf(categoryId))
@@ -663,19 +694,56 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
 
     /**
      * Wait if memory usage exceeds the threshold to let GC reclaim before continuing.
-     * This prevents OOM when doing many concurrent HTTP requests + Jsoup parsing.
+     * Triggers at 50% usage to maintain headroom before 512MB limit.
+     * Also checks for low free memory to prevent fragmentation OOM.
      */
     private suspend fun waitForMemoryPressure() {
         val runtime = Runtime.getRuntime()
-        val maxMem = runtime.maxMemory()
+        val maxMemRaw = runtime.maxMemory()
+        val maxMem = maxMemRaw.coerceAtMost(MAX_HEAP_BYTES) // Clamp to 512MB
         val usedMem = runtime.totalMemory() - runtime.freeMemory()
-        if (usedMem.toDouble() / maxMem > MEMORY_PRESSURE_THRESHOLD) {
+        val freeMem = maxMem - usedMem
+        
+        // Trigger GC if:
+        // 1. Used memory exceeds 50% threshold, OR  
+        // 2. Free memory drops below 50MB (prevent fragmentation)
+        val exceedsThreshold = usedMem.toDouble() / maxMem > MEMORY_PRESSURE_THRESHOLD
+        val lowFreeMemory = freeMem < 50 * 1024 * 1024L
+        
+        if (exceedsThreshold || lowFreeMemory) {
+            val usagePercent = (usedMem.toDouble() / maxMem * 100).toInt()
+            val reason = if (exceedsThreshold) "threshold" else "low free"
             logcat(LogPriority.WARN) {
-                "MassImport: Memory pressure ${usedMem / 1024 / 1024}MB / ${maxMem / 1024 / 1024}MB, pausing..."
+                "MassImport: Memory pressure $usagePercent% ($reason): ${usedMem / 1024 / 1024}MB / ${maxMem / 1024 / 1024}MB, pausing..."
             }
             System.gc()
-            delay(2000)
+            delay(2000) // Extended pause for GC and page table updates
         }
+    }
+
+    /**
+     * Flush buffered manga IDs to library in a single batch operation.
+     * This reduces reactive churn compared to per-item updates.
+     */
+    private suspend fun flushPendingToLibrary(pendingIds: MutableList<Long>) {
+        if (pendingIds.isEmpty()) return
+        
+        val toFlush = pendingIds.toList()
+        try {
+            getLibraryManga.addToLibraryBulk(toFlush)
+            logcat(LogPriority.DEBUG) { "Flushed ${toFlush.size} manga IDs to library" }
+        } catch (e: Exception) {
+            logcat(LogPriority.WARN, e) { "Failed to flush ${toFlush.size} IDs to library, falling back" }
+            // Fallback: refresh entire library
+            try {
+                getLibraryManga.refresh()
+            } catch (inner: Exception) {
+                logcat(LogPriority.ERROR, inner) { "Even refresh failed" }
+            }
+        }
+        
+        // Clear the buffer after flush
+        pendingIds.clear()
     }
 
     /**
