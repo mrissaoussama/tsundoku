@@ -11,6 +11,7 @@ internal fun buildEpubChaptersFromToc(
     tocChapters: List<EpubReader.EpubChapter>,
     spinePageHrefs: List<String> = emptyList(),
     hasMultipleEpubFiles: Boolean,
+    chapterNumberOffset: Float = 0f,
 ): List<SChapter> {
     if (tocChapters.isEmpty() && spinePageHrefs.isEmpty()) return emptyList()
 
@@ -54,7 +55,7 @@ internal fun buildEpubChaptersFromToc(
             url = "$mangaUrl/${chapterFileName.orEmpty()}#$href"
             name = chapterDisplayName
             date_upload = chapterLastModified
-            chapter_number = chapterNumber.toFloat()
+            chapter_number = chapterNumberOffset + chapterNumber.toFloat()
         }
     }
 

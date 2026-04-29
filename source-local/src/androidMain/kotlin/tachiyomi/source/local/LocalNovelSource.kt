@@ -246,7 +246,7 @@ actual class LocalNovelSource(
 
         val hasMultipleEpubFiles = chapterFiles.count { it.extension.equals("epub", true) } > 1
 
-        chapterFiles.forEachIndexed { _, chapterFile ->
+        chapterFiles.forEachIndexed { chapterFileIndex, chapterFile ->
             // Check if this is a multi-chapter EPUB
             if (chapterFile.extension.equals("epub", true)) {
                 try {
@@ -280,6 +280,12 @@ actual class LocalNovelSource(
                         val tocChapters = epub.getNormalizedTableOfContents()
                         if (tocChapters.isNotEmpty()) {
                             val spinePageHrefs = epub.getSpinePageHrefs()
+                            val chapterNumberOffset = if (hasMultipleEpubFiles) {
+                                chapterFileIndex * 100_000f
+                            } else {
+                                0f
+                            }
+
                             allChapters.addAll(
                                 buildEpubChaptersFromToc(
                                     mangaUrl = manga.url,
@@ -289,6 +295,7 @@ actual class LocalNovelSource(
                                     tocChapters = tocChapters,
                                     spinePageHrefs = spinePageHrefs,
                                     hasMultipleEpubFiles = hasMultipleEpubFiles,
+                                    chapterNumberOffset = chapterNumberOffset,
                                 ),
                             )
                             return@forEachIndexed
