@@ -258,7 +258,7 @@ class CustomSourceManager(
         }
 
         // Step 2: Test Latest (if supported)
-        if (config.latestUrl != null) {
+        if (source.supportsLatest) {
             try {
                 val latest = source.getLatestUpdates(1)
                 val success = latest.mangas.isNotEmpty()

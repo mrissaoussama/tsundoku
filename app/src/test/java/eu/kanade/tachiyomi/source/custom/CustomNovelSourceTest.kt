@@ -70,10 +70,10 @@ class CustomNovelSourceTest {
     @Test
     fun `rebase absolute url with sourceBase provided should convert host`() {
         // rebaseCustomSourceUrl is designed to convert URLs from sourceBase to customBase
-        val absoluteUrl = "https://allnovelfull.com/library-of-heavens-path.html"
+        val absoluteUrl = "https://website1.com/library-of-heavens-path.html"
         val customBase = "https://custom.example"
-        val sourceBase = "https://allnovelfull.com"
-        
+        val sourceBase = "https://website1.com"
+
         // When sourceBase is provided and matches, it should convert
         assertEquals(
             "https://custom.example/library-of-heavens-path.html",
@@ -85,9 +85,9 @@ class CustomNovelSourceTest {
     @Test
     fun `rebase absolute url without sourceBase should return unchanged`() {
         // If sourceBase is NOT provided, absolute URLs should be returned as-is
-        val absoluteUrl = "https://allnovelfull.com/library-of-heavens-path.html"
+        val absoluteUrl = "https://website1.com/library-of-heavens-path.html"
         val customBase = "https://custom.example"
-        
+
         assertEquals(
             absoluteUrl,
             rebaseCustomSourceUrl(absoluteUrl, customBase, null),
@@ -96,11 +96,27 @@ class CustomNovelSourceTest {
     }
 
     @Test
-    fun `rebase with sourceBase prefix should convert host`() {
-        val sourceUrl = "https://allnovelfull.com/library-of-heavens-path.html"
+    fun `embedded absolute url can be rebased`() {
+        val malformedUrl = "https://source.examplehttps//source.example/chapter-1"
         val customBase = "https://custom.example"
-        val sourceBase = "https://allnovelfull.com"
-        
+        val sourceBase = "https://source.example"
+
+        assertEquals(
+            "https://custom.example/chapter-1",
+            rebaseCustomSourceUrl(malformedUrl, customBase, sourceBase),
+        )
+        assertEquals(
+            "https://source.example/chapter-1",
+            mapCustomUrlToSourceUrl("https://custom.example/chapter-1", customBase, sourceBase),
+        )
+    }
+
+    @Test
+    fun `rebase with sourceBase prefix should convert host`() {
+        val sourceUrl = "https://website1.com/library-of-heavens-path.html"
+        val customBase = "https://custom.example"
+        val sourceBase = "https://website1.com"
+
         // If it matches sourceBase, convert to custom base
         val result = rebaseCustomSourceUrl(sourceUrl, customBase, sourceBase)
         assertEquals("https://custom.example/library-of-heavens-path.html", result)
@@ -110,36 +126,36 @@ class CustomNovelSourceTest {
     fun `mapCustomUrlToSourceUrl should handle absolute urls correctly`() {
         val customUrl = "https://custom.example/library-of-heavens-path.html"
         val customBase = "https://custom.example"
-        val sourceBase = "https://allnovelfull.com"
-        
+        val sourceBase = "https://website1.com"
+
         val result = mapCustomUrlToSourceUrl(customUrl, customBase, sourceBase)
-        assertEquals("https://allnovelfull.com/library-of-heavens-path.html", result)
+        assertEquals("https://website1.com/library-of-heavens-path.html", result)
     }
 
     @Test
     fun `round trip conversion custom to source and back`() {
         val customUrl = "https://custom.example/library-of-heavens-path.html"
         val customBase = "https://custom.example"
-        val sourceBase = "https://allnovelfull.com"
-        
+        val sourceBase = "https://website1.com"
+
         // Custom URL → Source URL
         val toSource = mapCustomUrlToSourceUrl(customUrl, customBase, sourceBase)
-        assertEquals("https://allnovelfull.com/library-of-heavens-path.html", toSource)
-        
+        assertEquals("https://website1.com/library-of-heavens-path.html", toSource)
+
         // Source URL → Custom URL
         val backToCustom = rebaseCustomSourceUrl(toSource, customBase, sourceBase)
         assertEquals(customUrl, backToCustom)
     }
 
     @Test
-    fun `test allnovelfull scenario from runtime`() {
+    fun `test website1 scenario from runtime`() {
         // This mimics the actual scenario from the app
-        val sourceBaseUrl = "https://allnovelfull.com"
+        val sourceBaseUrl = "https://website1.com"
         val customBaseUrl = "https://custom.example"
-        
+
         // Scenario 1: Source returns absolute URL
-        val sourceReturnedUrl = "https://allnovelfull.com/library-of-heavens-path.html"
-        
+        val sourceReturnedUrl = "https://website1.com/library-of-heavens-path.html"
+
         // When we rebase it to custom for display/storage
         val rebasedForCustom = rebaseCustomSourceUrl(sourceReturnedUrl, customBaseUrl, sourceBaseUrl)
         assertEquals(
@@ -147,16 +163,16 @@ class CustomNovelSourceTest {
             rebasedForCustom,
             "Source absolute URL should be converted to custom host"
         )
-        
+
         // Scenario 2: We need to convert custom URL back to source for HTTP request
         val customStoredUrl = "https://custom.example/library-of-heavens-path.html"
         val convertedToSource = mapCustomUrlToSourceUrl(customStoredUrl, customBaseUrl, sourceBaseUrl)
         assertEquals(
-            "https://allnovelfull.com/library-of-heavens-path.html",
+            "https://website1.com/library-of-heavens-path.html",
             convertedToSource,
             "Custom URL should be converted back to source host"
         )
-        
+
         // Scenario 3: The interceptor should then rewrite source host back to custom for the actual request
         val sourceUrl = convertedToSource
         val finalInterceptedUrl = if (sourceUrl != null && sourceUrl.startsWith(sourceBaseUrl)) {
@@ -174,19 +190,19 @@ class CustomNovelSourceTest {
     @Test
     fun `interceptor behavior when HttpSource baseUrl is preserved`() {
         // The interceptor is set up to convert sourceBase -> customBase
-        val sourceBaseUrl = "https://allnovelfull.com"
+        val sourceBaseUrl = "https://website1.com"
         val customBaseUrl = "https://custom.example"
-        
+
         // If HttpSource keeps its original baseUrl, requests will be built as:
-        val httpSourceBuiltUrl = "https://allnovelfull.com/library-of-heavens-path.html"
-        
+        val httpSourceBuiltUrl = "https://website1.com/library-of-heavens-path.html"
+
         // Interceptor logic:
         val interceptorResult = if (httpSourceBuiltUrl.startsWith(sourceBaseUrl)) {
             customBaseUrl + httpSourceBuiltUrl.removePrefix(sourceBaseUrl)
         } else {
             httpSourceBuiltUrl
         }
-        
+
         assertEquals(
             "https://custom.example/library-of-heavens-path.html",
             interceptorResult,
@@ -197,41 +213,113 @@ class CustomNovelSourceTest {
     @Test
     fun `problem HttpSource baseUrl changed to custom breaks interceptor`() {
         // THE BUG: When we set HttpSource.baseUrl = customBaseUrl
-        val sourceBaseUrl = "https://allnovelfull.com"
+        val sourceBaseUrl = "https://website1.com"
         val customBaseUrl = "https://custom.example"
         val modifiedHttpSourceBaseUrl = customBaseUrl // <- This is what patchHttpSourceForCustomBaseUrl does!
-        
+
         // HttpSource will now build requests as:
         val httpSourceBuiltUrl = modifiedHttpSourceBaseUrl + "/library-of-heavens-path.html"
-        
+
         // Interceptor tries to match and convert:
         val interceptorResult = if (httpSourceBuiltUrl.startsWith(sourceBaseUrl)) {
             customBaseUrl + httpSourceBuiltUrl.removePrefix(sourceBaseUrl)
         } else {
             httpSourceBuiltUrl // <- Returns unchanged!
         }
-        
+
         assertEquals(
             "https://custom.example/library-of-heavens-path.html",
             interceptorResult,
             "This should work, but only by luck since URL is already custom"
         )
-        
+
         // But the REAL problem: what if the URL is a relative path?
         val relativeUrl = "/library-of-heavens-path.html"
         val httpSourceBuiltFromRelative = modifiedHttpSourceBaseUrl + relativeUrl
-        
+
         // Interceptor sees this and since it doesn't start with sourceBase, leaves it alone
         val interceptorResultFromRelative = if (httpSourceBuiltFromRelative.startsWith(sourceBaseUrl)) {
             customBaseUrl + httpSourceBuiltFromRelative.removePrefix(sourceBaseUrl)
         } else {
             httpSourceBuiltFromRelative
         }
-        
+
         assertEquals(
             "https://custom.example/library-of-heavens-path.html",
             interceptorResultFromRelative,
             "This also works, but again only by accident"
         )
+    }
+
+    @Test
+    fun `buildAbsoluteUrl handles redirect scenarios correctly`() {
+        val baseUrl = "https://website1.com"
+
+        // Case 1: Already absolute URL (after redirect to different domain)
+        // This is the bug scenario: after a 301 redirect from website1.com to website1redirect.net,
+        // the page.url becomes the full website1redirect.net URL which shouldn't be concatenated
+        val redirectedAbsoluteUrl = "https://website1redirect.net/chapter-1"
+        // Should NOT concatenate - must return the URL as-is
+        val result1 = buildAbsoluteUrlForTest(redirectedAbsoluteUrl, baseUrl)
+        assertEquals(
+            "https://website1redirect.net/chapter-1",
+            result1,
+            "Already absolute URLs from redirects should be used as-is, not concatenated with baseUrl"
+        )
+
+        // Case 2: Root-relative URL
+        val rootRelativeUrl = "/chapter-1"
+        val result2 = buildAbsoluteUrlForTest(rootRelativeUrl, baseUrl)
+        assertEquals(
+            "https://website1.com/chapter-1",
+            result2,
+            "Root-relative URLs should be concatenated with baseUrl"
+        )
+
+        // Case 3: Relative URL without leading slash
+        val relativeUrl = "chapter-1"
+        val result3 = buildAbsoluteUrlForTest(relativeUrl, baseUrl)
+        assertEquals(
+            "https://website1.com/chapter-1",
+            result3,
+            "Relative URLs should be concatenated with baseUrl and a slash"
+        )
+
+        // Case 4: Empty or null URL
+        val result4 = buildAbsoluteUrlForTest("", baseUrl)
+        assertEquals(
+            baseUrl,
+            result4,
+            "Empty URL should return baseUrl"
+        )
+
+        // Case 5: HTTP URL (also absolute)
+        val httpAbsoluteUrl = "http://example.com/page"
+        val result5 = buildAbsoluteUrlForTest(httpAbsoluteUrl, baseUrl)
+        assertEquals(
+            "http://example.com/page",
+            result5,
+            "HTTP absolute URLs should be used as-is"
+        )
+
+    }
+
+    // Helper function that mirrors buildAbsoluteUrl logic for testing
+    private fun buildAbsoluteUrlForTest(url: String?, baseUrl: String): String {
+        val trimmedUrl = url?.trim().orEmpty()
+        if (trimmedUrl.isBlank()) return baseUrl
+
+        // If URL already has a scheme, it's absolute (e.g., after a redirect to a different domain)
+        if (trimmedUrl.startsWith("http://") || trimmedUrl.startsWith("https://")) {
+            return trimmedUrl
+        }
+
+        // If URL starts with /, it's root-relative
+        if (trimmedUrl.startsWith("/")) {
+            return baseUrl + trimmedUrl
+        }
+
+        // Otherwise, it's a relative path - add slash between baseUrl and path
+        return "$baseUrl/$trimmedUrl"
     }
 }

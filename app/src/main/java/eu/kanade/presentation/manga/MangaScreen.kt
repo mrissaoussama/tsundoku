@@ -367,21 +367,11 @@ private fun MangaScreenSmallImpl(
                     scrollScope.launch { chapterListState.animateScrollToItem(0) }
                 },
                 onClickScrollToLastRead = {
-                    // Use same logic as the FAB resume button
                     val targetChapter = state.chapters.getNextUnread(state.manga)
-                    android.util.Log.d(
-                        "ScrollToLastRead",
-                        "Small | target=${targetChapter?.name} (id=${targetChapter?.id}), " +
-                            "listItems=${listItem.size}, sortDesc=${state.manga.sortDescending()}",
-                    )
                     if (targetChapter != null) {
                         val targetIndex = listItem.indexOfFirst {
                             it is ChapterList.Item && it.chapter.id == targetChapter.id
                         }
-                        android.util.Log.d(
-                            "ScrollToLastRead",
-                            "Small | targetIndex=$targetIndex, scrollIndex=${targetIndex + 4}",
-                        )
                         if (targetIndex != -1) {
                             scrollScope.launch {
                                 val halfHeight = chapterListState.layoutInfo.viewportSize.height / 2
@@ -669,21 +659,11 @@ fun MangaScreenLargeImpl(
                     scrollScope.launch { chapterListState.animateScrollToItem(0) }
                 },
                 onClickScrollToLastRead = {
-                    // Use same logic as the FAB resume button
                     val targetChapter = state.chapters.getNextUnread(state.manga)
-                    android.util.Log.d(
-                        "ScrollToLastRead",
-                        "Large | target=${targetChapter?.name} (id=${targetChapter?.id}), " +
-                            "listItems=${listItem.size}, sortDesc=${state.manga.sortDescending()}",
-                    )
                     if (targetChapter != null) {
                         val targetIndex = listItem.indexOfFirst {
                             it is ChapterList.Item && it.chapter.id == targetChapter.id
                         }
-                        android.util.Log.d(
-                            "ScrollToLastRead",
-                            "Large | targetIndex=$targetIndex, scrollIndex=${targetIndex + 1}",
-                        )
                         if (targetIndex != -1) {
                             scrollScope.launch {
                                 val halfHeight = chapterListState.layoutInfo.viewportSize.height / 2

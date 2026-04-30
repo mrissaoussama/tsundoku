@@ -541,11 +541,12 @@ private fun CreateSourceDialog(
 
     // Extension picker dialog
     if (showExtensionPicker) {
-        ExtensionSourcePickerDialog(
+        BaseSourcePickerDialog(
+            selectedSourceId = null,
             onDismiss = { showExtensionPicker = false },
-            onPick = { pickedName, pickedBaseUrl, pickedSourceId ->
+            onPick = { pickedSourceName, pickedSourceId, pickedBaseUrl, _ ->
                 showExtensionPicker = false
-                onBaseOnExtension(pickedName, pickedBaseUrl, pickedSourceId)
+                onBaseOnExtension(pickedSourceName, pickedBaseUrl, pickedSourceId)
             },
         )
     }
@@ -722,14 +723,14 @@ class CustomSourceEditorScreen(
             }
         }
 
-        // Resolve effective basedOnSourceId: prefer constructor param, fall back to loaded config
-        val effectiveBasedOnSourceId = remember {
-            basedOnSourceId ?: initialConfig?.basedOnSourceId
+        var selectedBasedOnSourceId by remember {
+            mutableStateOf(basedOnSourceId ?: initialConfig?.basedOnSourceId)
         }
+        var showBaseSourcePicker by remember { mutableStateOf(false) }
 
         // Resolve language from base source when available
-        val baseLang = remember(effectiveBasedOnSourceId) {
-            effectiveBasedOnSourceId?.let { id ->
+        val baseLang = remember(selectedBasedOnSourceId) {
+            selectedBasedOnSourceId?.let { id ->
                 (Injekt.get<SourceManager>().get(id))?.lang
             }
         }
@@ -847,7 +848,7 @@ class CustomSourceEditorScreen(
                 )
 
                 // Show info card when based on extension
-                if (effectiveBasedOnSourceId != null) {
+                if (selectedBasedOnSourceId != null) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Card(
                         colors = CardDefaults.cardColors(
@@ -881,6 +882,58 @@ class CustomSourceEditorScreen(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = stringResource(TDMR.strings.custom_source_base_on_extension),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = selectedBasedOnSourceId?.let { id ->
+                                Injekt.get<SourceManager>().get(id)?.let { source ->
+                                    "${source.name} (${source.lang})"
+                                }
+                            } ?: "Not based on another source",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { showBaseSourcePicker = true }) {
+                                Text(
+                                    if (selectedBasedOnSourceId == null) {
+                                        stringResource(TDMR.strings.custom_source_base_on_extension)
+                                    } else {
+                                        stringResource(MR.strings.action_edit)
+                                    },
+                                )
+                            }
+                            if (selectedBasedOnSourceId != null) {
+                                TextButton(onClick = { selectedBasedOnSourceId = null }) {
+                                    Text(stringResource(MR.strings.action_delete))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = latestUrl,
+                    onValueChange = { latestUrl = it },
+                    label = { Text(stringResource(TDMR.strings.custom_source_latest_url)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
                 // Source Options Section
                 Spacer(modifier = Modifier.height(16.dp))
@@ -992,7 +1045,7 @@ class CustomSourceEditorScreen(
                 }
 
                 // URLs Section (only for manual/selector-based sources)
-                if (effectiveBasedOnSourceId == null) {
+                if (selectedBasedOnSourceId == null) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = stringResource(TDMR.strings.custom_source_url_patterns),
@@ -1013,17 +1066,6 @@ class CustomSourceEditorScreen(
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(stringResource(TDMR.strings.custom_source_popular_url_hint)) },
                     )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = latestUrl,
-                        onValueChange = { latestUrl = it },
-                        label = { Text(stringResource(TDMR.strings.custom_source_latest_url)) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
                         value = searchUrl,
@@ -1108,7 +1150,7 @@ class CustomSourceEditorScreen(
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(stringResource(TDMR.strings.custom_source_content_selector_hint)) },
                     )
-                } // end if (effectiveBasedOnSourceId == null)
+                } // end if (selectedBasedOnSourceId == null)
 
                 // Error message
                 errorMessage?.let {
@@ -1134,7 +1176,7 @@ class CustomSourceEditorScreen(
                                 detailsTitleSelector, detailsDescriptionSelector,
                                 chaptersListSelector, contentPrimarySelector,
                                 sourceId, useCloudflare, reverseChapters, postSearch,
-                                effectiveBasedOnSourceId, isNovel, language,
+                                selectedBasedOnSourceId, isNovel, language,
                             )
 
                             val result = if (sourceId != null) {
@@ -1154,7 +1196,7 @@ class CustomSourceEditorScreen(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !isSaving && name.isNotBlank() && baseUrl.isNotBlank() &&
                         (
-                            effectiveBasedOnSourceId != null || (
+                            selectedBasedOnSourceId != null || (
                                 popularUrl.isNotBlank() && searchUrl.isNotBlank() &&
                                     popularListSelector.isNotBlank() && detailsTitleSelector.isNotBlank() &&
                                     chaptersListSelector.isNotBlank() && contentPrimarySelector.isNotBlank()
@@ -1168,6 +1210,19 @@ class CustomSourceEditorScreen(
                     }
                 }
             }
+        }
+
+        if (showBaseSourcePicker) {
+            BaseSourcePickerDialog(
+                selectedSourceId = selectedBasedOnSourceId,
+                onDismiss = { showBaseSourcePicker = false },
+                onPick = { _, sourceId, baseUrlValue, lang ->
+                    selectedBasedOnSourceId = sourceId
+                    baseUrl = baseUrlValue
+                    language = lang
+                    showBaseSourcePicker = false
+                },
+            )
         }
     }
 
@@ -1226,21 +1281,17 @@ class CustomSourceEditorScreen(
     }
 }
 
-/**
- * Dialog to pick an installed extension source to base a custom source on.
- * Shows all installed extensions (APK and JS plugins).
- */
 @Composable
-private fun ExtensionSourcePickerDialog(
+private fun BaseSourcePickerDialog(
+    selectedSourceId: Long?,
     onDismiss: () -> Unit,
-    onPick: (name: String, baseUrl: String, sourceId: Long) -> Unit,
+    onPick: (sourceName: String, sourceId: Long, baseUrl: String, lang: String) -> Unit,
 ) {
     val extensionManager: ExtensionManager = remember { Injekt.get() }
     val jsPluginManager: JsPluginManager = remember { Injekt.get() }
     val installedExtensions by extensionManager.installedExtensionsFlow.collectAsState()
     val jsSources by jsPluginManager.jsSources.collectAsState()
 
-    // Collect novel extension sources: extension name → list of (Source, ExtensionName)
     data class SourceEntry(
         val sourceId: Long,
         val sourceName: String,
@@ -1250,19 +1301,18 @@ private fun ExtensionSourcePickerDialog(
     )
 
     val novelSources = remember(installedExtensions, jsSources) {
-        val apkSources = installedExtensions
-            .flatMap { ext ->
-                ext.sources.mapNotNull { source ->
-                    val httpSource = source as? HttpSource ?: return@mapNotNull null
-                    SourceEntry(
-                        sourceId = httpSource.id,
-                        sourceName = httpSource.name,
-                        baseUrl = httpSource.baseUrl,
-                        extensionName = ext.name,
-                        lang = httpSource.lang,
-                    )
-                }
+        val apkSources = installedExtensions.flatMap { ext ->
+            ext.sources.mapNotNull { source ->
+                val httpSource = source as? HttpSource ?: return@mapNotNull null
+                SourceEntry(
+                    sourceId = httpSource.id,
+                    sourceName = httpSource.name,
+                    baseUrl = httpSource.baseUrl,
+                    extensionName = ext.name,
+                    lang = httpSource.lang,
+                )
             }
+        }
 
         val jsEntries = jsSources.mapNotNull { source ->
             val jsSource = source as? eu.kanade.tachiyomi.jsplugin.source.JsSource ?: return@mapNotNull null
@@ -1278,17 +1328,11 @@ private fun ExtensionSourcePickerDialog(
         (apkSources + jsEntries).sortedBy { it.extensionName }
     }
 
-    var nameOverride by remember { mutableStateOf("") }
-    var baseUrlOverride by remember { mutableStateOf("") }
-    var selectedSource by remember { mutableStateOf<SourceEntry?>(null) }
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(TDMR.strings.custom_source_pick_extension)) },
+        title = { Text(stringResource(TDMR.strings.custom_source_base_on_extension)) },
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-            ) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 if (novelSources.isEmpty()) {
                     Text(
                         text = stringResource(TDMR.strings.custom_source_no_extensions),
@@ -1304,7 +1348,7 @@ private fun ExtensionSourcePickerDialog(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     novelSources.forEach { entry ->
-                        val isSelected = selectedSource == entry
+                        val isSelected = selectedSourceId == entry.sourceId
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1316,11 +1360,7 @@ private fun ExtensionSourcePickerDialog(
                                     MaterialTheme.colorScheme.surfaceVariant
                                 },
                             ),
-                            onClick = {
-                                selectedSource = entry
-                                nameOverride = entry.sourceName + " (Custom)"
-                                baseUrlOverride = entry.baseUrl
-                            },
+                            onClick = { onPick(entry.sourceName, entry.sourceId, entry.baseUrl, entry.lang) },
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
@@ -1336,39 +1376,12 @@ private fun ExtensionSourcePickerDialog(
                             }
                         }
                     }
-
-                    // Override fields (shown when a source is selected)
-                    if (selectedSource != null) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        OutlinedTextField(
-                            value = nameOverride,
-                            onValueChange = { nameOverride = it },
-                            label = { Text(stringResource(TDMR.strings.custom_source_source_name)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = baseUrlOverride,
-                            onValueChange = { baseUrlOverride = it },
-                            label = { Text(stringResource(TDMR.strings.custom_source_base_url)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                        )
-                    }
                 }
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    selectedSource?.let { entry ->
-                        onPick(nameOverride, baseUrlOverride, entry.sourceId)
-                    }
-                },
-                enabled = selectedSource != null && nameOverride.isNotBlank() && baseUrlOverride.startsWith("http"),
-            ) {
-                Text(stringResource(MR.strings.action_create))
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(MR.strings.action_cancel))
             }
         },
         dismissButton = {

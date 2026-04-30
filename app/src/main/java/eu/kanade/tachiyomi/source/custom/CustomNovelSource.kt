@@ -20,6 +20,7 @@ import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import tachiyomi.domain.source.service.SourceManager
@@ -31,7 +32,7 @@ internal fun rebaseCustomSourceUrl(
     customBaseUrl: String,
     sourceBaseUrl: String? = null,
 ): String? {
-    val value = url?.trim().orEmpty()
+    val value = normalizeCustomUrl(url).orEmpty()
     if (value.isBlank()) return url
 
     val customBase = customBaseUrl.trimEnd('/')
@@ -53,7 +54,7 @@ internal fun mapCustomUrlToSourceUrl(
     customBaseUrl: String,
     sourceBaseUrl: String? = null,
 ): String? {
-    val value = url?.trim().orEmpty()
+    val value = normalizeCustomUrl(url).orEmpty()
     if (value.isBlank()) return url
 
     val customBase = customBaseUrl.trimEnd('/')
@@ -71,9 +72,11 @@ internal fun rebaseCustomSourceManga(
     customBaseUrl: String,
     sourceBaseUrl: String? = null,
 ): SManga {
-    return manga.copy().apply {
-        url = rebaseCustomSourceUrl(url, customBaseUrl, sourceBaseUrl) ?: url
-        thumbnail_url = rebaseCustomSourceUrl(thumbnail_url, customBaseUrl, sourceBaseUrl) ?: thumbnail_url
+    return safeCopyManga(manga).apply {
+        val originalUrl = runCatching { manga.url }.getOrNull()
+        url = rebaseCustomSourceUrl(originalUrl, customBaseUrl, sourceBaseUrl) ?: (originalUrl ?: "")
+        val originalThumb = runCatching { manga.thumbnail_url }.getOrNull()
+        thumbnail_url = rebaseCustomSourceUrl(originalThumb, customBaseUrl, sourceBaseUrl) ?: originalThumb
     }
 }
 
@@ -113,6 +116,81 @@ internal fun stableCustomSourceId(name: String, baseUrl: String): Long {
     return (name + baseUrl).hashCode().toLong() and 0x7FFFFFFF
 }
 
+// Safe copy helper that avoids reading lateinit properties which may not be initialized.
+private fun safeCopyManga(manga: SManga): SManga {
+    val copy = SManga.create()
+    copy.url = runCatching { manga.url }.getOrNull() ?: ""
+    copy.title = runCatching { manga.title }.getOrNull() ?: ""
+    copy.artist = runCatching { manga.artist }.getOrNull()
+    copy.author = runCatching { manga.author }.getOrNull()
+    copy.description = runCatching { manga.description }.getOrNull()
+    copy.genre = runCatching { manga.genre }.getOrNull()
+    copy.status = runCatching { manga.status }.getOrElse { 0 }
+    copy.thumbnail_url = runCatching { manga.thumbnail_url }.getOrNull()
+    copy.update_strategy = runCatching { manga.update_strategy }.getOrElse { eu.kanade.tachiyomi.source.model.UpdateStrategy.ALWAYS_UPDATE }
+    copy.initialized = runCatching { manga.initialized }.getOrElse { false }
+    copy.altTitles = runCatching { manga.altTitles }.getOrElse { emptyList() }
+    return copy
+}
+
+private fun toHttpSourceRequestPath(url: String?, sourceBaseUrl: String?): String? {
+    val value = normalizeCustomUrl(url).orEmpty()
+    if (value.isBlank()) return url
+
+    val sourceBase = sourceBaseUrl?.trimEnd('/')
+    val httpUrl = value.toHttpUrlOrNull()
+
+    if (httpUrl != null) {
+        val path = buildString {
+            append(httpUrl.encodedPath.ifBlank { "/" })
+            if (httpUrl.encodedQuery != null) {
+                append('?')
+                append(httpUrl.encodedQuery)
+            }
+            if (httpUrl.encodedFragment != null) {
+                append('#')
+                append(httpUrl.encodedFragment)
+            }
+        }
+        return if (path.startsWith('/')) path else "/$path"
+    }
+
+    if (sourceBase != null && value.startsWith(sourceBase)) {
+        val path = value.removePrefix(sourceBase)
+        return if (path.startsWith('/')) path else "/${path.removePrefix("/")}" 
+    }
+
+    return if (value.startsWith('/')) value else "/${value.removePrefix("/")}" 
+}
+
+private fun normalizeCustomUrl(url: String?): String? {
+    val value = url?.trim().orEmpty()
+    if (value.isBlank()) return url
+
+    val embeddedAbsoluteStart = listOf("https://", "http://", "https//", "http//")
+        .mapNotNull { scheme ->
+            val idx = value.lastIndexOf(scheme)
+            if (idx > 0) idx else null
+        }
+        .maxOrNull()
+    if (embeddedAbsoluteStart != null) {
+        val embedded = value.substring(embeddedAbsoluteStart)
+        return when {
+            embedded.startsWith("https//") -> "https://" + embedded.removePrefix("https//")
+            embedded.startsWith("http//") -> "http://" + embedded.removePrefix("http//")
+            else -> embedded
+        }
+    }
+
+    return when {
+        value.startsWith("https//") -> "https://" + value.removePrefix("https//")
+        value.startsWith("http//") -> "http://" + value.removePrefix("http//")
+        else -> value
+    }
+}
+
+
+
 private fun trySetFieldRecursively(target: Any, fieldName: String, value: Any): Boolean {
     var current: Class<*>? = target.javaClass
     while (current != null) {
@@ -136,22 +214,58 @@ private fun createBaseUrlRewriteClient(
 ): OkHttpClient {
     val sourceBase = sourceBaseUrl.trimEnd('/')
     val customBase = customBaseUrl.trimEnd('/')
+    val sourceBaseHttp = sourceBase.toHttpUrlOrNull()
+    val customBaseHttp = customBase.toHttpUrlOrNull()
+
     return client.newBuilder()
         .addInterceptor { chain ->
             val request = chain.request()
-            val requestUrl = request.url.toString()
-            val rewrittenUrl = if (requestUrl.startsWith(sourceBase)) {
-                customBase + requestUrl.removePrefix(sourceBase)
+            val reqUrl = request.url
+            var nextRequest = request
+
+            // Prefer structural comparison using HttpUrl when possible to avoid string concat bugs
+            if (sourceBaseHttp != null && customBaseHttp != null) {
+                if (reqUrl.host == sourceBaseHttp.host && reqUrl.scheme == sourceBaseHttp.scheme) {
+                    val newUrl = reqUrl.newBuilder()
+                        .scheme(customBaseHttp.scheme)
+                        .host(customBaseHttp.host)
+                        .port(customBaseHttp.port)
+                        .build()
+                    nextRequest = request.newBuilder().url(newUrl).build()
+                } else {
+                    // Fallback: handle exact string-prefix replacement only when request string actually starts with sourceBase
+                    val reqStr = reqUrl.toString()
+                    if (reqStr.startsWith(sourceBase)) {
+                        val rewritten = customBase + reqStr.removePrefix(sourceBase)
+                        rewritten.toHttpUrlOrNull()?.let { newHttpUrl ->
+                            nextRequest = request.newBuilder().url(newHttpUrl).build()
+                        }
+                    }
+                }
             } else {
-                requestUrl
+                // If parsing failed for any reason, still attempt conservative string-based rewrite
+                val reqStr = reqUrl.toString()
+                if (reqStr.startsWith(sourceBase)) {
+                    val rewritten = customBase + reqStr.removePrefix(sourceBase)
+                    rewritten.toHttpUrlOrNull()?.let { newHttpUrl ->
+                        nextRequest = request.newBuilder().url(newHttpUrl).build()
+                    }
+                }
+            }
+            val finalRequest = run {
+                val reqStr = nextRequest.url.toString()
+                // look for second (or later) occurrence of scheme
+                val idxHttp = reqStr.indexOf("http://", 8).let { if (it >= 0) it else reqStr.indexOf("https://", 8) }
+                if (idxHttp > 0) {
+                    val embedded = reqStr.substring(idxHttp)
+                    embedded.toHttpUrlOrNull()?.let { embeddedUrl ->
+                        return@run nextRequest.newBuilder().url(embeddedUrl).build()
+                    }
+                }
+                nextRequest
             }
 
-            val nextRequest = if (rewrittenUrl != requestUrl) {
-                request.newBuilder().url(rewrittenUrl).build()
-            } else {
-                request
-            }
-            chain.proceed(nextRequest)
+            chain.proceed(finalRequest)
         }
         .build()
 }
@@ -207,7 +321,8 @@ class CustomNovelSource(
     override val baseUrl: String = config.baseUrl
     override val lang: String = config.language
     override val id: Long = config.id ?: generateId(config.name, config.baseUrl)
-    override val supportsLatest: Boolean = config.latestUrl != null
+    override val supportsLatest: Boolean
+        get() = config.latestUrl != null || baseSource?.supportsLatest == true
 
     override val client = if (config.useCloudflare) network.cloudflareClient else network.client
 
@@ -420,20 +535,44 @@ class CustomNovelSource(
     // ======================== Pages (Novel Content) ========================
 
     override fun pageListParse(response: Response): List<Page> {
-        val url = response.request.url.toString().removePrefix(baseUrl)
-        return listOf(Page(0, url))
+        val url = response.request.url
+        val path = buildString {
+            append(url.encodedPath)
+            if (url.encodedQuery != null) {
+                append('?')
+                append(url.encodedQuery)
+            }
+            if (url.encodedFragment != null) {
+                append('#')
+                append(url.encodedFragment)
+            }
+        }
+        return listOf(Page(0, path))
     }
 
     override suspend fun fetchPageText(page: Page): String {
         val bs = baseSource
         if (bs != null && bs.isNovelSource()) {
-            return bs.fetchNovelPageText(toBaseSourcePage(page))
+            // For content fetching, we need absolute URLs (not relative paths)
+            // buildAbsoluteUrl() converts relative to absolute on custom base
+            val absoluteUrl = buildAbsoluteUrl(page.url)
+            // mapCustomUrlToSourceUrl() converts custom base to source base if mirror
+            val sourceUrl = mapCustomUrlToSourceUrl(absoluteUrl, baseUrl, effectiveRebaseUrl) ?: absoluteUrl
+            
+            // Sanity check: ensure URL is absolute before passing to delegate
+            if (!sourceUrl.startsWith("http://") && !sourceUrl.startsWith("https://")) {
+                throw IllegalArgumentException("Invalid URL format for content fetching: $sourceUrl (original: ${page.url})")
+            }
+            
+            val pageToFetch = Page(page.index, sourceUrl, page.imageUrl, page.uri).also { it.text = page.text }
+            return bs.fetchNovelPageText(pageToFetch)
         }
 
         // If based on extension but source is not a novel source, fall through to CSS selectors
         // This allows hybrid setups where browsing is delegated but content uses custom selectors
 
-        val response = client.newCall(GET(baseUrl + page.url, headers)).awaitSuccess()
+        val pageUrl = buildAbsoluteUrl(page.url)
+        val response = client.newCall(GET(pageUrl, headers)).awaitSuccess()
         val document = response.asJsoup()
 
         val selectors = config.selectors.content
@@ -622,9 +761,11 @@ class CustomNovelSource(
 
     internal fun rebaseManga(manga: SManga, sourceBaseUrlOverride: String? = null): SManga {
         val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
-        return manga.copy().apply {
-            url = rebaseUrl(url, override) ?: url
-            thumbnail_url = rebaseUrl(thumbnail_url, override) ?: thumbnail_url
+        return safeCopyManga(manga).apply {
+            val originalUrl = runCatching { manga.url }.getOrNull()
+            url = rebaseUrl(originalUrl, override) ?: (originalUrl ?: "")
+            val originalThumb = runCatching { manga.thumbnail_url }.getOrNull()
+            thumbnail_url = rebaseUrl(originalThumb, override) ?: originalThumb
         }
     }
 
@@ -645,7 +786,7 @@ class CustomNovelSource(
 
     internal fun rebaseUrl(url: String?, sourceBaseUrlOverride: String? = null): String? {
         val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
-        val value = url?.trim().orEmpty()
+        val value = normalizeCustomUrl(url).orEmpty()
         if (value.isBlank()) return url
 
         val customBase = baseUrl.trimEnd('/')
@@ -664,7 +805,8 @@ class CustomNovelSource(
 
     internal fun toBaseSourceUrl(url: String?, sourceBaseUrlOverride: String? = null): String? {
         val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
-        val value = url?.trim().orEmpty()
+        val repairedUrl = normalizeCustomUrl(url)
+        val value = repairedUrl.orEmpty()
         if (value.isBlank()) return url
 
         if (baseSource is JsSource) {
@@ -673,19 +815,25 @@ class CustomNovelSource(
             val relativePath = when {
                 value.startsWith(customBase) -> value.removePrefix(customBase)
                 sourceBase != null && value.startsWith(sourceBase) -> value.removePrefix(sourceBase)
-                else -> value
+                else -> {
+                    // If URL doesn't match either base, it might be absolute from a redirect
+                    // Return it as-is so delegate can use it directly
+                    value
+                }
             }
             return if (relativePath.startsWith("/")) relativePath else "/${relativePath.removePrefix("/")}"
         }
 
-        return mapCustomUrlToSourceUrl(url, baseUrl, override)
+        return toHttpSourceRequestPath(mapCustomUrlToSourceUrl(value, baseUrl, override), override)
     }
 
     private fun toBaseSourceManga(manga: SManga, sourceBaseUrlOverride: String? = null): SManga {
         val override = sourceBaseUrlOverride ?: effectiveRebaseUrl
-        return manga.copy().apply {
-            url = toBaseSourceUrl(url, override) ?: url
-            thumbnail_url = toBaseSourceUrl(thumbnail_url, override) ?: thumbnail_url
+        return safeCopyManga(manga).apply {
+            val originalUrl = runCatching { manga.url }.getOrNull()
+            url = toBaseSourceUrl(originalUrl, override) ?: (originalUrl ?: "")
+            val originalThumb = runCatching { manga.thumbnail_url }.getOrNull()
+            thumbnail_url = toBaseSourceUrl(originalThumb, override) ?: originalThumb
         }
     }
 
@@ -702,6 +850,28 @@ class CustomNovelSource(
         return Page(page.index, toBaseSourceUrl(page.url, override).orEmpty(), page.imageUrl, page.uri).also {
             it.text = page.text
         }
+    }
+
+    /**
+     * Builds an absolute URL from a relative or absolute path.
+     * Handles redirects where the URL might already be absolute after a 301/302 redirect.
+     */
+    private fun buildAbsoluteUrl(url: String?): String {
+        val trimmedUrl = normalizeCustomUrl(url)?.trim().orEmpty()
+        if (trimmedUrl.isBlank()) return baseUrl
+        
+        // If URL already has a scheme, it's absolute (e.g., after a redirect to a different domain)
+        if (trimmedUrl.startsWith("http://") || trimmedUrl.startsWith("https://")) {
+            return trimmedUrl
+        }
+
+        // If URL starts with /, it's root-relative
+        if (trimmedUrl.startsWith("/")) {
+            return baseUrl + trimmedUrl
+        }
+
+        // Otherwise, it's a relative path - add slash between baseUrl and path
+        return "$baseUrl/$trimmedUrl"
     }
 
     companion object {
