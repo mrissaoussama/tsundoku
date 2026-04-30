@@ -290,7 +290,6 @@ class JSLibraryProvider(
         val baseHttpUrl = base.toHttpUrlOrNull()
 
         if (value.startsWith("http://") || value.startsWith("https://")) {
-            // Handle malformed joins like: https://novel-bin.comsort/top-view-novel
             if (base.isNotBlank() && value.startsWith(base)) {
                 val suffix = value.removePrefix(base)
                 if (suffix.isNotEmpty() && !suffix.startsWith("/") && !suffix.startsWith("?") && !suffix.startsWith("#")) {
@@ -298,7 +297,6 @@ class JSLibraryProvider(
                 }
             }
 
-            // Handle hostless pseudo-absolute URLs like: https://novelbin/m/sort/...
             val absolute = value.toHttpUrlOrNull()
             if (absolute != null && baseHttpUrl != null) {
                 val hostLooksInvalidForPublicSite = !absolute.host.contains('.') && absolute.host != "localhost"
