@@ -58,42 +58,43 @@ data class LibraryItem(
 
         // Special prefixes for searching specific fields
         if (constraint.startsWith("id:", true)) {
-            return id == constraint.substringAfter("id:").toLongOrNull()
+            val q = constraint.substring("id:".length).trim()
+            return id == q.toLongOrNull()
         }
         if (constraint.startsWith("title:", true)) {
-            val query = constraint.substringAfter("title:").trim()
+            val query = constraint.substring("title:".length).trim()
             return matchString(libraryManga.manga.title, query, useRegex, regexCache)
         }
         if (constraint.startsWith("author:", true)) {
-            val query = constraint.substringAfter("author:").trim()
+            val query = constraint.substring("author:".length).trim()
             return libraryManga.manga.author?.let { matchString(it, query, useRegex, regexCache) } ?: false
         }
         if (constraint.startsWith("artist:", true)) {
-            val query = constraint.substringAfter("artist:").trim()
+            val query = constraint.substring("artist:".length).trim()
             return libraryManga.manga.artist?.let { matchString(it, query, useRegex, regexCache) } ?: false
         }
         if (constraint.startsWith("desc:", true) || constraint.startsWith("description:", true)) {
-            val query = if (constraint.startsWith("desc:")) {
-                constraint.substringAfter("desc:").trim()
+            val query = if (constraint.startsWith("desc:", true)) {
+                constraint.substring("desc:".length).trim()
             } else {
-                constraint.substringAfter("description:").trim()
+                constraint.substring("description:".length).trim()
             }
             return libraryManga.manga.description?.let { matchString(it, query, useRegex, regexCache) } ?: false
         }
         if (constraint.startsWith("tag:", true) || constraint.startsWith("genre:", true)) {
-            val query = if (constraint.startsWith("tag:")) {
-                constraint.substringAfter("tag:").trim()
+            val query = if (constraint.startsWith("tag:", true)) {
+                constraint.substring("tag:".length).trim()
             } else {
-                constraint.substringAfter("genre:").trim()
+                constraint.substring("genre:".length).trim()
             }
             return libraryManga.manga.genre?.any { matchString(it, query, useRegex, regexCache) } ?: false
         }
         if (constraint.startsWith("source:", true)) {
-            val query = constraint.substringAfter("source:").trim()
+            val query = constraint.substring("source:".length).trim()
             return matchString(sourceName, query, useRegex, regexCache)
         }
         if (constraint.startsWith("url:", true)) {
-            val query = constraint.substringAfter("url:").trim()
+            val query = constraint.substring("url:".length).trim()
             return matchString(libraryManga.manga.url, query, useRegex, regexCache)
         }
         // Search for chapter names explicitly
