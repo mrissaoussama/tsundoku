@@ -22,6 +22,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 ### Improved
 - TTS settings, option to background with notification, and add button to resume reading from top paragraph in view [@mrissaoussama](https://github.com/mrissaoussama) [#179](https://github.com/tsundoku-otaku/tsundoku/pull/179)
 - Shiny new import EPUB process [@mrissaoussama](https://github.com/mrissaoussama) [#177](https://github.com/tsundoku-otaku/tsundoku/pull/177)
+- Improved EPUB chapter parsing with multiple volumes and repeated chapter names [@mrissaoussama](https://github.com/mrissaoussama) [#182](https://github.com/tsundoku-otaku/tsundoku/pull/182)
 - Better detection of chapter lists from EPUBs [@mrissaoussama](https://github.com/mrissaoussama) [#178](https://github.com/tsundoku-otaku/tsundoku/pull/178)
 - Duplicate screen and mass import [@mrissaoussama](https://github.com/mrissaoussama) [#163](https://github.com/tsundoku-otaku/tsundoku/pull/163)
 - Mass import performance [@mrissaoussama](https://github.com/mrissaoussama) [#187](https://github.com/tsundoku-otaku/tsundoku/pull/187)
