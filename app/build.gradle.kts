@@ -27,7 +27,7 @@ android {
         applicationId = "app.tsundoku"
 
         versionCode = 18
-        versionName = "0.1.3"
+        versionName = "0.1.4"
 
         buildConfigField("String", "COMMIT_COUNT", "\"${getLatestCommitCount()}\"")
         buildConfigField("String", "COMMIT_SHA", "\"${getLatestCommitSha()}\"")

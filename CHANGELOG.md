@@ -11,6 +11,9 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - `Other` - for technical stuff.
 
 ## [Unreleased]
+
+
+## [v0.1.4] - 2026-05-09
 ### Added
 - Move by URL [@mrissaoussama](https://github.com/mrissaoussama) [#163](https://github.com/tsundoku-otaku/tsundoku/pull/163)
 - Add ability to mark short (non-scroll) chapters as read instantly [@mrissaoussama](https://github.com/mrissaoussama) [#175](https://github.com/tsundoku-otaku/tsundoku/pull/175)
@@ -164,7 +167,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - **Browse Screen Enhancements**: Jump-to-page, page range loading, back confirmation
 
 
-[Unreleased]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.3...main
+[Unreleased]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.4...main
+[v0.1.4]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.3...v0.1.4
 [v0.1.3]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.2...v0.1.3
 [v0.1.2]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.1...v0.1.2
 [v0.1.1]: https://github.com/tsundoku-otaku/tsundoku/compare/v0.1.0...v0.1.1
