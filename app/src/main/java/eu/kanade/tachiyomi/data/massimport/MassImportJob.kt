@@ -69,6 +69,7 @@ private const val NOTIFICATION_MIN_DELTA = 5
 class MassImportJob(private val context: Context, workerParams: WorkerParameters) :
     CoroutineWorker(context, workerParams) {
 
+    private val massImportInteractor: eu.kanade.domain.manga.interactor.MassImport = Injekt.get()
     private val sourceManager: SourceManager = Injekt.get()
     private val networkToLocalManga: NetworkToLocalManga = Injekt.get()
     private val getMangaByUrlAndSourceId: GetMangaByUrlAndSourceId = Injekt.get()
@@ -79,6 +80,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
     private val refreshLibraryCache: RefreshLibraryCache = Injekt.get()
     private val getLibraryManga: tachiyomi.domain.manga.interactor.GetLibraryManga = Injekt.get()
     private val storageManager: StorageManager = Injekt.get()
+    private val sourcePreferences: eu.kanade.domain.source.service.SourcePreferences = Injekt.get()
     private var lastNotificationTime = 0L
     private var lastNotifiedProgress = -1
     private var lastNotificationStatus: String? = null
@@ -212,7 +214,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             try {
                 val source = getCachedSource(url)
                 if (source != null) {
-                    val path = normalizeUrl(extractPathFromUrl(url, getSourceBaseUrl(source)))
+                    val path = massImportInteractor.normalizeUrl(massImportInteractor.extractPathFromUrl(url, massImportInteractor.getSourceBaseUrl(source), source))
                     if (path.isNotEmpty() && !isAlreadyInLibrary(source.id, path)) {
                         validUrlsList.add(url)
                         validCount++
@@ -403,7 +405,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                                 skippedUrls.toList(),
                                 errorMessages.toMap(),
                             )
-                            
+
                             // Minimum inter-item delay in offline mode (10ms) to let library updates process
                             if (!shouldThrottle) {
                                 delay(10)
@@ -489,14 +491,43 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         flushBatchSize: Int,
         dbCache: ConcurrentHashMap<Pair<Long, String>, Boolean>,
     ): Boolean {
-        val rawPath = extractPathFromUrl(url, getSourceBaseUrl(source))
+        val rawPath = massImportInteractor.extractPathFromUrl(url, massImportInteractor.getSourceBaseUrl(source), source)
         if (rawPath.isEmpty()) return false
 
         // Normalize URL before any operations
-        val normalizedPath = normalizeUrl(rawPath)
+        val normalizedPath = massImportInteractor.normalizeUrl(rawPath)
 
-        // Check if already exists with normalized URL
-        val existingManga = getMangaByUrlAndSourceId.await(normalizedPath, source.id)
+        // Attempt to resolve the canonical internal URL if the user provided a full web URL.
+        // This is crucial because some extensions (like Comix) map web URLs (e.g. /title/xxxxx)
+        // to different internal references (e.g. /xxxxx).
+        var finalUrl = normalizedPath
+        if (url.startsWith("http", ignoreCase = true)) {
+            val resolvedManga = runCatching {
+                if (source is eu.kanade.tachiyomi.source.online.ResolvableSource && 
+                    source.getUriType(url) == eu.kanade.tachiyomi.source.online.UriType.Manga) {
+                    source.getManga(url)
+                } else if (source is HttpSource) {
+                    source.getSearchManga(1, url, eu.kanade.tachiyomi.source.model.FilterList()).mangas.firstOrNull()
+                } else {
+                    null
+                }
+            }.getOrNull()
+            if (resolvedManga != null) {
+                try {
+                    if (resolvedManga.url.isNotEmpty()) {
+                        finalUrl = resolvedManga.url
+                        if (!finalUrl.startsWith("/") && !finalUrl.startsWith("http")) {
+                            finalUrl = "/$finalUrl"
+                        }
+                    }
+                } catch (e: UninitializedPropertyAccessException) {
+                    // Ignore uninitialized URL
+                }
+            }
+        }
+
+        // Check if already exists with resolved URL
+        val existingManga = getMangaByUrlAndSourceId.await(finalUrl, source.id)
         if (existingManga != null && existingManga.favorite) {
             return false
         }
@@ -506,8 +537,8 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         if (!fetchDetails && !fetchChapters) {
             if (existingManga == null) {
                 val placeholderManga = eu.kanade.tachiyomi.source.model.SManga.create().apply {
-                    this.url = normalizedPath
-                    this.title = normalizedPath.substringAfterLast('/').replace("-", " ")
+                    this.url = finalUrl
+                    this.title = finalUrl.substringAfterLast('/').replace("-", " ")
                         .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
                     this.initialized = false
                 }
@@ -522,7 +553,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                         ),
                     )
                     // Mark as present in local cache so concurrent checks know it's added
-                    dbCache[source.id to normalizedPath] = true
+                    dbCache[source.id to finalUrl] = true
                     // Buffer for batched library updates to reduce reactive churn
                     pendingAddIds.add(manga.id)
                     if (pendingAddIds.size >= flushBatchSize) {
@@ -541,7 +572,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                     ),
                 )
                 // Update cache to reflect new favorite state
-                dbCache[source.id to normalizedPath] = true
+                dbCache[source.id to finalUrl] = true
                 // Buffer for batched library updates to reduce reactive churn
                 pendingAddIds.add(existingManga.id)
                 if (pendingAddIds.size >= flushBatchSize) {
@@ -554,16 +585,8 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             return true
         }
 
-        // Fetch novel details with normalized URL
-        val sManga = source.getMangaDetails(
-            eu.kanade.tachiyomi.source.model.SManga.create().apply {
-                this.url = normalizedPath
-            },
-        )
-        sManga.url = normalizedPath
-
-        // Convert to local manga
-        val manga = networkToLocalManga(sManga.toDomainManga(source.id, source.isNovelSource()))
+        // Fetch novel details using the shared interactor logic
+        val manga = massImportInteractor.resolveMangaUrl(url, finalUrl, source)
 
         if (addToLibrary) {
             mangaRepository.update(
@@ -730,13 +753,13 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         val maxMem = maxMemRaw.coerceAtMost(MAX_HEAP_BYTES) // Clamp to 512MB
         val usedMem = runtime.totalMemory() - runtime.freeMemory()
         val freeMem = maxMem - usedMem
-        
+
         // Trigger GC if:
-        // 1. Used memory exceeds 50% threshold, OR  
+        // 1. Used memory exceeds 50% threshold, OR
         // 2. Free memory drops below 50MB (prevent fragmentation)
         val exceedsThreshold = usedMem.toDouble() / maxMem > MEMORY_PRESSURE_THRESHOLD
         val lowFreeMemory = freeMem < 50 * 1024 * 1024L
-        
+
         if (exceedsThreshold || lowFreeMemory) {
             val usagePercent = (usedMem.toDouble() / maxMem * 100).toInt()
             val reason = if (exceedsThreshold) "threshold" else "low free"
@@ -757,7 +780,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
      */
     private suspend fun flushPendingToLibrary(pendingIds: MutableList<Long>) {
         if (pendingIds.isEmpty()) return
-        
+
         val toFlush = pendingIds.toList()
         try {
             getLibraryManga.addToLibraryBulk(toFlush)
@@ -771,7 +794,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                 logcat(LogPriority.ERROR, inner) { "Even refresh failed" }
             }
         }
-        
+
         // Clear the buffer after flush
         pendingIds.clear()
     }
@@ -788,7 +811,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         }
         val matchingSources = sources.filter { source ->
             try {
-                val rawBase = getSourceBaseUrl(source)
+                val rawBase = massImportInteractor.getSourceBaseUrl(source)
                 val baseForUri = if (rawBase.startsWith("http")) rawBase else "https://$rawBase"
                 val baseUri = URI(baseForUri)
                 val baseHost = baseUri.host?.lowercase()?.removePrefix("www.")
@@ -818,70 +841,21 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         if (matchingSources.isEmpty()) return null
         if (matchingSources.size == 1) return matchingSources.first()
 
-        // Prioritize Kotlin extensions over JS plugins
-        val kotlinSources = matchingSources.filter { it !is JsSource }
-
-        return kotlinSources.firstOrNull() ?: matchingSources.first()
-    }
-
-    private fun getSourceBaseUrl(source: CatalogueSource): String {
-        return when (source) {
-            is HttpSource -> source.baseUrl
-            is JsSource -> source.baseUrl
-            else -> ""
+        // Prioritize languages the user actually has enabled in extension settings
+        // and filter out any sources the user explicitly disabled
+        val enabledLanguages = sourcePreferences.enabledLanguages.get()
+        val disabledSources = sourcePreferences.disabledSources.get()
+        
+        val enabledSources = matchingSources.filter { 
+            it.lang in enabledLanguages && it.id.toString() !in disabledSources 
         }
-    }
+        
+        // Prioritize Kotlin extensions over JS plugins from within the filtered match
+        // If no user-enabled language matches, fallback to the first available source natively (index zero)
+        val bestLangSources = if (enabledSources.isNotEmpty()) enabledSources else matchingSources
+        val kotlinSources = bestLangSources.filter { it !is JsSource }
 
-    private fun stripScheme(url: String): String {
-        return url.removePrefix("https://").removePrefix("http://")
-    }
-
-    /**
-     * Normalize URL by removing trailing slashes, fragment identifiers, and double slashes.
-     * This ensures consistent URL comparison across the app.
-     */
-    private fun normalizeUrl(url: String): String {
-        return url.trimEnd('/')
-            .substringBefore('#')
-            .replace(Regex("(?<!:)//+"), "/") // Remove double slashes except in protocol
-    }
-
-    private fun extractPathFromUrl(url: String, baseUrl: String): String {
-        return try {
-            val baseUri = URI(baseUrl)
-            val urlUri = URI(url)
-            val baseHost = baseUri.host?.lowercase()?.removePrefix("www.")
-            val urlHost = urlUri.host?.lowercase()?.removePrefix("www.")
-
-            if (baseHost != null && urlHost != null && baseHost == urlHost) {
-                buildString {
-                    append(urlUri.rawPath ?: "")
-                    val q = urlUri.rawQuery
-                    if (!q.isNullOrBlank()) {
-                        append('?')
-                        append(q)
-                    }
-                }
-            } else {
-                val normalizedBase = baseUrl.removePrefix(
-                    "https://",
-                ).removePrefix("http://").removePrefix("www.").removeSuffix("/")
-                val normalizedUrl = url.removePrefix("https://").removePrefix("http://").removePrefix("www.")
-
-                if (normalizedUrl.startsWith(normalizedBase)) {
-                    var path = normalizedUrl.removePrefix(normalizedBase)
-                    if (!path.startsWith("/") && path.isNotEmpty()) {
-                        path = "/$path"
-                    }
-                    path
-                } else {
-                    // Fallback: return full URL path if hosts mismatch but we assume it's correct source
-                    urlUri.rawPath ?: ""
-                }
-            }
-        } catch (_: Exception) {
-            ""
-        }
+        return kotlinSources.firstOrNull() ?: bestLangSources.first()
     }
 
     data class ImportResult(
