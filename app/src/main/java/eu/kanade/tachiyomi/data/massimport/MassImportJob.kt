@@ -24,6 +24,8 @@ import eu.kanade.tachiyomi.util.system.notificationBuilder
 import eu.kanade.tachiyomi.util.system.notify
 import eu.kanade.tachiyomi.util.system.setForegroundSafely
 import eu.kanade.tachiyomi.util.system.workManager
+import eu.kanade.tachiyomi.util.source.normalizeSourcePath
+import eu.kanade.tachiyomi.util.source.toggleLeadingSlash
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -94,16 +96,74 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
     }
 
     override suspend fun doWork(): Result {
-        val urls = inputData.getStringArray(KEY_URLS)?.toList()
-            ?: inputData.getString(KEY_URLS_FILE)?.let { path ->
-                // Stream file reading instead of loading entire file into memory
-                runCatching {
-                    File(path).bufferedReader().use { reader ->
-                        reader.lineSequence().filter { it.isNotBlank() }.toList()
+        val urlsArray = inputData.getStringArray(KEY_URLS)
+        val urlsFilePath = inputData.getString(KEY_URLS_FILE)
+        val rawTextFilePath = inputData.getString(KEY_RAW_TEXT_FILE)
+        val excludedHostsParam = inputData.getString(KEY_EXCLUDED_HOSTS) ?: ""
+        val excludedHostsSet = excludedHostsParam.split(',')
+            .map { it.trim().lowercase().removePrefix("www.") }
+            .filter { it.isNotBlank() }
+            .toSet()
+
+        val urls = urlsArray?.toList()
+        // Shared host->source cache for the whole job to avoid repeated matching across chunks
+        // Use canonical host keys (lowercase, no www.)
+        val hostSourceCache = ConcurrentHashMap<String, CatalogueSource>()
+        val missingSourceHosts = ConcurrentHashMap.newKeySet<String>()
+
+        // If a file was provided, stream it in chunks to avoid OOM for very large queues
+        val streamFilePath = urlsFilePath ?: rawTextFilePath
+        if (urls == null && streamFilePath != null) {
+            val file = File(streamFilePath)
+            if (!file.exists()) return Result.failure()
+
+            val chunkSize = 50_000 // ~50k URLs per chunk to bound memory usage
+            val overallResult = ImportResult()
+
+            file.bufferedReader().useLines { lines ->
+                val buffer = mutableListOf<String>()
+                lines.forEach { raw ->
+                    val line = raw.trim()
+                    if (line.isNotBlank()) {
+                        buffer.add(line)
+                        if (buffer.size >= chunkSize) {
+                            // Process chunk synchronously to keep memory bounded
+                            performImport(
+                                buffer.toList(),
+                                inputData.getLong(KEY_CATEGORY_ID, 0L),
+                                inputData.getBoolean(KEY_ADD_TO_LIBRARY, true),
+                                inputData.getBoolean(KEY_FETCH_DETAILS, true),
+                                inputData.getBoolean(KEY_FETCH_CHAPTERS, false),
+                                inputData.getString(KEY_BATCH_ID) ?: "",
+                                excludedHostsSet,
+                                hostSourceCache,
+                                missingSourceHosts,
+                            )
+                            buffer.clear()
+                        }
                     }
-                }.getOrNull()
+                }
+
+                if (buffer.isNotEmpty()) {
+                    performImport(
+                        buffer.toList(),
+                        inputData.getLong(KEY_CATEGORY_ID, 0L),
+                        inputData.getBoolean(KEY_ADD_TO_LIBRARY, true),
+                        inputData.getBoolean(KEY_FETCH_DETAILS, true),
+                        inputData.getBoolean(KEY_FETCH_CHAPTERS, false),
+                        inputData.getString(KEY_BATCH_ID) ?: "",
+                        excludedHostsSet,
+                        hostSourceCache,
+                        missingSourceHosts,
+                    )
+                    buffer.clear()
+                }
             }
-            ?: return Result.failure()
+
+            return Result.success()
+        }
+
+        if (urls == null) return Result.failure()
         val categoryId = inputData.getLong(KEY_CATEGORY_ID, 0L)
         val addToLibrary = inputData.getBoolean(KEY_ADD_TO_LIBRARY, true)
         val fetchDetails = inputData.getBoolean(KEY_FETCH_DETAILS, true)
@@ -136,7 +196,17 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
 
         return withIOContext {
             try {
-                performImport(urls, categoryId, addToLibrary, fetchDetails, fetchChapters, batchId)
+                performImport(
+                    urls,
+                    categoryId,
+                    addToLibrary,
+                    fetchDetails,
+                    fetchChapters,
+                    batchId,
+                    excludedHostsSet,
+                    hostSourceCache,
+                    missingSourceHosts,
+                )
                 Result.success()
             } catch (e: Exception) {
                 if (e is CancellationException) {
@@ -148,6 +218,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             } finally {
                 context.cancelNotification(Notifications.ID_MASS_IMPORT_PROGRESS)
                 inputData.getString(KEY_URLS_FILE)?.let { path -> runCatching { File(path).delete() } }
+                inputData.getString(KEY_RAW_TEXT_FILE)?.let { path -> runCatching { File(path).delete() } }
                 // Clear recovery queue file on completion
                 runCatching { recoveryFile?.delete() }
             }
@@ -173,6 +244,9 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         fetchDetails: Boolean,
         fetchChapters: Boolean,
         batchId: String,
+        excludedHosts: Set<String> = emptySet(),
+        hostSourceCache: ConcurrentHashMap<String, CatalogueSource> = ConcurrentHashMap(),
+        missingSourceHosts: MutableSet<String> = ConcurrentHashMap.newKeySet(),
     ): ImportResult {
         updateBatchStatus(batchId, BatchStatus.Running)
 
@@ -185,13 +259,31 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             return ImportResult(added = 0, skipped = 0, errored = urls.size)
         }
 
-        // Cache source lookups to avoid N+1 queries
-        val sourceCache = ConcurrentHashMap<String, CatalogueSource?>()
+        // Use shared host->source cache passed from doWork() to avoid repeated matching across chunks
+        val sourceCache = hostSourceCache
         fun getCachedSource(url: String): CatalogueSource? {
-            return sourceCache.computeIfAbsent(url) { findMatchingSource(url, importSources) }
+            val host = try {
+                URI(url).host?.lowercase()?.removePrefix("www.")
+            } catch (e: Exception) {
+                null
+            } ?: return null
+
+            if (excludedHosts.contains(host)) return null
+
+            sourceCache[host]?.let { return it }
+            if (host in missingSourceHosts) return null
+
+            val matched = runCatching { findMatchingSource("https://$host/", importSources) }.getOrNull()
+            if (matched != null) {
+                sourceCache[host] = matched
+            } else {
+                missingSourceHosts.add(host)
+            }
+
+            return matched
         }
 
-        // Cache DB lookups to avoid repeated queries for same URL
+        // Cache DB lookups to avoid repeated queries for same URL during processing
         val dbCache = ConcurrentHashMap<Pair<Long, String>, Boolean>()
         suspend fun isAlreadyInLibrary(sourceId: Long, path: String): Boolean {
             val key = sourceId to path
@@ -201,32 +293,18 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             return prev ?: value
         }
 
-        // Stream URLs without materializing full list upfront
-        // Validate on first pass: count valid URLs for progress tracking
-        val validUrlsSequence = urls.asSequence()
+        // Lightweight validation pass: only filter blanks and non-http URLs and ensure a source exists.
+        // Do NOT perform per-URL DB existence checks here to avoid N+1 queries for very large inputs.
+        val filtered = urls.asSequence()
             .filter { it.isNotBlank() }
             .filter { url -> url.startsWith("http://") || url.startsWith("https://") }
+            .filter { url -> getCachedSource(url) != null }
 
-        // Materialize and validate URLs asynchronously to check DB per-URL
-        var validCount = 0
-        val validUrlsList = mutableListOf<String>()
-        for (url in validUrlsSequence) {
-            try {
-                val source = getCachedSource(url)
-                if (source != null) {
-                    val path = massImportInteractor.normalizeUrl(massImportInteractor.extractPathFromUrl(url, massImportInteractor.getSourceBaseUrl(source), source))
-                    if (path.isNotEmpty() && !isAlreadyInLibrary(source.id, path)) {
-                        validUrlsList.add(url)
-                        validCount++
-                    }
-                }
-            } catch (e: Exception) {
-                logcat(LogPriority.DEBUG, e) { "Error validating URL: $url" }
-            }
-        }
+        val validUrlsList = filtered.toMutableList()
+        val validCount = validUrlsList.size
         if (validCount == 0) {
             val skippedCount = urls.size - validCount
-            showCompletionNotification(0, skippedCount, 0, "All novels already in library")
+            showCompletionNotification(0, skippedCount, 0, "No valid sources or all novels already in library")
             updateBatchStatus(batchId, BatchStatus.Completed)
             return ImportResult(added = 0, skipped = skippedCount, errored = 0)
         }
@@ -235,6 +313,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         _sharedQueue.update { list ->
             list.map { if (it.id == batchId) it.copy(total = validCount) else it }
         }
+
         val validUrls = validUrlsList
 
         val concurrency = if (!fetchDetails && !fetchChapters) {
@@ -374,9 +453,18 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                             "Processing: ${activeImports.size} active",
                         )
 
-                            try {
-                                val success =
-                                    processUrlWithSource(url, source, addToLibrary, fetchDetails, categoryId, fetchChapters, pendingAddIds, flushBatchSize, dbCache)
+                        try {
+                            val success = processUrlWithSource(
+                                url,
+                                source,
+                                addToLibrary,
+                                fetchDetails,
+                                categoryId,
+                                fetchChapters,
+                                pendingAddIds,
+                                flushBatchSize,
+                                dbCache,
+                            )
                             if (success) {
                                 // processUrlWithSource buffers and flushes manga ids
                                 addedCount.incrementAndGet()
@@ -405,7 +493,6 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                                 skippedUrls.toList(),
                                 errorMessages.toMap(),
                             )
-
                             // Minimum inter-item delay in offline mode (10ms) to let library updates process
                             if (!shouldThrottle) {
                                 delay(10)
@@ -503,7 +590,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         var finalUrl = normalizedPath
         if (url.startsWith("http", ignoreCase = true)) {
             val resolvedManga = runCatching {
-                if (source is eu.kanade.tachiyomi.source.online.ResolvableSource && 
+                if (source is eu.kanade.tachiyomi.source.online.ResolvableSource &&
                     source.getUriType(url) == eu.kanade.tachiyomi.source.online.UriType.Manga) {
                     source.getManga(url)
                 } else if (source is HttpSource) {
@@ -742,6 +829,58 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             .filter { it is HttpSource || it is JsSource }
     }
 
+    private suspend fun resolveMangaDetailsForImport(
+        url: String,
+        source: CatalogueSource,
+        normalizedPath: String,
+    ): eu.kanade.tachiyomi.source.model.SManga {
+        val inputUrl = normalizeSourcePath(source, normalizedPath)
+
+        val resolved = runCatching {
+            var result: eu.kanade.tachiyomi.source.model.SManga? = null
+            if (source is eu.kanade.tachiyomi.source.online.ResolvableSource &&
+                source.getUriType(url) == eu.kanade.tachiyomi.source.online.UriType.Manga
+            ) {
+                result = runCatching { source.getManga(url) }.getOrNull()
+            }
+
+            result ?: source.getMangaDetails(
+                eu.kanade.tachiyomi.source.model.SManga.create().apply {
+                    this.url = inputUrl
+                },
+            )
+        }.getOrElse { firstError ->
+            if (source is HttpSource) {
+                val fallback = runCatching {
+                    val page = source.getSearchManga(
+                        1,
+                        url,
+                        eu.kanade.tachiyomi.source.model.FilterList(),
+                    )
+                    page.mangas.firstOrNull()?.let { firstManga ->
+                        source.getMangaDetails(firstManga).apply { this.url = firstManga.url }
+                    }
+                }.getOrNull()
+
+                fallback ?: run {
+                    val fallbackUrl = toggleLeadingSlash(inputUrl)
+                    source.getMangaDetails(
+                        eu.kanade.tachiyomi.source.model.SManga.create().apply { this.url = fallbackUrl },
+                    ).apply {
+                        if (this.url.isEmpty()) this.url = fallbackUrl
+                    }
+                }
+            } else {
+                throw firstError
+            }
+        }
+
+        val resolvedUrl = runCatching { resolved.url }.getOrNull().orEmpty()
+        resolved.url = if (resolvedUrl.isBlank()) normalizedPath else normalizeSourcePath(source, resolvedUrl)
+
+        return resolved
+    }
+
     /**
      * Wait if memory usage exceeds the threshold to let GC reclaim before continuing.
      * Triggers at 50% usage to maintain headroom before 512MB limit.
@@ -759,7 +898,6 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         // 2. Free memory drops below 50MB (prevent fragmentation)
         val exceedsThreshold = usedMem.toDouble() / maxMem > MEMORY_PRESSURE_THRESHOLD
         val lowFreeMemory = freeMem < 50 * 1024 * 1024L
-
         if (exceedsThreshold || lowFreeMemory) {
             val usagePercent = (usedMem.toDouble() / maxMem * 100).toInt()
             val reason = if (exceedsThreshold) "threshold" else "low free"
@@ -780,7 +918,6 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
      */
     private suspend fun flushPendingToLibrary(pendingIds: MutableList<Long>) {
         if (pendingIds.isEmpty()) return
-
         val toFlush = pendingIds.toList()
         try {
             getLibraryManga.addToLibraryBulk(toFlush)
@@ -794,7 +931,6 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                 logcat(LogPriority.ERROR, inner) { "Even refresh failed" }
             }
         }
-
         // Clear the buffer after flush
         pendingIds.clear()
     }
@@ -841,21 +977,25 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         if (matchingSources.isEmpty()) return null
         if (matchingSources.size == 1) return matchingSources.first()
 
-        // Prioritize languages the user actually has enabled in extension settings
-        // and filter out any sources the user explicitly disabled
         val enabledLanguages = sourcePreferences.enabledLanguages.get()
         val disabledSources = sourcePreferences.disabledSources.get()
-        
-        val enabledSources = matchingSources.filter { 
-            it.lang in enabledLanguages && it.id.toString() !in disabledSources 
+        val enabledSources = matchingSources.filter {
+            it.lang in enabledLanguages && it.id.toString() !in disabledSources
         }
-        
-        // Prioritize Kotlin extensions over JS plugins from within the filtered match
-        // If no user-enabled language matches, fallback to the first available source natively (index zero)
         val bestLangSources = if (enabledSources.isNotEmpty()) enabledSources else matchingSources
+
+        // Prioritize Kotlin extensions over JS plugins
         val kotlinSources = bestLangSources.filter { it !is JsSource }
 
         return kotlinSources.firstOrNull() ?: bestLangSources.first()
+    }
+
+    private fun getSourceBaseUrl(source: CatalogueSource): String {
+        return when (source) {
+            is HttpSource -> source.baseUrl
+            is JsSource -> source.baseUrl
+            else -> ""
+        }
     }
 
     data class ImportResult(
@@ -901,11 +1041,13 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         private const val TAG = "MassImportJob"
         const val KEY_URLS = "urls"
         const val KEY_URLS_FILE = "urlsFile"
+        const val KEY_RAW_TEXT_FILE = "rawTextFile"
         const val KEY_CATEGORY_ID = "categoryId"
         const val KEY_ADD_TO_LIBRARY = "addToLibrary"
         const val KEY_FETCH_DETAILS = "fetchDetails"
         const val KEY_FETCH_CHAPTERS = "fetchChapters"
         const val KEY_BATCH_ID = "batchId"
+        const val KEY_EXCLUDED_HOSTS = "excludedHosts"
 
         // Shared state for UI to observe
         private val _sharedResult = MutableStateFlow<ImportResult?>(null)
@@ -1001,23 +1143,36 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             addToLibrary: Boolean = true,
             fetchDetails: Boolean = true,
             fetchChapters: Boolean = false,
+            excludedHosts: List<String> = emptyList(),
+            rawText: String? = null,
         ) {
             val batchId = java.util.UUID.randomUUID().toString()
+            // If offloading to file, avoid storing the full URL list in memory inside the Batch.
+            // Keep a small preview for UI (first 100 URLs) and the real total.
+            val offloadToFile = rawText != null || urls.size > 50 || urls.sumOf { it.length } > 500_000
+            val batchUrlsForQueue = when {
+                rawText != null -> rawText.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.take(100).toList()
+                offloadToFile -> urls.take(100)
+                else -> urls
+            }
+            val batchTotal = when {
+                rawText != null -> rawText.lineSequence().count { it.isNotBlank() }
+                else -> urls.size
+            }
             val batch = Batch(
                 id = batchId,
-                urls = urls,
+                urls = batchUrlsForQueue,
                 categoryId = categoryId,
                 addToLibrary = addToLibrary,
                 fetchChapters = fetchChapters,
                 fetchDetails = fetchDetails,
-                total = urls.size,
+                total = batchTotal,
             )
 
             _sharedQueue.update { it + batch }
 
             // Offload to file if URL list is large to avoid TransactionTooLargeException
             // Transaction limit is ~1MB, be conservative and offload at 500KB
-            val offloadToFile = urls.size > 50 || urls.sumOf { it.length } > 500_000
             val payload = mutableListOf<Pair<String, Any?>>(
                 KEY_CATEGORY_ID to categoryId,
                 KEY_ADD_TO_LIBRARY to addToLibrary,
@@ -1028,10 +1183,25 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
 
             if (offloadToFile) {
                 val cacheFile = File(context.cacheDir, "mass_import_$batchId.txt")
-                cacheFile.writeText(urls.joinToString("\n"))
-                payload += KEY_URLS_FILE to cacheFile.absolutePath
+                // Stream write to avoid building one enormous string in memory
+                cacheFile.outputStream().bufferedWriter().use { writer ->
+                    if (rawText != null) {
+                        writer.write(rawText)
+                    } else {
+                        for (u in urls) {
+                            writer.write(u)
+                            writer.newLine()
+                        }
+                    }
+                }
+                payload += (if (rawText != null) KEY_RAW_TEXT_FILE else KEY_URLS_FILE) to cacheFile.absolutePath
             } else {
                 payload += KEY_URLS to urls.toTypedArray()
+            }
+            if (excludedHosts.isNotEmpty()) {
+                // Normalize excluded hosts before passing to worker
+                val normalized = excludedHosts.map { it.trim().lowercase().removePrefix("www.") }
+                payload += KEY_EXCLUDED_HOSTS to normalized.joinToString(",")
             }
 
             val workRequest = OneTimeWorkRequestBuilder<MassImportJob>()
@@ -1096,10 +1266,12 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
          * Reinsert errored URLs from a batch back into the queue as a new batch.
          */
         fun reinsertErrored(context: Context, batch: Batch) {
-            if (batch.erroredUrls.isEmpty()) return
+            val interactor = eu.kanade.domain.manga.interactor.MassImport()
+            val urls = interactor.readErroredUrlsForBatch(batch.id).ifEmpty { batch.erroredUrls }
+            if (urls.isEmpty()) return
             start(
                 context = context,
-                urls = batch.erroredUrls,
+                urls = urls,
                 categoryId = batch.categoryId,
                 addToLibrary = batch.addToLibrary,
                 fetchChapters = batch.fetchChapters,
@@ -1146,6 +1318,12 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
          * Useful for debugging and sharing import results.
          */
         fun generateReport(batch: Batch): String {
+            val interactor = eu.kanade.domain.manga.interactor.MassImport()
+            val rows = interactor.readAllResultsForBatch(batch.id)
+            val added = rows.filter { it.getOrNull(1) == "added" }
+            val skipped = rows.filter { it.getOrNull(1) == "skipped" }
+            val errored = rows.filter { it.getOrNull(1) == "errored" }
+
             return buildString {
                 appendLine("=== Mass Import Report ===")
                 appendLine("Batch ID: ${batch.id}")
@@ -1153,28 +1331,26 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                 appendLine()
                 appendLine("=== Summary ===")
                 appendLine("Total URLs: ${batch.urls.size}")
-                appendLine("Successfully Added: ${batch.added}")
-                appendLine("Skipped (already in library): ${batch.skipped}")
-                appendLine("Errors: ${batch.errored}")
+                appendLine("Successfully Added: ${added.size}")
+                appendLine("Skipped (already in library): ${skipped.size}")
+                appendLine("Errors: ${errored.size}")
                 appendLine()
 
-                if (batch.erroredUrls.isNotEmpty()) {
-                    appendLine("=== Failed URLs (${batch.erroredUrls.size}) ===")
-                    batch.erroredUrls.forEach { url ->
-                        val errorMsg = batch.errorMessages[url]
-                        if (errorMsg != null) {
-                            appendLine("$url")
-                            appendLine("  Error: $errorMsg")
-                        } else {
-                            appendLine(url)
-                        }
+                if (errored.isNotEmpty()) {
+                    appendLine("=== Failed URLs (${errored.size}) ===")
+                    errored.forEach { cols ->
+                        val url = cols.getOrNull(2) ?: ""
+                        val msg = cols.getOrNull(5) ?: ""
+                        appendLine(url)
+                        if (msg.isNotBlank()) appendLine("  Error: $msg")
                     }
                     appendLine()
                 }
 
-                if (batch.skippedUrls.isNotEmpty()) {
-                    appendLine("=== Skipped URLs (${batch.skippedUrls.size}) ===")
-                    batch.skippedUrls.forEach { url ->
+                if (skipped.isNotEmpty()) {
+                    appendLine("=== Skipped URLs (${skipped.size}) ===")
+                    skipped.forEach { cols ->
+                        val url = cols.getOrNull(2) ?: ""
                         appendLine(url)
                     }
                     appendLine()
@@ -1191,13 +1367,15 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
          * Generate errors with messages for clipboard copy.
          */
         fun generateErrorsWithMessages(batch: Batch): String {
+            val interactor = eu.kanade.domain.manga.interactor.MassImport()
+            val rows = interactor.readAllResultsForBatch(batch.id)
+            val errored = rows.filter { it.getOrNull(1) == "errored" }
             return buildString {
-                batch.erroredUrls.forEach { url ->
+                errored.forEach { cols ->
+                    val url = cols.getOrNull(2) ?: ""
+                    val msg = cols.getOrNull(5) ?: ""
                     appendLine(url)
-                    val errorMsg = batch.errorMessages[url]
-                    if (errorMsg != null) {
-                        appendLine("  → $errorMsg")
-                    }
+                    if (msg.isNotBlank()) appendLine("  → $msg")
                 }
             }
         }
