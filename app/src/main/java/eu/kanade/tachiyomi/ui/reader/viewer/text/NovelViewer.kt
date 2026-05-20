@@ -6,8 +6,6 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.drawable.Drawable
 import android.graphics.text.LineBreaker
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.text.Html
 import android.text.Layout
 import android.text.Spanned
@@ -59,7 +57,6 @@ import logcat.logcat
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.i18n.novel.TDMR
 import uy.kohesive.injekt.injectLazy
-import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -404,7 +401,7 @@ private object LinkOnlyMovementMethod : android.text.method.MovementMethod {
  * NovelViewer renders novel content using a native TextView.
  * It supports custom parsing, styling, and pagination.
  */
-class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitListener {
+class NovelViewer(val activity: ReaderActivity) : Viewer {
 
     private val container = FrameLayout(activity)
     private lateinit var scrollView: NestedScrollView
@@ -412,11 +409,10 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
     private var bottomLoadingIndicator: ProgressBar? = null
     private val preferences: ReaderPreferences by injectLazy()
     private val libraryPreferences: tachiyomi.domain.library.service.LibraryPreferences by injectLazy()
-    private var tts: TextToSpeech? = null
     private var isAutoScrolling = false
     private var autoScrollJob: Job? = null
 
-    
+
 
 
 
@@ -442,6 +438,11 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         val headerView: TextView,
         var separatorView: View? = null,
         var isLoaded: Boolean = false,
+        // True once textView.setText has been called — guards against false short-chapter
+        // marks when the empty textView has a smaller height than scrollView.
+        var isTextSet: Boolean = false,
+        // Holds pre-fetched content string to be rendered after the view is attached.
+        var pendingContent: String? = null,
     )
 
     private val loadedChapters = mutableListOf<LoadedChapter>()
@@ -658,11 +659,14 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                 val effectiveThreshold = if (autoLoadAt > 0) autoLoadAt / 100f else 0.95f
 
                 val onLastLoaded = currentChapterIndex == (loadedChapters.size - 1).coerceAtLeast(0)
-                if (!isRestoringScroll && chapterProgress >= effectiveThreshold && !isLoadingNext && onLastLoaded) {
+                val ttsIsDrivingChapterHandoff = ttsController.isTtsAutoPlay && (ttsController.isSpeaking() || ttsController.isStarting())
+                if (!isRestoringScroll && !ttsIsDrivingChapterHandoff && chapterProgress >= effectiveThreshold && !isLoadingNext && onLastLoaded) {
                     logcat(LogPriority.DEBUG) {
                         "NovelViewer: scroll threshold hit (progress=$chapterProgress >= $effectiveThreshold, currentIdx=$currentChapterIndex, loadedCount=${loadedChapters.size})"
                     }
                     loadNextChapterIfAvailable()
+                } else if (!isRestoringScroll && ttsIsDrivingChapterHandoff && chapterProgress >= effectiveThreshold && onLastLoaded) {
+                    preFetchNextChapterForTts()
                 }
             }
         }
@@ -689,9 +693,12 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         // Returning 1f (100%) here would cause a spurious progress jump; keep last known progress.
         if (textHeight <= 0) return lastSavedProgress.coerceIn(0f, 1f)
 
-        // If the chapter text fits entirely within the viewport, it's 100% visible
+        // If the chapter text fits entirely within the viewport, it's 100% visible.
+        // Guard isTextSet: an empty textView has a small but non-zero layout height that
+        // would falsely satisfy textHeight <= scrollView.height before content arrives.
         if (textHeight <= scrollView.height) {
             val page = loaded.chapter.pages?.firstOrNull() as? ReaderPage
+            if (!loaded.isTextSet) return lastSavedProgress.coerceIn(0f, 1f)
             return if (shouldAutoMarkShortChapter(page)) 1f else lastSavedProgress.coerceIn(0f, 1f)
         }
 
@@ -733,6 +740,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         if (page.status != Page.State.Ready || page.text.isNullOrBlank()) return
 
         val loaded = loadedChapters.getOrNull(currentChapterIndex) ?: return
+        // Don't mark while textView still shows empty layout (text set hasn't completed yet).
+        if (!loaded.isTextSet) return
         val textHeight = loaded.textView.height
         if (textHeight <= 0 || textHeight > scrollView.height) return
 
@@ -1057,8 +1066,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                 preferences.novelTtsPitch.changes(),
             ).drop(3)
                 .collectLatest {
-                    if (ttsInitialized) {
-                        applyTtsSettings()
+                    if (ttsController.ttsInitialized) {
+                        ttsController.applySettings()
                     }
                 }
         }
@@ -1164,478 +1173,412 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         applyBackgroundColor()
     }
 
-    private var ttsInitialized = false
-    private var isTtsAutoPlay = false // Track if TTS should auto-continue to next chapter
-    private var ttsPaused = false
-    private var ttsChunks: List<String> = emptyList()
-    private var ttsChunkParagraphIndexes: List<Int> = emptyList()
-    private var ttsCurrentParagraphs: List<NovelViewerTextUtils.ParagraphInfo> = emptyList()
+    // TTS — delegates to TtsController for engine/state logic.
+    private var pendingTtsAutoStart = false
+    private var cachedNextChapterForTts: LoadedChapter? = null
+    private var isFetchingNextChapterForTts = false
 
-    private enum class TtsStartRequest {
-        NORMAL,
-        VIEWPORT,
-    }
-
-    private var pendingTtsStartRequest: TtsStartRequest? = null
-
-    @Volatile private var ttsCurrentChunkIndex = 0
-    private var ttsResumeChunkIndex: Int = 0 // Track which chunk to resume from after pause
-    private var ttsViewportParagraphIndex: Int = 0
-    private var hasViewportStartOverride: Boolean = false
-
-    override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            ttsInitialized = true
-            // Apply TTS settings from preferences
-            applyTtsSettings()
-            // Set up utterance progress listener for auto-continue
-            setupTtsListener()
-            pendingTtsStartRequest?.let { request ->
-                pendingTtsStartRequest = null
-                activity.runOnUiThread {
-                    when (request) {
-                        TtsStartRequest.NORMAL -> startTts()
-                        TtsStartRequest.VIEWPORT -> startTtsFromViewport()
-                    }
+    private val ttsController = TtsController(
+        context = activity,
+        preferences = preferences,
+        scope = scope,
+        callbacks = object : TtsController.Callbacks {
+            override fun onInitialized(pendingRequest: TtsController.StartRequest?) {
+                when (pendingRequest) {
+                    TtsController.StartRequest.NORMAL -> startTts()
+                    TtsController.StartRequest.VIEWPORT -> startTtsFromViewport()
+                    null -> {}
                 }
             }
-        } else {
-            logcat(LogPriority.ERROR) { "TTS initialization failed with status: $status" }
-            ttsInitialized = false
+
+            override fun getCurrentPage(): ReaderPage? = currentPage
+
+            override fun onHighlightChunk(chunkIndex: Int, chunk: String, startOffset: Int, paragraphIndex: Int) {
+                applyTtsHighlight(chunkIndex, chunk, startOffset)
+            }
+
+            override fun onClearHighlights() {
+                clearAllTtsHighlights()
+            }
+
+            override fun onLastChunkDone() {
+                syncCurrentChapterIndexWithCurrentPage()
+                loadNextChapterForTts(currentChapterIndex)
+            }
+
+            override fun runOnUiThread(action: () -> Unit) {
+                activity.runOnUiThread(action)
+            }
+        },
+    )
+
+    private fun clearAllTtsHighlights() {
+        activity.runOnUiThread {
+            loadedChapters.forEach { loaded ->
+                if (!loaded.isLoaded) return@forEach
+                val spanned = loaded.textView.text as? android.text.Spannable ?: return@forEach
+                val len = loaded.textView.text.length
+                spanned.getSpans(0, len, android.text.style.BackgroundColorSpan::class.java).forEach { spanned.removeSpan(it) }
+                spanned.getSpans(0, len, android.text.style.ForegroundColorSpan::class.java).forEach { spanned.removeSpan(it) }
+                spanned.getSpans(0, len, android.text.style.UnderlineSpan::class.java).forEach { spanned.removeSpan(it) }
+                spanned.getSpans(0, len, RoundedOutlineSpan::class.java).forEach { spanned.removeSpan(it) }
+            }
         }
     }
 
-    private fun setupTtsListener() {
-        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {
-                // Track which chunk is currently speaking
-                utteranceId?.removePrefix("tts_utterance_")?.toIntOrNull()?.let { chunkIndex ->
-                    ttsCurrentChunkIndex = chunkIndex
-                    // Apply highlighting to current chunk if enabled
-                    if (preferences.novelTtsEnableHighlight.get()) {
-                        applyTtsHighlight(chunkIndex)
-                    }
-                }
-            }
-
-            override fun onDone(utteranceId: String?) {
-                // Advance chunk index
-                val finishedIndex = utteranceId?.removePrefix("tts_utterance_")?.toIntOrNull() ?: -1
-                val isLastChunk = finishedIndex >= ttsChunks.size - 1
-
-                // Check if this was the last chunk and auto-play is enabled
-                if (isLastChunk && isTtsAutoPlay && preferences.novelTtsAutoNextChapter.get()) {
-                    // Check if we've finished all chunks for current chapter
-                    activity.runOnUiThread {
-                        // Small delay to ensure speech is fully done
-                        scope.launch {
-                            delay(500)
-                            if (!isTtsSpeaking()) {
-                                // Save progress before moving to next chapter
-                                saveTtsProgress()
-                                // Load and play next chapter
-                                loadNextChapterForTts()
-                            }
-                        }
-                    }
-                }
-            }
-
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) {
-                logcat(LogPriority.ERROR) { "TTS error on utterance: $utteranceId" }
-            }
-        })
-    }
-
-    /**
-     * Applies visual highlighting to the chunk currently being read by TTS.
-     */
-    private fun applyTtsHighlight(chunkIndex: Int) {
-        if (chunkIndex < 0 || chunkIndex >= ttsChunks.size) return
-
+    private fun applyTtsHighlight(chunkIndex: Int, chunk: String, startOffset: Int) {
         activity.runOnUiThread {
-            val chunk = ttsChunks[chunkIndex]
             val highlightColor = preferences.novelTtsHighlightColor.get()
             val highlightTextColor = preferences.novelTtsHighlightTextColor.get()
             val highlightStyle = preferences.novelTtsHighlightStyle.get()
             val keepInView = preferences.novelTtsKeepHighlightInView.get()
 
             loadedChapters.forEach { loaded ->
-                if (loaded.isLoaded) {
-                    val textView = loaded.textView
-                    val text = textView.text.toString()
+                if (!loaded.isLoaded) return@forEach
+                val spanned = loaded.textView.text as? android.text.Spannable ?: return@forEach
+                val len = loaded.textView.text.length
+                spanned.getSpans(0, len, android.text.style.BackgroundColorSpan::class.java).forEach { spanned.removeSpan(it) }
+                spanned.getSpans(0, len, android.text.style.ForegroundColorSpan::class.java).forEach { spanned.removeSpan(it) }
+                spanned.getSpans(0, len, android.text.style.UnderlineSpan::class.java).forEach { spanned.removeSpan(it) }
+                spanned.getSpans(0, len, RoundedOutlineSpan::class.java).forEach { spanned.removeSpan(it) }
+            }
 
-                    val spanned = textView.text as? android.text.Spannable
-                    // Always clear old TTS highlight spans before applying a new one.
-                    spanned?.getSpans(0, text.length, android.text.style.BackgroundColorSpan::class.java)?.forEach { spanned.removeSpan(it) }
-                    spanned?.getSpans(0, text.length, android.text.style.ForegroundColorSpan::class.java)?.forEach { spanned.removeSpan(it) }
-                    spanned?.getSpans(0, text.length, android.text.style.UnderlineSpan::class.java)?.forEach { spanned.removeSpan(it) }
-                    spanned?.getSpans(0, text.length, RoundedOutlineSpan::class.java)?.forEach { spanned.removeSpan(it) }
+            val targetLoaded = (ttsController.ttsPlaybackChapterId?.let { id ->
+                loadedChapters.firstOrNull { it.chapter.chapter.id == id }
+            } ?: loadedChapters.getOrNull(ttsController.ttsPlaybackChapterIndex)) ?: return@runOnUiThread
+            if (!targetLoaded.isLoaded || !targetLoaded.isTextSet) return@runOnUiThread
+            val textView = targetLoaded.textView
+            val text = textView.text.toString()
+            val spanned = textView.text as? android.text.Spannable ?: return@runOnUiThread
 
-                    if (text.contains(chunk, ignoreCase = true)) {
-                        // Find and highlight the chunk in the text
-                        val startIndex = text.indexOf(chunk, ignoreCase = true)
-                        if (startIndex >= 0) {
-                            val endIndex = startIndex + chunk.length
+            val startIndex = text.indexOf(chunk, startOffset.coerceAtLeast(0))
+            if (startIndex < 0) return@runOnUiThread
+            val endIndex = (startIndex + chunk.length).coerceAtMost(text.length)
 
-                            // Apply new highlighting
-                            when (highlightStyle) {
-                                "underline" -> {
-                                    spanned?.setSpan(
-                                        android.text.style.UnderlineSpan(),
-                                        startIndex,
-                                        endIndex,
-                                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                                    )
-                                }
-                                "outline" -> {
-                                    spanned?.setSpan(
-                                        RoundedOutlineSpan(highlightColor),
-                                        startIndex,
-                                        endIndex,
-                                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                                    )
-                                    spanned?.setSpan(
-                                        android.text.style.ForegroundColorSpan(highlightTextColor),
-                                        startIndex,
-                                        endIndex,
-                                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                                    )
-                                }
-                                else -> { // background (default)
-                                    spanned?.setSpan(
-                                        android.text.style.BackgroundColorSpan(highlightColor),
-                                        startIndex,
-                                        endIndex,
-                                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                                    )
-                                    spanned?.setSpan(
-                                        android.text.style.ForegroundColorSpan(highlightTextColor),
-                                        startIndex,
-                                        endIndex,
-                                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                                    )
-                                }
-                            }
-
-                            if (keepInView) {
-                                val layout = textView.layout
-                                if (layout != null) {
-                                    val line = layout.getLineForOffset(startIndex)
-                                    val targetInTextView = layout.getLineTop(line)
-                                    val targetInScroll = textView.top + targetInTextView - (scrollView.height / 3)
-                                    scrollView.smoothScrollTo(0, targetInScroll.coerceAtLeast(0))
-                                }
-                            }
-
-                            return@forEach
-                        }
-                    }
+            when (highlightStyle) {
+                "underline" -> spanned.setSpan(android.text.style.UnderlineSpan(), startIndex, endIndex, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                "outline" -> {
+                    spanned.setSpan(RoundedOutlineSpan(highlightColor), startIndex, endIndex, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    spanned.setSpan(android.text.style.ForegroundColorSpan(highlightTextColor), startIndex, endIndex, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 }
+                else -> {
+                    spanned.setSpan(android.text.style.BackgroundColorSpan(highlightColor), startIndex, endIndex, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    spanned.setSpan(android.text.style.ForegroundColorSpan(highlightTextColor), startIndex, endIndex, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+            }
+
+            if (keepInView) {
+                fun doScroll() {
+                    val layout = textView.layout ?: return
+                    val line = layout.getLineForOffset(startIndex.coerceAtMost(layout.text.length - 1).coerceAtLeast(0))
+                    val targetInTextView = layout.getLineTop(line)
+                    val targetInScroll = textView.top + targetInTextView - (scrollView.height / 3)
+                    scrollView.smoothScrollTo(0, targetInScroll.coerceAtLeast(0))
+                }
+                if (textView.layout != null) doScroll() else textView.post { doScroll() }
             }
         }
     }
 
-    private fun loadNextChapterForTts() {
-        val chapters = currentChapters ?: return
-        val nextChapter = chapters.nextChapter ?: return
+    private fun loadNextChapterForTts(anchorChapterIndex: Int = currentChapterIndex) {
+        logcat(LogPriority.DEBUG) { "TTS: Auto-loading next chapter ts=${System.currentTimeMillis()} ttsPlaybackChapterIndex=${ttsController.ttsPlaybackChapterIndex} ttsPlaybackChapterId=${ttsController.ttsPlaybackChapterId}" }
 
-        logcat(LogPriority.DEBUG) { "TTS: Auto-loading next chapter for playback" }
-
-        // Load next chapter and start TTS when ready
-        scope.launch {
-            activity.loadNextChapter()
-            // Wait for the chapter to load
-            delay(1000)
-            // Start TTS on new chapter
-            startTts()
-        }
-    }
-
-    private fun applyTtsSettings() {
-        tts?.let { textToSpeech ->
-            // Set voice/locale
-            val voicePref = preferences.novelTtsVoice.get()
-            if (voicePref.isNotEmpty()) {
-                // Try to find matching voice by name
-                val voices = textToSpeech.voices
-                val selectedVoice = voices?.find { it.name == voicePref }
-                if (selectedVoice != null) {
-                    textToSpeech.voice = selectedVoice
-                } else {
-                    // Fallback to locale matching
-                    try {
-                        val locale = Locale.forLanguageTag(voicePref)
-                        textToSpeech.language = locale
-                    } catch (e: Exception) {
-                        textToSpeech.language = Locale.getDefault()
-                    }
+        if (preferences.novelInfiniteScroll.get()) {
+            if (moveToLoadedNextChapterForTts(anchorChapterIndex)) {
+                // For already-loaded chapters, text is ready — start immediately.
+                // For pre-fetched chapters, moveToLoadedNextChapterForTts sets pendingTtsAutoStart
+                // and fires setTextViewContent; startTts() will be called once the spannable is ready.
+                if (!pendingTtsAutoStart) {
+                    startTts()
                 }
             } else {
-                textToSpeech.language = Locale.getDefault()
+                logcat(LogPriority.WARN) { "TTS: No next chapter in loadedChapters or cache for inf-scroll handoff" }
             }
-
-            // Set speech rate (speed)
-            val speed = preferences.novelTtsSpeed.get()
-            textToSpeech.setSpeechRate(speed)
-
-            // Set pitch
-            val pitch = preferences.novelTtsPitch.get()
-            textToSpeech.setPitch(pitch)
-        }
-    }
-
-    fun speak(text: String) {
-        if (!ttsInitialized || tts == null) {
-            logcat(LogPriority.WARN) { "TTS not initialized, cannot speak" }
             return
         }
 
-        // Re-apply settings before speaking in case they changed
-        applyTtsSettings()
+        val chapters = currentChapters ?: return
+        chapters.nextChapter ?: return
 
-        ttsPaused = false
-
-        val maxLength = TextToSpeech.getMaxSpeechInputLength()
-        val paragraphs = text.split("\n").filter { it.isNotBlank() }
-
-        val chunkParagraphIndexes = mutableListOf<Int>()
-        ttsChunks = if (paragraphs.size > 1) {
-            paragraphs.flatMapIndexed { paragraphIndex, para ->
-                val chunks = if (para.length <= maxLength) {
-                    listOf(para)
-                } else {
-                    splitTextForTts(para, maxLength)
-                }
-                repeat(chunks.size) { chunkParagraphIndexes.add(paragraphIndex) }
-                chunks
-            }
-        } else if (text.length <= maxLength) {
-            chunkParagraphIndexes.add(0)
-            listOf(text)
-        } else {
-            val chunks = splitTextForTts(text, maxLength)
-            repeat(chunks.size) { chunkParagraphIndexes.add(0) }
-            chunks
+        // Mark pending so startTts() fires from setTextViewContent once the new chapter's
+        // text is actually set (avoids reading stale old-chapter text or empty text).
+        pendingTtsAutoStart = true
+        scope.launch {
+            activity.loadNextChapter()
         }
-        ttsChunkParagraphIndexes = chunkParagraphIndexes
-
-        // Extract paragraph info for highlighting support
-        ttsCurrentParagraphs = NovelViewerTextUtils.findParagraphs(text)
-
-        val savedChunkIndex = restoreTtsProgress()
-        ttsCurrentChunkIndex = 0
-        val startIndex = if (hasViewportStartOverride) {
-            val viewportChunkIndex = ttsChunkParagraphIndexes.indexOfFirst { it >= ttsViewportParagraphIndex }
-            if (viewportChunkIndex >= 0) viewportChunkIndex else savedChunkIndex
-        } else {
-            savedChunkIndex
-        }
-        hasViewportStartOverride = false
-
-        speakChunksFrom(startIndex.coerceIn(0, (ttsChunks.size - 1).coerceAtLeast(0)))
     }
 
-    private fun splitTextForTts(text: String, maxLength: Int): List<String> =
-        NovelViewerTextUtils.splitTextForTts(text, maxLength)
+    private fun preFetchNextChapterForTts() {
+        if (cachedNextChapterForTts != null || isFetchingNextChapterForTts) return
+        isFetchingNextChapterForTts = true
 
-    private fun ensureTtsInitialized() {
-        if (tts == null) {
+        scope.launch {
             try {
-                tts = TextToSpeech(activity, this)
-                logcat(LogPriority.DEBUG) { "TTS: Initialization started" }
-            } catch (e: Exception) {
-                logcat(LogPriority.ERROR) { "TTS: Failed to create TextToSpeech instance: ${e.message}" }
+                val anchor = loadedChapters.lastOrNull()?.chapter ?: currentChapters?.currChapter ?: return@launch
+                val preparedChapter = activity.viewModel.prepareNextChapterForInfiniteScroll(anchor) ?: return@launch
+                val nextId = preparedChapter.chapter.id ?: return@launch
+                if (loadedChapters.any { it.chapter.chapter.id == nextId }) return@launch
+                val page = preparedChapter.pages?.firstOrNull() as? ReaderPage ?: return@launch
+                val loader = page.chapter.pageLoader ?: return@launch
+
+                logcat(LogPriority.DEBUG) { "TTS: Pre-fetching next chapter ${preparedChapter.chapter.name}" }
+
+                val textLoaded = try {
+                    awaitPageText(page = page, loader = loader, timeoutMs = 30_000)
+                } catch (e: Exception) {
+                    logcat(LogPriority.WARN) { "TTS: Pre-fetch failed: ${e.message}" }
+                    return@launch
+                }
+                if (!textLoaded) return@launch
+
+                var content = page.text ?: return@launch
+                val plainTextMode = NovelViewerTextUtils.isPlainTextChapter(preparedChapter.chapter.url)
+                content = if (plainTextMode) {
+                    NovelViewerTextUtils.normalizePlainTextContent(content)
+                } else {
+                    normalizeContentForHtml(content, preparedChapter.chapter.url)
+                }
+                if (preferences.novelHideChapterTitle.get()) {
+                    content = stripChapterTitle(content, preparedChapter.chapter.name)
+                }
+                if (preferences.novelForceTextLowercase.get()) {
+                    content = content.lowercase()
+                }
+
+                val finalContent = if (activity.isTranslationEnabled() && !preferences.novelShowRawHtml.get()) {
+                    activity.translateContentIfEnabled(content)
+                } else {
+                    content
+                }
+
+                withContext(Dispatchers.Main) {
+                    if (cachedNextChapterForTts != null) return@withContext
+                    if (loadedChapters.any { it.chapter.chapter.id == nextId }) return@withContext
+
+                    val headerView = TextView(activity).apply {
+                        text = preparedChapter.chapter.name
+                        textSize = 18f
+                        setTextColor(0xFF888888.toInt())
+                        gravity = Gravity.CENTER
+                        setPadding(16, 32, 16, 16)
+                        isVisible = false
+                    }
+                    val textView = createSelectableTextView()
+                    applyTextViewStyles(textView)
+
+                    val cachedChapter = LoadedChapter(
+                        chapter = preparedChapter,
+                        textView = textView,
+                        headerView = headerView,
+                        isLoaded = true,
+                        isTextSet = false,
+                        pendingContent = finalContent,
+                    )
+                    cachedNextChapterForTts = cachedChapter
+                    logcat(LogPriority.DEBUG) { "TTS: Cached next chapter ${preparedChapter.chapter.name}" }
+                }
+            } finally {
+                isFetchingNextChapterForTts = false
             }
         }
     }
+
+    private fun syncCurrentChapterIndexWithCurrentPage(): Boolean {
+        val targetChapterId = currentPage?.chapter?.chapter?.id
+            ?: currentChapters?.currChapter?.chapter?.id
+            ?: return false
+        val targetIndex = loadedChapters.indexOfFirst { it.chapter.chapter.id == targetChapterId }
+        if (targetIndex < 0) return false
+        currentChapterIndex = targetIndex
+        return true
+    }
+
+    private fun moveToLoadedNextChapterForTts(anchorChapterIndex: Int = currentChapterIndex): Boolean {
+        logcat(LogPriority.DEBUG) { "TTS: moveToLoadedNextChapterForTts anchor=$anchorChapterIndex ts=${System.currentTimeMillis()} ttsCurrentChunkIndex=${ttsController.ttsCurrentChunkIndex} ttsResumeChunkIndex=${ttsController.ttsResumeChunkIndex} ttsPlaybackChapterIndex=${ttsController.ttsPlaybackChapterIndex} ttsPlaybackChapterId=${ttsController.ttsPlaybackChapterId}" }
+        val nextIndex = anchorChapterIndex + 1
+        val nextLoaded = loadedChapters.getOrNull(nextIndex)
+
+        if (nextLoaded == null) {
+            val cached = cachedNextChapterForTts ?: return false
+            cachedNextChapterForTts = null
+
+            isRestoringScroll = true
+            val separator = TextView(activity).apply {
+                text = "──────────"
+                textSize = 16f
+                setTextColor(0xFF888888.toInt())
+                gravity = Gravity.CENTER
+                setPadding(16, 48, 16, 48)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                )
+            }
+            contentContainer.addView(separator)
+            cached.separatorView = separator
+            contentContainer.addView(cached.headerView)
+            contentContainer.addView(cached.textView)
+            loadedChapters.add(cached)
+            scrollView.post { isRestoringScroll = false }
+
+            currentChapterIndex = loadedChapters.size - 1
+            cached.chapter.pages?.firstOrNull()?.let { page ->
+                currentPage = page
+                activity.viewModel.setNovelVisibleChapter(cached.chapter.chapter)
+                activity.onPageSelected(page)
+                activity.onNovelProgressChanged(0f)
+            }
+            logcat(LogPriority.DEBUG) { "TTS: used pre-fetched chapter ${cached.chapter.chapter.name} ts=${System.currentTimeMillis()}" }
+
+            // View is now attached — render the stored content. setTextViewContent's coroutine
+            // will set pendingTtsAutoStart → startTts() once the spannable is ready.
+            val content = cached.pendingContent
+            if (content != null) {
+                cached.pendingContent = null
+                pendingTtsAutoStart = true
+                setTextViewContent(cached.textView, content, cached.chapter.chapter.url, processContent = false)
+            }
+            return true
+        }
+
+        currentChapterIndex = nextIndex
+        logcat(LogPriority.DEBUG) { "TTS: moved to loaded nextIndex=$nextIndex ts=${System.currentTimeMillis()}" }
+
+        nextLoaded.chapter.pages?.firstOrNull()?.let { page ->
+            currentPage = page
+            activity.viewModel.setNovelVisibleChapter(nextLoaded.chapter.chapter)
+            activity.onPageSelected(page)
+            activity.onNovelProgressChanged(0f)
+        }
+
+        return true
+    }
+
 
     fun startTts() {
-        ensureTtsInitialized()
-
-        if (!ttsInitialized) {
+        ttsController.ensureInitialized()
+        if (!ttsController.ttsInitialized) {
             logcat(LogPriority.WARN) { "TTS: Not initialized yet, waiting..." }
-            pendingTtsStartRequest = TtsStartRequest.NORMAL
+            ttsController.pendingStartRequest = TtsController.StartRequest.NORMAL
             return
         }
-
-        pendingTtsStartRequest = null
-        isTtsAutoPlay = true // Enable auto-continue
+        ttsController.pendingStartRequest = null
+        ttsController.isTtsAutoPlay = true
+        syncCurrentChapterIndexWithCurrentPage()
         val text = loadedChapters.getOrNull(currentChapterIndex)?.textView?.text?.toString()
             ?: loadedChapters.firstOrNull()?.textView?.text?.toString()
-
         if (text.isNullOrEmpty()) {
-            logcat(LogPriority.WARN) {
-                "TTS: No text to speak. loadedChapters=${loadedChapters.size}, currentIndex=$currentChapterIndex"
-            }
+            logcat(LogPriority.WARN) { "TTS: No text to speak. loadedChapters=${loadedChapters.size}, currentIndex=$currentChapterIndex" }
             return
         }
-
         logcat(LogPriority.DEBUG) { "TTS: Starting to speak ${text.length} characters" }
-        speak(text)
+        ttsController.speak(
+            text,
+            chapterIndex = currentChapterIndex,
+            chapterId = currentPage?.chapter?.chapter?.id ?: currentChapters?.currChapter?.chapter?.id,
+        )
     }
 
     fun stopTts() {
-        isTtsAutoPlay = false // Disable auto-continue when manually stopped
-        ttsPaused = false
-        pendingTtsStartRequest = null
-        ttsChunks = emptyList()
-        ttsChunkParagraphIndexes = emptyList()
-        ttsCurrentChunkIndex = 0
-        hasViewportStartOverride = false
-        if (ttsInitialized) {
-            tts?.stop()
-        }
-
-        activity.runOnUiThread {
-            loadedChapters.forEach { loaded ->
-                if (!loaded.isLoaded) return@forEach
-                val textView = loaded.textView
-                val spanned = textView.text as? android.text.Spannable ?: return@forEach
-                val text = textView.text.toString()
-                spanned.getSpans(0, text.length, android.text.style.BackgroundColorSpan::class.java).forEach { spanned.removeSpan(it) }
-                spanned.getSpans(0, text.length, android.text.style.ForegroundColorSpan::class.java).forEach { spanned.removeSpan(it) }
-                spanned.getSpans(0, text.length, android.text.style.UnderlineSpan::class.java).forEach { spanned.removeSpan(it) }
-                spanned.getSpans(0, text.length, RoundedOutlineSpan::class.java).forEach { spanned.removeSpan(it) }
-            }
-        }
+        logcat(LogPriority.DEBUG) { "TTS: stopTts called ts=${System.currentTimeMillis()} currentChapterIndex=$currentChapterIndex ttsCurrentChunkIndex=${ttsController.ttsCurrentChunkIndex} ttsPlaybackChapterIndex=${ttsController.ttsPlaybackChapterIndex} ttsPlaybackChapterId=${ttsController.ttsPlaybackChapterId}" }
+        pendingTtsAutoStart = false
+        cachedNextChapterForTts = null
+        isFetchingNextChapterForTts = false
+        ttsController.stop()
     }
 
     fun pauseTts() {
-        if (ttsInitialized && tts?.isSpeaking == true) {
-            ttsPaused = true
-            ttsResumeChunkIndex = ttsCurrentChunkIndex
-            tts?.stop()
-            saveTtsProgress()
-        }
+        logcat(LogPriority.DEBUG) { "TTS: pauseTts called ts=${System.currentTimeMillis()} ttsCurrentChunkIndex=${ttsController.ttsCurrentChunkIndex}" }
+        ttsController.pause()
     }
 
     fun resumeTts() {
-        if (ttsPaused && ttsChunks.isNotEmpty()) {
-            ttsPaused = false
-            // Resume from the chunk that was interrupted
-            speakChunksFrom(ttsResumeChunkIndex)
-        }
+        ttsController.resume()
     }
 
-    fun isTtsPaused(): Boolean = ttsPaused
-
-    fun isTtsSpeaking(): Boolean = ttsInitialized && tts?.isSpeaking == true
-
-    fun isTtsStarting(): Boolean = pendingTtsStartRequest != null || (!ttsInitialized && tts != null) || (ttsChunks.isEmpty() && isTtsAutoPlay)
-
-    fun getTtsProgressPercent(): Int {
-        if (ttsChunks.isEmpty()) return 0
-        val chunkCount = ttsChunks.size
-        val currentChunk = if (ttsPaused) ttsResumeChunkIndex else ttsCurrentChunkIndex
-        val clampedChunk = currentChunk.coerceIn(0, chunkCount - 1)
-        return (((clampedChunk + 1) * 100f) / chunkCount).roundToInt().coerceIn(0, 100)
+    fun ttsNextParagraph() {
+        ttsController.stepParagraph(1) { startTtsFromViewport() }
     }
 
-    /**
-     * Saves the current TTS playback progress to preferences.
-     */
-    private fun saveTtsProgress() {
-        val currentChapter = currentPage
-        if (currentChapter == null || ttsCurrentChunkIndex < 0) return
-
-        val chapterId = currentChapter.index.toLong()
-        val paragraphIndex = ttsCurrentChunkIndex.coerceAtLeast(0)
-
-        // Load existing progress map
-        val progressJson = preferences.novelTtsLastReadParagraph.get()
-        val progressMap = NovelViewerTextUtils.decodeIntMapPreference(progressJson)
-
-        // Update with current chapter progress
-        progressMap[chapterId.toString()] = paragraphIndex
-
-        // Save back to preferences
-        try {
-            val json = kotlinx.serialization.json.Json.encodeToString(progressMap)
-            preferences.novelTtsLastReadParagraph.set(json)
-        } catch (e: Exception) {
-            logcat(LogPriority.ERROR) { "Failed to save TTS progress: ${e.message}" }
-        }
+    fun ttsPreviousParagraph() {
+        ttsController.stepParagraph(-1) { startTtsFromViewport() }
     }
 
-    /**
-     * Restores the last-read paragraph position for the current chapter.
-     * @return The chunk index to resume from, or 0 if no progress found.
-     */
-    private fun restoreTtsProgress(): Int {
-        val currentChapter = currentPage
-        if (currentChapter == null) return 0
+    fun isTtsPaused(): Boolean = ttsController.isPaused()
+    fun isTtsSpeaking(): Boolean = ttsController.isSpeaking()
+    fun isTtsStarting(): Boolean = ttsController.isStarting()
+    fun getTtsProgressPercent(): Int = ttsController.getProgressPercent()
 
-        val chapterId = currentChapter.index.toString()
-        val progressJson = preferences.novelTtsLastReadParagraph.get()
-
-        val progressMap = NovelViewerTextUtils.decodeIntMapPreference(progressJson)
-        return progressMap[chapterId]?.coerceAtLeast(0) ?: 0
-    }
-
-    /**
-     * Starts TTS from the first visible paragraph in the viewport.
-     */
     fun startTtsFromViewport() {
-        ensureTtsInitialized()
-
-        if (!ttsInitialized) {
+        ttsController.ensureInitialized()
+        if (!ttsController.ttsInitialized) {
             logcat(LogPriority.WARN) { "TTS: Not initialized yet" }
-            pendingTtsStartRequest = TtsStartRequest.VIEWPORT
+            ttsController.pendingStartRequest = TtsController.StartRequest.VIEWPORT
             return
         }
-
-        pendingTtsStartRequest = null
-        isTtsAutoPlay = true
+        ttsController.pendingStartRequest = null
+        ttsController.isTtsAutoPlay = true
+        syncCurrentChapterIndexWithCurrentPage()
         val text = loadedChapters.getOrNull(currentChapterIndex)?.textView?.text?.toString()
             ?: loadedChapters.firstOrNull()?.textView?.text?.toString()
-
         if (text.isNullOrEmpty()) {
             logcat(LogPriority.WARN) { "TTS: No text available for viewport start" }
             return
         }
-
-        // Find first paragraph visible in viewport
         val firstVisibleParagraphIndex = findFirstVisibleParagraphIndex(text)
         logcat(LogPriority.DEBUG) { "TTS: Starting from viewport paragraph $firstVisibleParagraphIndex" }
-
-        ttsViewportParagraphIndex = firstVisibleParagraphIndex.coerceAtLeast(0)
-        hasViewportStartOverride = true
-        speak(text)
+        ttsController.ttsViewportParagraphIndex = firstVisibleParagraphIndex.coerceAtLeast(0)
+        ttsController.hasViewportStartOverride = true
+        ttsController.speak(
+            text,
+            chapterIndex = currentChapterIndex,
+            chapterId = currentPage?.chapter?.chapter?.id ?: currentChapters?.currChapter?.chapter?.id,
+        )
     }
 
     /**
      * Finds the index of the first paragraph visible in the current viewport.
+     * Paragraph indexing MUST match speak()'s split (single \n, filter blank) so that
+     * ttsViewportParagraphIndex aligns with ttsChunkParagraphIndexes.
      */
     private fun findFirstVisibleParagraphIndex(text: String): Int {
         val viewportTop = scrollView.scrollY
         val viewportBottom = viewportTop + scrollView.height
-        val paragraphs = NovelViewerTextUtils.findParagraphs(text)
 
-        if (paragraphs.isEmpty()) return 0
+        // Same split as speak() so paragraph indexes are consistent.
+        val paragraphLines = text.split("\n").filter { it.isNotBlank() }
+        if (paragraphLines.isEmpty()) return 0
 
-        loadedChapters.forEachIndexed { _, loaded ->
-            if (loaded.isLoaded) {
-                val textView = loaded.textView
-                val textViewTop = textView.top + scrollView.paddingTop
-                val textViewBottom = textViewTop + textView.height
+        // Build start-char offset for each paragraph within `text`.
+        val paragraphOffsets = mutableListOf<Int>()
+        var searchFrom = 0
+        for (line in paragraphLines) {
+            val idx = text.indexOf(line, searchFrom)
+            if (idx >= 0) {
+                paragraphOffsets.add(idx)
+                searchFrom = idx + line.length
+            } else {
+                paragraphOffsets.add(searchFrom)
+            }
+        }
 
-                // Check if any part of this textView is visible
-                if (textViewBottom > viewportTop && textViewTop < viewportBottom) {
-                    // Calculate how far into this textView the viewport starts
-                    val layout = textView.layout ?: return 0
-                    if (layout.lineCount > 0) {
-                        // Get the line at viewport top within this textView
-                        val textViewRelativeY = (viewportTop - textViewTop).coerceAtLeast(0)
-                        val lineAtViewportTop = layout.getLineForVertical(textViewRelativeY.coerceAtMost(layout.height))
-                        val charOffset = layout.getLineStart(lineAtViewportTop).coerceAtLeast(0)
-                        val containingParagraph = paragraphs.indexOfFirst { charOffset >= it.startChar && charOffset < it.endChar }
-                        if (containingParagraph >= 0) return containingParagraph
+        loadedChapters.forEach { loaded ->
+            if (!loaded.isLoaded) return@forEach
+            val textView = loaded.textView
+            // textView.top and scrollView.scrollY are both in contentContainer coordinates —
+            // no paddingTop adjustment needed.
+            val textViewTop = textView.top
+            val textViewBottom = textViewTop + textView.height
 
-                        val nextParagraph = paragraphs.indexOfFirst { it.startChar >= charOffset }
-                        return if (nextParagraph >= 0) nextParagraph else (paragraphs.size - 1)
-                    }
+            if (textViewBottom > viewportTop && textViewTop < viewportBottom) {
+                val layout = textView.layout ?: return 0
+                if (layout.lineCount > 0) {
+                    val textViewRelativeY = (viewportTop - textViewTop).coerceAtLeast(0)
+                    val lineAtViewportTop = layout.getLineForVertical(textViewRelativeY.coerceAtMost(layout.height))
+                    val charOffset = layout.getLineStart(lineAtViewportTop).coerceAtLeast(0)
+                    // Last paragraph whose start is at or before charOffset.
+                    val pIdx = paragraphOffsets.indexOfLast { it <= charOffset }
+                    return if (pIdx >= 0) pIdx else 0
                 }
             }
         }
@@ -1643,32 +1586,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         return 0
     }
 
-    private fun speakChunksFrom(startIndex: Int) {
-        if (ttsChunks.isEmpty() || startIndex >= ttsChunks.size) return
-        ttsChunks.drop(startIndex).forEachIndexed { i, chunk ->
-            val actualIndex = startIndex + i
-            val queueMode = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
-            tts?.speak(chunk, queueMode, null, "tts_utterance_$actualIndex")
-        }
-    }
-
-    /**
-     * Get list of available TTS voices for the settings UI
-     */
-    fun getAvailableVoices(): List<Pair<String, String>> {
-        val voices = tts?.voices ?: return emptyList()
-        return voices.map { voice ->
-            val displayName = "${voice.locale.displayLanguage} (${voice.name})"
-            Pair(voice.name, displayName)
-        }.sortedBy { it.second }
-    }
-
-    /**
-     * Get the current TTS voice name
-     */
-    fun getCurrentVoiceName(): String {
-        return tts?.voice?.name ?: preferences.novelTtsVoice.get()
-    }
+    fun getAvailableVoices(): List<Pair<String, String>> = ttsController.getAvailableVoices()
+    fun getCurrentVoiceName(): String = ttsController.getCurrentVoiceName()
 
     override fun destroy() {
         // Save progress before destroying
@@ -1677,13 +1596,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
             saveProgress(progress)
         }
 
-        // Cleanup TTS - only if initialized
-        if (ttsInitialized) {
-            tts?.stop()
-            tts?.shutdown()
-        }
-        tts = null
-
+        ttsController.destroy()
         scope.cancel()
         loadJob?.cancel()
         loadedChapters.clear()
@@ -1818,6 +1731,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         } else {
             normalizeContentForHtml(content, chapter.chapter.url)
         }
+
+        content = applyRegexReplacements(content)
 
         // Optionally force lowercase
         if (preferences.novelForceTextLowercase.get()) {
@@ -2207,6 +2122,10 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
         processedContent = processedContent.replace(Regex("<style[^>]*/>", RegexOption.IGNORE_CASE), "")
         // Strip noscript tags
         processedContent = processedContent.replace(Regex("<noscript[^>]*>.*?</noscript>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+        // Strip HTML comments — render as visible text in TextView
+        processedContent = processedContent.replace(Regex("<!--.*?-->", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+        // Strip entity-encoded comment markers used as ad injection points (e.g. &lt;!--bg--&gt;)
+        processedContent = processedContent.replace(Regex("&lt;!--.*?--&gt;", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
 
         if (processContent) {
             processedContent = applyRegexReplacements(processedContent)
@@ -2333,6 +2252,24 @@ class NovelViewer(val activity: ReaderActivity) : Viewer, TextToSpeech.OnInitLis
                 // mTextIsSelectable=false, which fires Android's
                 // "Selection cancelled" warning on API 34+.
                 textView.setText(spannable, TextView.BufferType.SPANNABLE)
+                val loadedIdx = loadedChapters.indexOfFirst { it.textView === textView }
+                if (loadedIdx >= 0) {
+                    loadedChapters[loadedIdx].isTextSet = true
+                }
+                if (pendingTtsAutoStart) {
+                    pendingTtsAutoStart = false
+                    // Update chapter index to match the chapter whose text was just set.
+                    if (loadedIdx >= 0) {
+                        currentChapterIndex = loadedIdx
+                        loadedChapters[loadedIdx].chapter.pages?.firstOrNull()?.let { page ->
+                            currentPage = page
+                            activity.viewModel.setNovelVisibleChapter(loadedChapters[loadedIdx].chapter.chapter)
+                            activity.onPageSelected(page)
+                            activity.onNovelProgressChanged(0f)
+                        }
+                    }
+                    startTts()
+                }
             }
         }
     }

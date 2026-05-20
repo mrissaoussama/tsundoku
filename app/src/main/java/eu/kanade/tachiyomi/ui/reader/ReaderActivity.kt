@@ -165,6 +165,8 @@ class ReaderActivity : BaseActivity() {
 
             when (intent.getStringExtra(TtsPlaybackService.EXTRA_COMMAND)) {
                 TtsPlaybackService.COMMAND_TOGGLE_PAUSE -> togglePauseResumeFromNotification()
+                TtsPlaybackService.COMMAND_PREV_PARAGRAPH -> stepTtsParagraph(isNext = false)
+                TtsPlaybackService.COMMAND_NEXT_PARAGRAPH -> stepTtsParagraph(isNext = true)
                 TtsPlaybackService.COMMAND_STOP -> stopTtsFromNotification()
             }
         }
@@ -877,6 +879,8 @@ class ReaderActivity : BaseActivity() {
                         else -> {}
                     }
                 },
+                onTtsPreviousParagraph = { stepTtsParagraph(isNext = false) },
+                onTtsNextParagraph = { stepTtsParagraph(isNext = true) },
 
                 isEditing = isEditing,
                 onToggleEdit = {
@@ -1100,7 +1104,7 @@ class ReaderActivity : BaseActivity() {
                 val paused = viewer.isTtsPaused()
                 val speaking = viewer.isTtsSpeaking()
                 NovelTtsState(
-                    active = speaking || viewer.isTtsStarting(),
+                    active = paused || speaking || viewer.isTtsStarting(),
                     paused = paused,
                     progressPercent = viewer.getTtsProgressPercent(),
                     novelTitle = novelTitle,
@@ -1113,7 +1117,7 @@ class ReaderActivity : BaseActivity() {
                 val paused = viewer.isTtsPaused()
                 val speaking = viewer.isTtsSpeaking()
                 NovelTtsState(
-                    active = speaking || viewer.isTtsStarting(),
+                    active = paused || speaking || viewer.isTtsStarting(),
                     paused = paused,
                     progressPercent = viewer.getTtsProgressPercent(),
                     novelTitle = novelTitle,
@@ -1152,6 +1156,18 @@ class ReaderActivity : BaseActivity() {
             }
             else -> Unit
         }
+        syncBackgroundTtsState()
+    }
+
+    private fun stepTtsParagraph(isNext: Boolean) {
+        val step: (() -> Unit)? = when (val viewer = viewModel.state.value.viewer) {
+            is NovelViewer -> if (isNext) viewer::ttsNextParagraph else viewer::ttsPreviousParagraph
+            is NovelWebViewViewer -> if (isNext) viewer::ttsNextParagraph else viewer::ttsPreviousParagraph
+            else -> null
+        }
+        step ?: return
+        startBackgroundTtsIfEnabled()
+        step()
         syncBackgroundTtsState()
     }
 

@@ -305,6 +305,8 @@ internal fun ColumnScope.NovelAppearanceTab(screenModel: ReaderSettingsScreenMod
     val theme by screenModel.preferences.novelTheme.collectAsState()
     val fontColor by screenModel.preferences.novelFontColor.collectAsState()
     val backgroundColor by screenModel.preferences.novelBackgroundColor.collectAsState()
+    val fontFamily by screenModel.preferences.novelFontFamily.collectAsState()
+    val fontSize by screenModel.preferences.novelFontSize.collectAsState()
     var showFontColorPicker by remember { mutableStateOf(false) }
     var showBgColorPicker by remember { mutableStateOf(false) }
 

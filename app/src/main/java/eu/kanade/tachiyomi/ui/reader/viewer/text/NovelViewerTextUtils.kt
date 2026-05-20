@@ -313,6 +313,9 @@ object NovelViewerTextUtils {
                 val lastSpace = remaining.substring(0, maxLength).lastIndexOf(' ')
                 if (lastSpace > maxLength / 2) {
                     breakPoint = lastSpace + 1
+                } else if (remaining.indexOf(' ') == -1) {
+                    // No spaces anywhere — output entire remaining to avoid mid-word split
+                    breakPoint = remaining.length
                 }
             }
 
@@ -404,9 +407,10 @@ object NovelViewerTextUtils {
         timeoutMs: Long,
         scope: CoroutineScope,
     ): Boolean {
-        // If already loaded and has content, don't trigger a second request.
-        if (!page.text.isNullOrBlank() && page.status is Page.State.Ready) {
-            logcat(LogPriority.DEBUG) { "$tag: page already ready, text.length=${page.text?.length ?: 0}" }
+        // If text is already present, skip loading regardless of status — loadChapter() may
+        // have populated page.text before loadPage() sets status to Ready.
+        if (!page.text.isNullOrBlank()) {
+            logcat(LogPriority.DEBUG) { "$tag: page text already available, text.length=${page.text?.length ?: 0}" }
             return true
         }
 
@@ -677,6 +681,24 @@ object NovelViewerTextUtils {
         """.trimIndent()
 
         return ThemeTokens(cssVariables, jsObject)
+    }
+
+    fun computeTtsStepTargetChunk(
+        delta: Int,
+        ttsPaused: Boolean,
+        ttsResumeChunkIndex: Int,
+        ttsCurrentChunkIndex: Int,
+        ttsChunks: List<String>,
+        ttsChunkParagraphIndexes: List<Int>,
+    ): Int {
+        val currentChunk = (if (ttsPaused) ttsResumeChunkIndex else ttsCurrentChunkIndex)
+            .coerceIn(0, (ttsChunks.size - 1).coerceAtLeast(0))
+        val currentParagraph = ttsChunkParagraphIndexes.getOrElse(currentChunk) { currentChunk }
+        val maxParagraph = (ttsChunkParagraphIndexes.maxOrNull() ?: currentParagraph).coerceAtLeast(0)
+        val targetParagraph = (currentParagraph + delta).coerceIn(0, maxParagraph)
+        return ttsChunkParagraphIndexes.indexOfFirst { it >= targetParagraph }
+            .takeIf { it >= 0 }
+            ?: currentChunk
     }
 
     /**
