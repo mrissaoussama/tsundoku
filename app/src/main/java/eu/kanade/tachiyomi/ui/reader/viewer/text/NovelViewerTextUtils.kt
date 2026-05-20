@@ -87,9 +87,12 @@ object NovelViewerTextUtils {
     fun normalizeContentForHtml(content: String, chapterUrl: String?): String {
         val normalized = content.replace("\u0000", "")
         if (isPlainTextChapter(chapterUrl)) {
+            logcat(LogPriority.DEBUG) { "normalizeContentForHtml: PLAIN_TEXT (forced by extension)" }
             return plainTextToHtml(normalized)
         }
-        return when (detectTextKind(chapterUrl, normalized)) {
+        val kind = detectTextKind(chapterUrl, normalized)
+        logcat(LogPriority.DEBUG) { "normalizeContentForHtml: $kind len=${normalized.length}" }
+        return when (kind) {
             ChapterTextKind.HTML -> normalized
             ChapterTextKind.MARKDOWN -> markdownToHtml(stripFrontMatter(normalized))
             ChapterTextKind.PLAIN_TEXT -> plainTextToHtml(normalized)
@@ -145,7 +148,15 @@ object NovelViewerTextUtils {
         val normalized = text
             .replace("\r\n", "\n")
             .replace("\r", "\n")
-        val escaped = escapeHtml(normalized)
+        // Unescape any HTML entities before re-escaping to avoid double-encoding.
+        // JS sources may return content with &lt;D&gt; already encoded; escapeHtml would
+        // turn & into &amp;, producing &amp;lt;D&amp;gt; which renders as &lt;D&gt;.
+        val decoded = if (normalized.contains('&')) {
+            org.jsoup.parser.Parser.unescapeEntities(normalized, false)
+        } else {
+            normalized
+        }
+        val escaped = escapeHtml(decoded)
         return "<pre data-tsundoku-plain-text=\"1\" style=\"white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; margin: 0;\">$escaped</pre>"
     }
 

@@ -76,6 +76,49 @@ class JsSource(
 
     companion object {
         private const val INSTANCE_TIMEOUT_MS = 60_000L // 1 minute timeout
+
+        private val HTML_TAG_REGEX = Regex(
+            "<(?:p|div|br|span|h[1-6]|ul|ol|li|a|img|table|blockquote|strong|em|b|i|code)\\b",
+            RegexOption.IGNORE_CASE,
+        )
+        private val DOUBLE_ENCODED_ENTITY_REGEX = Regex(
+            "&amp;([a-zA-Z][a-zA-Z0-9]{1,30}|#[0-9]{1,7}|#x[0-9a-fA-F]{1,6});",
+        )
+
+        /** True when [text] contains structural or inline HTML tags. */
+        internal fun looksLikeHtml(text: String): Boolean =
+            HTML_TAG_REGEX.containsMatchIn(text)
+
+        /**
+         * Normalize raw chapter text extracted from a JS plugin response.
+         *
+         * - Plain text: fully unescape all HTML entities so `&lt;D&gt;` → `<D>`.
+         *   The viewer's `escapeHtml` re-encodes them correctly for display.
+         * - HTML: fix only double-encoded entities (`&amp;lt;` → `&lt;`) without
+         *   destroying HTML structure (full unescape would turn `&lt;tag&gt;` into a
+         *   real `<tag>` element).
+         */
+        internal fun normalizePluginContent(raw: String): String =
+            if (!looksLikeHtml(raw)) {
+                org.jsoup.parser.Parser.unescapeEntities(raw, false)
+            } else {
+                fixDoubleEncodedEntities(raw)
+            }
+
+        /** Fixes `&amp;lt;` → `&lt;`, `&amp;nbsp;` → `&nbsp;`, etc. for HTML content. */
+        internal fun fixDoubleEncodedEntities(html: String): String {
+            if (!html.contains("&amp;")) return html
+            return html.replace(DOUBLE_ENCODED_ENTITY_REGEX) { "&${it.groupValues[1]};" }
+        }
+
+        /**
+         * Pick the content field from a parsed JSON plugin response object.
+         * Returns null when none of the known fields are present.
+         */
+        internal fun pickContentField(obj: JsonObject): String? =
+            obj["chapterText"]?.jsonPrimitive?.content
+                ?: obj["text"]?.jsonPrimitive?.content
+                ?: obj["content"]?.jsonPrimitive?.content
     }
 
     private val pluginId: String = plugin.id
@@ -1237,18 +1280,18 @@ class JsSource(
     // Plugins may return a plain JSON string or a JSON object with chapterText/text/content field.
     // decodeJsonStringIfQuoted returns raw JSON for objects, which viewers then misrender.
     private fun extractChapterText(result: String): String {
-        if (result.startsWith("{")) {
-            return try {
+        val raw = if (result.startsWith("{")) {
+            try {
                 val obj = json.parseToJsonElement(result).jsonObject
-                obj["chapterText"]?.jsonPrimitive?.content
-                    ?: obj["text"]?.jsonPrimitive?.content
-                    ?: obj["content"]?.jsonPrimitive?.content
-                    ?: decodeJsonStringIfQuoted(result)
-            } catch (_: Exception) {
+                pickContentField(obj) ?: decodeJsonStringIfQuoted(result)
+            } catch (e: Exception) {
+                logcat(LogPriority.WARN, e) { "extractChapterText: failed to parse JSON object from ${plugin.name}" }
                 decodeJsonStringIfQuoted(result)
             }
+        } else {
+            decodeJsonStringIfQuoted(result)
         }
-        return decodeJsonStringIfQuoted(result)
+        return normalizePluginContent(raw)
     }
 }
 
