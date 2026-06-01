@@ -590,11 +590,16 @@ class ReaderViewModel @JvmOverloads constructor(
             translationPreferences.translationEnabled().get() &&
             translationPreferences.smartAutoTranslate().get()
         ) {
-            translationService.enqueue(
-                manga = currentManga,
-                chapter = chapter.chapter.toDomainChapter()!!,
-                priority = TranslationService.PRIORITY_MANUAL_READ,
-            )
+            val chapterId = chapter.chapter.id ?: return
+            viewModelScope.launchIO {
+                // Already cached for this chapter+lang: the viewer serves it, no API call.
+                if (translationService.hasTranslation(chapterId)) return@launchIO
+                translationService.enqueue(
+                    manga = currentManga,
+                    chapter = chapter.chapter.toDomainChapter()!!,
+                    priority = TranslationService.PRIORITY_MANUAL_READ,
+                )
+            }
         }
     }
 
@@ -1124,6 +1129,11 @@ class ReaderViewModel @JvmOverloads constructor(
      */
     fun setTargetTranslationLanguage(language: String) {
         translationService.setTargetLanguage(language)
+    }
+
+    /** Whether a cached translation exists for [chapterId] in the current target language. */
+    suspend fun hasCachedTranslation(chapterId: Long): Boolean {
+        return translationService.hasTranslation(chapterId)
     }
 
     /**
