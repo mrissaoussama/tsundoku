@@ -35,6 +35,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - JS Plugin runtime, writes improved [@mrissaoussama](https://github.com/mrissaoussama) [#245](https://github.com/tsundoku-otaku/tsundoku/pull/245)
 - Added support for missing wrap function for JS plugins, and native cheerio support [@mrissaoussama](https://github.com/mrissaoussama) [#239](https://github.com/tsundoku-otaku/tsundoku/pull/239)
 - Mass import chunks to avoid memory errors, has better caching and redundancy checking, improve UI [@mrissaoussama](https://github.com/mrissaoussama) [#214](https://github.com/tsundoku-otaku/tsundoku/pull/214)
+- Browse should properly filter manga and novel sources [@mrissaoussama](https://github.com/mrissaoussama) [#246](https://github.com/tsundoku-otaku/tsundoku/pull/246)
 
 
 ### Fix
