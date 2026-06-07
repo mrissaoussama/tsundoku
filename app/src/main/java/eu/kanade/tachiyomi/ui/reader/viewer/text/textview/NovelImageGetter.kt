@@ -14,7 +14,11 @@ import androidx.core.text.PrecomputedTextCompat
 import androidx.core.widget.TextViewCompat
 import coil3.asDrawable
 import coil3.imageLoader
+import coil3.network.NetworkHeaders
+import coil3.network.httpHeaders
 import coil3.request.ImageRequest
+import eu.kanade.tachiyomi.jsplugin.source.JsSource
+import eu.kanade.tachiyomi.source.online.HttpSource
 import coil3.size.Dimension as CoilDimension
 import coil3.size.Size as CoilSize
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
@@ -63,6 +67,8 @@ internal class CoilImageGetter(
     private data class PendingLoad(val source: String, val wrapper: DrawableWrapper)
     private val pendingLoads = mutableListOf<PendingLoad>()
 
+    private val outstandingLoads = java.util.concurrent.atomic.AtomicInteger(0)
+
     override fun getDrawable(source: String?): Drawable {
         val wrapper = DrawableWrapper()
 
@@ -93,6 +99,7 @@ internal class CoilImageGetter(
     // must run on Main
     fun startLoading() {
         val loader = activity.viewModel.state.value.viewerChapters?.currChapter?.pageLoader
+        outstandingLoads.set(pendingLoads.size)
         for ((source, wrapper) in pendingLoads) {
             when {
                 source.startsWith("tsundoku-novel-image://") -> loadFromPageLoader(source, wrapper, loader)
@@ -136,15 +143,30 @@ internal class CoilImageGetter(
                 }
             } catch (e: Exception) {
                 logcat(LogPriority.DEBUG) { "Failed to load custom novel image: ${e.message}" }
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) { onLoadFinished() }
             }
+        }
+    }
+
+    private val refererUrl: String? by lazy {
+        when (val source = activity.viewModel.getSource()) {
+            is JsSource -> source.baseUrl.takeIf { it.isNotBlank() }?.let { "$it/" }
+            is HttpSource -> "${source.baseUrl.trimEnd('/')}/"
+            else -> null
         }
     }
 
     private fun loadFromNetwork(imageUrl: String, wrapper: DrawableWrapper) {
         scope.launch {
             try {
+                val headers = NetworkHeaders.Builder().apply {
+                    set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                    refererUrl?.let { set("Referer", it) }
+                }.build()
                 val request = ImageRequest.Builder(activity)
                     .data(imageUrl)
+                    .httpHeaders(headers)
                     .size(CoilSize(CoilDimension.Pixels(capturedContentWidth), CoilDimension.Undefined))
                     .build()
                 val result = activity.imageLoader.execute(request)
@@ -152,7 +174,15 @@ internal class CoilImageGetter(
                 fitToWidthAndInvalidate(drawable, wrapper)
             } catch (e: Exception) {
                 logcat(LogPriority.DEBUG) { "Failed to load image in novel reader: $imageUrl - ${e.message}" }
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) { onLoadFinished() }
             }
+        }
+    }
+
+    private fun onLoadFinished() {
+        if (outstandingLoads.decrementAndGet() <= 0) {
+            scheduleRecompute()
         }
     }
 
@@ -171,7 +201,6 @@ internal class CoilImageGetter(
     private fun fitToWidthAndInvalidate(drawable: Drawable, wrapper: DrawableWrapper) {
         fitToWidth(drawable, wrapper)
         textView.invalidate()
-        scheduleRecompute()
     }
 
     private fun scheduleRecompute() {
