@@ -625,12 +625,14 @@ class JsSource(
             }
 
             if (totalPages > 1 || chapters.isEmpty()) {
+                val hasParsePage =
+                    executePluginMethod("typeof plugin.parsePage === 'function'") == "true"
                 val maxPages = if (totalPages > 0) totalPages else 1
                 val startPage = if (chapters.isEmpty()) 1 else 2
                 logcat(LogPriority.DEBUG) {
-                    "JsSource[$pluginId]: Paged source detected, totalPages=$totalPages, startPage=$startPage, existingChapters=${chapters.size}"
+                    "JsSource[$pluginId]: Paged source detected, totalPages=$totalPages, startPage=$startPage, existingChapters=${chapters.size}, hasParsePage=$hasParsePage"
                 }
-                if (startPage <= maxPages) {
+                if (hasParsePage && startPage <= maxPages) {
                     for (page in startPage..maxPages) {
                         try {
                             val pageResult = executePluginMethod("plugin.parsePage('$path', $page)")

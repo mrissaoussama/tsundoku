@@ -797,8 +797,10 @@ class JSLibraryProvider(
         if (handle != null) {
             sb.append("\"_h\":").append(handle).append(',')
         }
+        val tag = escapeJsonString(element.tagName().lowercase())
         sb.append("\"name\":")
-        sb.append('"').append(escapeJsonString(element.tagName().lowercase())).append('"')
+        sb.append('"').append(tag).append('"')
+        sb.append(",\"tagName\":\"").append(tag).append('"')
         sb.append(",\"attribs\":{")
         element.attributes().forEachIndexed { i, attr ->
             if (i > 0) sb.append(',')
@@ -1499,6 +1501,10 @@ class JSLibraryProvider(
             if (eh < 0) return undefined;
             var node = { _h: eh, type: 'tag' };
             Object.defineProperty(node, 'name', {
+                get: function() { return __cheerioTagName(eh); },
+                enumerable: false, configurable: true
+            });
+            Object.defineProperty(node, 'tagName', {
                 get: function() { return __cheerioTagName(eh); },
                 enumerable: false, configurable: true
             });
