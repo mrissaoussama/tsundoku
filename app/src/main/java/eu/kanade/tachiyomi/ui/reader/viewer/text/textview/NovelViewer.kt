@@ -91,12 +91,12 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
 
     private data class LoadedChapter(
         val chapter: ReaderChapter,
-        val textView: TextView,
+        val block: ChapterTextBlock,
         val headerView: TextView,
         var separatorView: View? = null,
         var isLoaded: Boolean = false,
-        // True once textView.setText has been called — guards against false short-chapter
-        // marks when the empty textView has a smaller height than scrollView.
+        // True once the chunk views received text — guards against false short-chapter
+        // marks when the empty block has a smaller height than scrollView.
         var isTextSet: Boolean = false,
         // Holds pre-processed content to be rendered once the view is attached.
         var pendingContent: ProcessedContent? = null,
@@ -164,7 +164,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
                 // also fires onSingleTapConfirmed and toggles the app bars.
                 if (e.eventTime - e.downTime >= android.view.ViewConfiguration.getLongPressTimeout()) return true
                 // Never toggle menu while text is selected
-                if (loadedChapters.any { it.textView.hasSelection() }) return false
+                if (loadedChapters.any { it.block.hasSelection() }) return false
 
                 val pos = android.graphics.PointF(
                     e.x / container.width.toFloat(),
@@ -316,8 +316,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
 
     private fun calculateCurrentChapterProgress(scrollY: Int): Float {
         val loaded = loadedChapters.getOrNull(currentChapterIndex) ?: return 0f
-        val textTop = loaded.textView.top
-        val textBottom = loaded.textView.bottom
+        val textTop = loaded.block.container.top
+        val textBottom = loaded.block.container.bottom
         val textHeight = textBottom - textTop
 
         // Guard: if the textView hasn't been laid out yet, its height will be 0.
@@ -387,9 +387,9 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         if (page.status != Page.State.Ready || page.text.isNullOrBlank()) return
 
         val loaded = loadedChapters.getOrNull(currentChapterIndex) ?: return
-        // Don't mark while textView still shows empty layout (text set hasn't completed yet).
+        // Don't mark while the block still shows empty layout (text set hasn't completed yet).
         if (!loaded.isTextSet) return
-        val textHeight = loaded.textView.height
+        val textHeight = loaded.block.container.height
         if (textHeight <= 0 || textHeight > scrollView.height) return
 
         lastSavedProgress = 1f
@@ -407,11 +407,11 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         if (loadedChapters.size <= 1) return
 
         // Find the FIRST chapter whose text has not yet been completely scrolled past.
-        // By using textView.bottom (not headerView.top), the separator belongs to neither chapter:
+        // By using the block bottom (not headerView.top), the separator belongs to neither chapter:
         // while the separator is visible, scrollY is below prev chapter's text and above next
         // chapter's text → next chapter is detected (progress = 0% since scrollY < textTop).
         for ((index, loaded) in loadedChapters.withIndex()) {
-            if (loaded.textView.bottom > scrollY) {
+            if (loaded.block.container.bottom > scrollY) {
                 if (currentChapterIndex != index) {
                     onChapterChanged(oldIndex = currentChapterIndex, newIndex = index)
                 }
@@ -631,6 +631,9 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         }
     }
 
+    private fun createChapterBlock(): ChapterTextBlock =
+        ChapterTextBlock(activity) { createSelectableTextView().also(::applyTextViewStyles) }
+
     private fun applyTextSelectionPreference(textView: TextView) {
         val selectable = preferences.novelTextSelectable.get()
         textView.setTextIsSelectable(selectable)
@@ -646,7 +649,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
     private fun refreshAllChapterStyles() {
         loadedChapters.forEach { loaded ->
             if (loaded.isLoaded) {
-                applyTextViewStyles(loaded.textView)
+                loaded.block.chunkViews.forEach(::applyTextViewStyles)
             }
         }
         applyBackgroundColor()
@@ -695,12 +698,14 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
     private fun clearTtsSpansInLoadedChapters() {
         loadedChapters.forEach { loaded ->
             if (!loaded.isLoaded) return@forEach
-            val spanned = loaded.textView.text as? android.text.Spannable ?: return@forEach
-            val len = loaded.textView.text.length
-            spanned.getSpans(0, len, BackgroundColorSpan::class.java).forEach { spanned.removeSpan(it) }
-            spanned.getSpans(0, len, ForegroundColorSpan::class.java).forEach { spanned.removeSpan(it) }
-            spanned.getSpans(0, len, UnderlineSpan::class.java).forEach { spanned.removeSpan(it) }
-            spanned.getSpans(0, len, RoundedOutlineSpan::class.java).forEach { spanned.removeSpan(it) }
+            loaded.block.chunkViews.forEach { chunkView ->
+                val spanned = chunkView.text as? android.text.Spannable ?: return@forEach
+                val len = spanned.length
+                spanned.getSpans(0, len, BackgroundColorSpan::class.java).forEach { spanned.removeSpan(it) }
+                spanned.getSpans(0, len, ForegroundColorSpan::class.java).forEach { spanned.removeSpan(it) }
+                spanned.getSpans(0, len, UnderlineSpan::class.java).forEach { spanned.removeSpan(it) }
+                spanned.getSpans(0, len, RoundedOutlineSpan::class.java).forEach { spanned.removeSpan(it) }
+            }
         }
     }
 
@@ -721,35 +726,52 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
                 loadedChapters.firstOrNull { it.chapter.chapter.id == id }
             } ?: loadedChapters.getOrNull(ttsController.ttsPlaybackChapterIndex)) ?: return@runOnUiThread
             if (!targetLoaded.isLoaded || !targetLoaded.isTextSet) return@runOnUiThread
-            val textView = targetLoaded.textView
-            val text = textView.text.toString()
-            val spanned = textView.text as? android.text.Spannable ?: return@runOnUiThread
+            val block = targetLoaded.block
+            val text = block.fullText ?: return@runOnUiThread
 
             val startIndex = text.indexOf(chunk, startOffset.coerceAtLeast(0))
             if (startIndex < 0) return@runOnUiThread
             val endIndex = (startIndex + chunk.length).coerceAtMost(text.length)
 
-            when (highlightStyle) {
-                "underline" -> spanned.setSpan(UnderlineSpan(), startIndex, endIndex, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                "outline" -> {
-                    spanned.setSpan(RoundedOutlineSpan(highlightColor), startIndex, endIndex, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    spanned.setSpan(ForegroundColorSpan(highlightTextColor), startIndex, endIndex, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            var firstChunkView: TextView? = null
+            var firstChunkLocalStart = 0
+            for ((i, chunkView) in block.chunkViews.withIndex()) {
+                val chunkStart = block.chunkStarts.getOrNull(i) ?: break
+                val chunkEnd = chunkStart + chunkView.text.length
+                if (chunkEnd <= startIndex) continue
+                if (chunkStart >= endIndex) break
+                val spanned = chunkView.text as? android.text.Spannable ?: continue
+                val localStart = (startIndex - chunkStart).coerceAtLeast(0)
+                val localEnd = (endIndex - chunkStart).coerceAtMost(spanned.length)
+                if (localEnd <= localStart) continue
+                if (firstChunkView == null) {
+                    firstChunkView = chunkView
+                    firstChunkLocalStart = localStart
                 }
-                else -> {
-                    spanned.setSpan(BackgroundColorSpan(highlightColor), startIndex, endIndex, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    spanned.setSpan(ForegroundColorSpan(highlightTextColor), startIndex, endIndex, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                when (highlightStyle) {
+                    "underline" -> spanned.setSpan(UnderlineSpan(), localStart, localEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    "outline" -> {
+                        spanned.setSpan(RoundedOutlineSpan(highlightColor), localStart, localEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        spanned.setSpan(ForegroundColorSpan(highlightTextColor), localStart, localEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    }
+                    else -> {
+                        spanned.setSpan(BackgroundColorSpan(highlightColor), localStart, localEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        spanned.setSpan(ForegroundColorSpan(highlightTextColor), localStart, localEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    }
                 }
             }
 
             if (keepInView) {
+                val scrollTarget = firstChunkView ?: return@runOnUiThread
+                val localStart = firstChunkLocalStart
                 fun doScroll() {
-                    val layout = textView.layout ?: return
-                    val line = layout.getLineForOffset(startIndex.coerceAtMost(layout.text.length - 1).coerceAtLeast(0))
-                    val targetInTextView = layout.getLineTop(line)
-                    val targetInScroll = textView.top + targetInTextView - (scrollView.height / 3)
+                    val layout = scrollTarget.layout ?: return
+                    val line = layout.getLineForOffset(localStart.coerceAtMost(layout.text.length - 1).coerceAtLeast(0))
+                    val targetInChunk = layout.getLineTop(line)
+                    val targetInScroll = block.container.top + scrollTarget.top + targetInChunk - (scrollView.height / 3)
                     scrollView.smoothScrollTo(0, targetInScroll.coerceAtLeast(0))
                 }
-                if (textView.layout != null) doScroll() else textView.post { doScroll() }
+                if (scrollTarget.layout != null) doScroll() else scrollTarget.post { doScroll() }
             }
         }
     }
@@ -761,7 +783,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             if (moveToLoadedNextChapterForTts(anchorChapterIndex)) {
                 // For already-loaded chapters, text is ready — start immediately.
                 // For pre-fetched chapters, moveToLoadedNextChapterForTts sets pendingTtsAutoStart
-                // and fires setTextViewContent; startTts() will be called once the spannable is ready.
+                // and fires setChapterContent; startTts() will be called once the chunks are ready.
                 if (!pendingTtsAutoStart) {
                     startTts()
                 }
@@ -834,12 +856,9 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
                         setPadding(16, 32, 16, 16)
                         isVisible = false
                     }
-                    val textView = createSelectableTextView()
-                    applyTextViewStyles(textView)
-
                     val cachedChapter = LoadedChapter(
                         chapter = preparedChapter,
-                        textView = textView,
+                        block = createChapterBlock(),
                         headerView = headerView,
                         isLoaded = true,
                         isTextSet = false,
@@ -888,7 +907,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             contentContainer.addView(separator)
             cached.separatorView = separator
             contentContainer.addView(cached.headerView)
-            contentContainer.addView(cached.textView)
+            contentContainer.addView(cached.block.container)
             chapterQueue.append(cached)
             scrollView.post { isRestoringScroll = false }
 
@@ -901,13 +920,13 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             }
             logcat(LogPriority.DEBUG) { "TTS: used pre-fetched chapter ${cached.chapter.chapter.name} ts=${System.currentTimeMillis()}" }
 
-            // View is now attached — render the stored content. setTextViewContent's coroutine
-            // will set pendingTtsAutoStart → startTts() once the spannable is ready.
+            // View is now attached — render the stored content. setChapterContent's coroutine
+            // will set pendingTtsAutoStart → startTts() once the chunks are ready.
             val content = cached.pendingContent
             if (content != null) {
                 cached.pendingContent = null
                 pendingTtsAutoStart = true
-                setTextViewContent(cached.textView, content)
+                setChapterContent(cached, content)
             }
             return true
         }
@@ -936,8 +955,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         ttsController.pendingStartRequest = null
         ttsController.isTtsAutoPlay = true
         syncCurrentChapterIndexWithCurrentPage()
-        val text = loadedChapters.getOrNull(currentChapterIndex)?.textView?.text?.toString()
-            ?: loadedChapters.firstOrNull()?.textView?.text?.toString()
+        val text = loadedChapters.getOrNull(currentChapterIndex)?.block?.fullText
+            ?: loadedChapters.firstOrNull()?.block?.fullText
         if (text.isNullOrEmpty()) {
             logcat(LogPriority.WARN) { "TTS: No text to speak. loadedChapters=${loadedChapters.size}, currentIndex=$currentChapterIndex" }
             return
@@ -997,8 +1016,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         ttsController.pendingStartRequest = null
         ttsController.isTtsAutoPlay = true
         syncCurrentChapterIndexWithCurrentPage()
-        val text = loadedChapters.getOrNull(currentChapterIndex)?.textView?.text?.toString()
-            ?: loadedChapters.firstOrNull()?.textView?.text?.toString()
+        val text = loadedChapters.getOrNull(currentChapterIndex)?.block?.fullText
+            ?: loadedChapters.firstOrNull()?.block?.fullText
         if (text.isNullOrEmpty()) {
             logcat(LogPriority.WARN) { "TTS: No text available for viewport start" }
             return
@@ -1042,18 +1061,21 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
 
         loadedChapters.forEach { loaded ->
             if (!loaded.isLoaded) return@forEach
-            val textView = loaded.textView
-            val textViewTop = textView.top
-            val textViewBottom = textViewTop + textView.height
+            val containerTop = loaded.block.container.top
+            for ((i, chunkView) in loaded.block.chunkViews.withIndex()) {
+                val chunkTop = containerTop + chunkView.top
+                val chunkBottom = chunkTop + chunkView.height
 
-            if (textViewBottom > viewportTop && textViewTop < viewportBottom) {
-                val layout = textView.layout ?: return 0
-                if (layout.lineCount > 0) {
-                    val textViewRelativeY = (viewportTop - textViewTop).coerceAtLeast(0)
-                    val lineAtViewportTop = layout.getLineForVertical(textViewRelativeY.coerceAtMost(layout.height))
-                    val charOffset = layout.getLineStart(lineAtViewportTop).coerceAtLeast(0)
-                    val pIdx = paragraphOffsets.indexOfLast { it <= charOffset }
-                    return if (pIdx >= 0) pIdx else 0
+                if (chunkBottom > viewportTop && chunkTop < viewportBottom) {
+                    val layout = chunkView.layout ?: return 0
+                    if (layout.lineCount > 0) {
+                        val chunkRelativeY = (viewportTop - chunkTop).coerceAtLeast(0)
+                        val lineAtViewportTop = layout.getLineForVertical(chunkRelativeY.coerceAtMost(layout.height))
+                        val chunkStart = loaded.block.chunkStarts.getOrNull(i) ?: 0
+                        val charOffset = (chunkStart + layout.getLineStart(lineAtViewportTop)).coerceAtLeast(0)
+                        val pIdx = paragraphOffsets.indexOfLast { it <= charOffset }
+                        return if (pIdx >= 0) pIdx else 0
+                    }
                 }
             }
         }
@@ -1080,7 +1102,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         loadedChapters.forEach { loadedChapter ->
             val page = loadedChapter.chapter.pages?.firstOrNull() ?: return@forEach
             val content = page.text ?: return@forEach
-            val textView = loadedChapter.textView
+            val block = loadedChapter.block
             val cfg = ContentConfig.from(
                 preferences,
                 RenderTarget.TEXT_VIEW,
@@ -1091,14 +1113,13 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             scope.launch {
                 val pre = withContext(Dispatchers.Default) { contentPipeline.preTranslate(content, cfg) }
                 val processed = if (activity.isTranslationEnabled()) {
-                    textView.gravity = Gravity.CENTER
                     val chapterId = loadedChapter.chapter.chapter.id
                     val labelRes = if (activity.hasCachedTranslation(chapterId)) {
                         TDMR.strings.novel_chapter_translating_from_cache
                     } else {
                         TDMR.strings.novel_chapter_translating_from_api
                     }
-                    textView.text = activity.stringResource(labelRes)
+                    block.showPlaceholder(activity.stringResource(labelRes))
                     withContext(Dispatchers.Default) {
                         contentPipeline.finalize(pre, cfg) { activity.translateContentIfEnabled(it, chapterId) }
                     }
@@ -1106,8 +1127,8 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
                     withContext(Dispatchers.Default) { contentPipeline.finalize(pre, cfg) }
                 }
                 if (generation != renderGeneration) return@launch
-                if (!textView.isAttachedToWindow) return@launch
-                setTextViewContent(textView, processed)
+                if (!block.container.isAttachedToWindow) return@launch
+                setChapterContent(loadedChapter, processed)
             }
         }
     }
@@ -1207,13 +1228,11 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             isVisible = false
         }
 
-        val textView = createSelectableTextView()
-
-        applyTextViewStyles(textView)
+        val block = createChapterBlock()
 
         val loadedChapter = LoadedChapter(
             chapter = chapter,
-            textView = textView,
+            block = block,
             headerView = headerView,
             isLoaded = true,
         )
@@ -1249,7 +1268,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         }
 
         contentContainer.addView(headerView)
-        contentContainer.addView(textView)
+        contentContainer.addView(block.container)
 
         val cfg = ContentConfig.from(
             preferences,
@@ -1260,23 +1279,20 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         scope.launch {
             val pre = withContext(Dispatchers.Default) { contentPipeline.preTranslate(rawContent, cfg) }
             if (activity.isTranslationEnabled() && !preferences.novelShowRawHtml.get()) {
-                val savedGravity = textView.gravity
-                textView.gravity = Gravity.CENTER
                 val chapterId = chapter.chapter.id
                 val labelRes = if (activity.hasCachedTranslation(chapterId)) {
                     TDMR.strings.novel_chapter_translating_from_cache
                 } else {
                     TDMR.strings.novel_chapter_translating_from_api
                 }
-                textView.text = activity.stringResource(labelRes)
+                block.showPlaceholder(activity.stringResource(labelRes))
                 val translated = withContext(Dispatchers.Default) {
                     contentPipeline.finalize(pre, cfg) { activity.translateContentIfEnabled(it, chapterId) }
                 }
-                textView.gravity = savedGravity
-                setTextViewContent(textView, translated)
+                setChapterContent(loadedChapter, translated)
             } else {
                 val processed = withContext(Dispatchers.Default) { contentPipeline.finalize(pre, cfg) }
-                setTextViewContent(textView, processed)
+                setChapterContent(loadedChapter, processed)
             }
         }
 
@@ -1349,7 +1365,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         val maxChapters = 3
         while (loadedChapters.size > maxChapters && currentChapterIndex > 0) {
             val toRemove = loadedChapters.first()
-            var removedHeight = toRemove.headerView.height + toRemove.textView.height
+            var removedHeight = toRemove.headerView.height + toRemove.block.container.height
 
             toRemove.separatorView?.let { sep ->
                 removedHeight += sep.height
@@ -1357,7 +1373,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             }
 
             contentContainer.removeView(toRemove.headerView)
-            contentContainer.removeView(toRemove.textView)
+            contentContainer.removeView(toRemove.block.container)
             chapterQueue.removeFirst()
 
             if (loadedChapters.isNotEmpty()) {
@@ -1509,27 +1525,24 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
     private fun getThemeColors(theme: String): Pair<Int, Int> =
         ThemeUtils.getThemeColors(activity, preferences, theme)
 
-    private fun setTextViewContent(textView: TextView, processed: ProcessedContent) {
+    private fun setChapterContent(loaded: LoadedChapter, processed: ProcessedContent) {
         textRenderer.render(
-            textView = textView,
+            block = loaded.block,
             processed = processed,
-            clearSelection = ::clearTextViewSelection,
-            onTextSet = ::onChapterTextSet,
+            onTextSet = { onChapterTextSet(loaded) },
         )
     }
 
-    private fun onChapterTextSet(textView: TextView) {
-        val loadedIdx = loadedChapters.indexOfFirst { it.textView === textView }
-        if (loadedIdx >= 0) {
-            loadedChapters[loadedIdx].isTextSet = true
-        }
+    private fun onChapterTextSet(loaded: LoadedChapter) {
+        loaded.isTextSet = true
         if (pendingTtsAutoStart) {
             pendingTtsAutoStart = false
+            val loadedIdx = loadedChapters.indexOf(loaded)
             if (loadedIdx >= 0) {
                 currentChapterIndex = loadedIdx
-                loadedChapters[loadedIdx].chapter.pages?.firstOrNull()?.let { page ->
+                loaded.chapter.pages?.firstOrNull()?.let { page ->
                     currentPage = page
-                    activity.viewModel.setNovelVisibleChapter(loadedChapters[loadedIdx].chapter.chapter)
+                    activity.viewModel.setNovelVisibleChapter(loaded.chapter.chapter)
                     activity.onPageSelected(page)
                     activity.onNovelProgressChanged(0f)
                 }
@@ -1537,9 +1550,6 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             startTts()
         }
     }
-
-    private fun clearTextViewSelection(textView: TextView) =
-        NovelTextRenderer.clearTextViewSelection(textView)
 
 
     private var initialLoadingView: TextView? = null
@@ -1702,14 +1712,14 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         for ((index, loadedChapter) in loadedChapters.withIndex()) {
             val separatorHeight = loadedChapter.separatorView?.height ?: 0
             if (index == currentChapterIndex) {
-                val chapterHeight = loadedChapter.headerView.height + loadedChapter.textView.height + separatorHeight
+                val chapterHeight = loadedChapter.headerView.height + loadedChapter.block.container.height + separatorHeight
                 val visibleHeight = scrollView.height
                 val effectiveChapterHeight = (chapterHeight - visibleHeight).coerceAtLeast(1)
                 val chapterScrollY = accumulatedHeight + (effectiveChapterHeight * progress).toInt()
                 scrollView.scrollTo(0, chapterScrollY)
                 return
             }
-            accumulatedHeight += loadedChapter.headerView.height + loadedChapter.textView.height + separatorHeight
+            accumulatedHeight += loadedChapter.headerView.height + loadedChapter.block.container.height + separatorHeight
         }
     }
 
@@ -1771,15 +1781,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
 
     fun getSelectedText(): String? {
         val loaded = loadedChapters.getOrNull(currentChapterIndex) ?: return null
-        val textView = loaded.textView
-        if (!textView.hasSelection()) return null
-
-        val start = textView.selectionStart
-        val end = textView.selectionEnd
-        if (start < 0 || end < 0 || start >= end) return null
-
-        val text = textView.text.toString()
-        return text.substring(start, end)
+        return loaded.block.selectedText()
     }
 
     fun getCurrentChapterName(): String? {
@@ -1789,10 +1791,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
 
     fun clearTextSelection() {
         val loaded = loadedChapters.getOrNull(currentChapterIndex) ?: return
-        val textView = loaded.textView
-        if (textView.hasSelection()) {
-            textView.clearFocus()
-        }
+        loaded.block.clearSelections()
     }
 
     private fun onRememberSelectedText() {

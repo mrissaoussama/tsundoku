@@ -24,21 +24,16 @@ internal class NovelTextRenderer(
 ) {
 
     fun render(
-        textView: TextView,
+        block: ChapterTextBlock,
         processed: ProcessedContent,
-        clearSelection: (TextView) -> Unit,
-        onTextSet: (TextView) -> Unit,
+        onTextSet: () -> Unit,
     ) {
-        if (preferences.novelShowRawHtml.get()) {
-            if (!textView.isAttachedToWindow) return
-            clearSelection(textView)
-            textView.text = processed.text
-            return
-        }
+        val rawHtmlMode = preferences.novelShowRawHtml.get()
+        val plainTextMode = rawHtmlMode || processed.isPlainText
 
-        val plainTextMode = processed.isPlainText
-
-        var processedContent = if (plainTextMode && TranslationHtmlUtils.hasSourceHashTag(processed.text)) {
+        var processedContent = if (!rawHtmlMode && processed.isPlainText &&
+            TranslationHtmlUtils.hasSourceHashTag(processed.text)
+        ) {
             TranslationHtmlUtils.extractTextFromHtml(processed.text)
         } else {
             processed.text
@@ -48,15 +43,19 @@ internal class NovelTextRenderer(
             processedContent = wrapParagraphs(processedContent)
         }
 
-        val paragraphSpacing = preferences.novelParagraphSpacing.get()
-        val paragraphIndent = preferences.novelParagraphIndent.get()
+        val paragraphSpacing = if (rawHtmlMode) 0f else preferences.novelParagraphSpacing.get()
+        val paragraphIndent = if (rawHtmlMode) 0f else preferences.novelParagraphIndent.get()
         val fontSize = preferences.novelFontSize.get()
         val density = activity.resources.displayMetrics.density
         val blockMedia = preferences.novelBlockMedia.get()
 
         scope.launch {
-            val imageGetter = if (!blockMedia) {
-                CoilImageGetter(textView, activity, scope)
+            val imageGetter = if (!blockMedia && !plainTextMode) {
+                val widthPx = block.chunkViews.firstOrNull()
+                    ?.let { it.width - it.paddingLeft - it.paddingRight }
+                    ?.takeIf { it > 0 }
+                    ?: activity.resources.displayMetrics.widthPixels
+                CoilImageGetter(activity, scope, widthPx, block::chunkViewFor)
             } else {
                 null
             }
@@ -68,33 +67,80 @@ internal class NovelTextRenderer(
                     val cleanHtmlContent = normalizeHtmlForRendering(processedContent)
                     Html.fromHtml(cleanHtmlContent, Html.FROM_HTML_MODE_LEGACY, imageGetter, null)
                 }
-                val result = SpannableStringBuilder(spanned)
-                val spacingPx = (paragraphSpacing * fontSize * density).toInt()
-                val indentPx = (paragraphIndent * fontSize * density).toInt()
-                if (spacingPx > 0 || indentPx > 0) {
-                    applyParagraphSpans(result, spacingPx, indentPx)
+                SpannableStringBuilder(spanned)
+            }
+
+            val spacingPx = (paragraphSpacing * fontSize * density).toInt()
+            val indentPx = (paragraphIndent * fontSize * density).toInt()
+
+            val chunks = withContext(Dispatchers.Default) {
+                chunkRanges(spannable).map { (start, end) ->
+                    SpannableStringBuilder(spannable.subSequence(start, end)).also {
+                        if (spacingPx > 0 || indentPx > 0) {
+                            applyParagraphSpans(it, spacingPx, indentPx)
+                        }
+                    }
                 }
-                result
             }
 
-            if (!textView.isAttachedToWindow) return@launch
+            if (!block.container.isAttachedToWindow) return@launch
+            block.ensureChunkCount(chunks.size)
 
-            val params = TextViewCompat.getTextMetricsParams(textView)
+            if (chunks.isEmpty()) {
+                block.chunkStarts = IntArray(0)
+                block.fullText = ""
+                onTextSet()
+                return@launch
+            }
+
+            val params = TextViewCompat.getTextMetricsParams(block.chunkViews.first())
             val precomputed = withContext(Dispatchers.Default) {
-                PrecomputedTextCompat.create(spannable, params)
+                chunks.map { PrecomputedTextCompat.create(it, params) }
             }
 
-            if (!textView.isAttachedToWindow) return@launch
+            if (!block.container.isAttachedToWindow) return@launch
 
-            clearSelection(textView)
-            TextViewCompat.setPrecomputedText(textView, precomputed)
+            block.clearSelections()
+            val starts = IntArray(chunks.size)
+            var offset = 0
+            chunks.forEachIndexed { i, chunk ->
+                starts[i] = offset
+                offset += chunk.length
+            }
+            precomputed.forEachIndexed { i, text ->
+                TextViewCompat.setPrecomputedText(block.chunkViews[i], text)
+            }
+            block.chunkStarts = starts
+            block.fullText = spannable.toString()
             imageGetter?.startLoading()
-            onTextSet(textView)
+            onTextSet()
         }
     }
 
+    /**
+     * Splits at the first paragraph boundary past every CHUNK_TARGET_CHARS so chunk
+     * layouts stay small.
+     */
+    private fun chunkRanges(text: CharSequence): List<Pair<Int, Int>> {
+        val length = text.length
+        if (length == 0) return emptyList()
+        val ranges = ArrayList<Pair<Int, Int>>(length / CHUNK_TARGET_CHARS + 1)
+        var start = 0
+        while (start < length) {
+            var end = (start + CHUNK_TARGET_CHARS).coerceAtMost(length)
+            if (end < length) {
+                var newline = end
+                while (newline < length && text[newline] != '\n') newline++
+                end = if (newline < length) newline + 1 else length
+            }
+            ranges.add(start to end)
+            start = end
+        }
+        return ranges
+    }
+
     private fun wrapParagraphs(html: String): String {
-        var content = html.replace(Regex("<p>(?: |&#160;|&nbsp;)+"), "<p>")
+        var content = html.replace(Regex("<p>(?: |&#160;|&nbsp;)+"), "<p>")
         if (!content.contains("<p>", ignoreCase = true)) {
             content = content
                 .replace("\n\n", "</p><p>")
@@ -168,6 +214,8 @@ internal class NovelTextRenderer(
     }
 
     companion object {
+        private const val CHUNK_TARGET_CHARS = 6_000
+
         fun clearTextViewSelection(textView: TextView) {
             val text = textView.text
             if (text is Spannable && text.isNotEmpty() &&
