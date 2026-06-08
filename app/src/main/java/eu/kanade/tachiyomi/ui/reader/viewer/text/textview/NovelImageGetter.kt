@@ -51,18 +51,20 @@ internal class DrawableWrapper : Drawable() {
     override fun getOpacity(): Int = PixelFormat.TRANSPARENT
 }
 
-// must be constructed on Main; getDrawable runs on worker thread — do not touch the view.
 internal class CoilImageGetter(
-    private val textView: TextView,
     private val activity: ReaderActivity,
     private val scope: CoroutineScope,
+    contentWidthPx: Int,
+    private val resolveView: (Drawable) -> TextView?,
 ) : Html.ImageGetter {
 
     private val capturedContentWidth: Int =
-        (textView.width - textView.paddingLeft - textView.paddingRight)
-            .takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
+        contentWidthPx.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
 
-    private var recomputeJob: Job? = null
+    private val recomputeJobs = mutableMapOf<TextView, Job>()
+
+    // Chunk views that received an image; recomputed in one batch once all loads finish.
+    private val dirtyViews = java.util.concurrent.ConcurrentHashMap.newKeySet<TextView>()
 
     private data class PendingLoad(val source: String, val wrapper: DrawableWrapper)
     private val pendingLoads = mutableListOf<PendingLoad>()
@@ -182,7 +184,9 @@ internal class CoilImageGetter(
 
     private fun onLoadFinished() {
         if (outstandingLoads.decrementAndGet() <= 0) {
-            scheduleRecompute()
+            val views = dirtyViews.toList()
+            dirtyViews.clear()
+            views.forEach { scheduleRecompute(it) }
         }
     }
 
@@ -200,12 +204,15 @@ internal class CoilImageGetter(
 
     private fun fitToWidthAndInvalidate(drawable: Drawable, wrapper: DrawableWrapper) {
         fitToWidth(drawable, wrapper)
+        val textView = resolveView(wrapper) ?: return
         textView.invalidate()
+        // Recompute is batched in onLoadFinished once outstanding loads reach zero.
+        dirtyViews.add(textView)
     }
 
-    private fun scheduleRecompute() {
-        recomputeJob?.cancel()
-        recomputeJob = scope.launch(Dispatchers.Main) {
+    private fun scheduleRecompute(textView: TextView) {
+        recomputeJobs.remove(textView)?.cancel()
+        val job = scope.launch(Dispatchers.Main) {
             delay(RECOMPUTE_DEBOUNCE_MS)
             if (!textView.isAttachedToWindow) return@launch
             val snapshot = textView.text ?: return@launch
@@ -216,6 +223,8 @@ internal class CoilImageGetter(
             if (!textView.isAttachedToWindow) return@launch
             TextViewCompat.setPrecomputedText(textView, precomputed)
         }
+        recomputeJobs[textView] = job
+        job.invokeOnCompletion { recomputeJobs.remove(textView, job) }
     }
 
     private fun sampleSizeForWidth(srcWidth: Int): Int {

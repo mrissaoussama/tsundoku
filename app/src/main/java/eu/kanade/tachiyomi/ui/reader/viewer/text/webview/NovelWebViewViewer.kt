@@ -1067,15 +1067,13 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         logcat(LogPriority.DEBUG) { "NovelWebViewViewer: Appended chapter $chapterId (${loadedChapterIds.size} total)" }
     }
 
-    private fun loadHtmlContent(
+    private suspend fun loadHtmlContent(
         processed: ProcessedContent,
         chapter: ReaderChapter? = null,
     ) {
         val chapterModel = chapter?.chapter
         val chapterId = chapterModel?.id ?: -1L
         val chapterPath = chapterModel?.url.orEmpty()
-
-        imageCache.schedulePrefetch(processed.text, chapterId.takeIf { it != -1L }, currentPage?.chapter?.pageLoader)
 
         val stylePayload = styler.buildPayload()
         webView.setBackgroundColor(stylePayload.backgroundColor)
@@ -1084,17 +1082,23 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         chapterQueue.clear()
         currentChapterIndex = 0
 
-        val html = NovelWebViewDocumentBuilder.assemble(
-            NovelWebViewDocumentBuilder.DocumentInput(
-                processed = processed,
-                chapter = chapter,
-                style = stylePayload,
-                themeTokens = ThemeUtils.getThemeTokens(activity, preferences, preferences.novelTheme.get()),
-                tsundokuScript = buildTsundokuScript(),
-                infiniteScrollEnabled = preferences.novelInfiniteScroll.get(),
-                blockMedia = preferences.novelBlockMedia.get(),
-            ),
+        // Inputs are gathered on Main (touch viewer state), but the heavy work — the image-URL
+        // regex scan and the Jsoup parse + full-document string build — runs off the main thread.
+        // For large chapters this was a multi-MB alloc + DOM parse on the UI thread (frame skips).
+        val input = NovelWebViewDocumentBuilder.DocumentInput(
+            processed = processed,
+            chapter = chapter,
+            style = stylePayload,
+            themeTokens = ThemeUtils.getThemeTokens(activity, preferences, preferences.novelTheme.get()),
+            tsundokuScript = buildTsundokuScript(),
+            infiniteScrollEnabled = preferences.novelInfiniteScroll.get(),
+            blockMedia = preferences.novelBlockMedia.get(),
         )
+        val pageLoader = currentPage?.chapter?.pageLoader
+        val html = withContext(Dispatchers.Default) {
+            imageCache.schedulePrefetch(processed.text, chapterId.takeIf { it != -1L }, pageLoader)
+            NovelWebViewDocumentBuilder.assemble(input)
+        }
 
         // Signal to onPageFinished that the next callback is for real chapter content, not
         // the loading-indicator page (which also fires onPageFinished with url="about:blank").
