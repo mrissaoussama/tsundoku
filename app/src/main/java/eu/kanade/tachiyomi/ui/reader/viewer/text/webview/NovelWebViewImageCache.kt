@@ -46,18 +46,24 @@ internal class NovelWebViewImageCache(
             return WebResourceResponse(
                 guessMimeType(imagePath),
                 "UTF-8",
-                cachedFile.readBytes().inputStream(),
+                cachedFile.inputStream(),
             )
         }
 
         if (loader == null) return null
         prefetchJobs.remove(cacheKey)?.cancel()
         return try {
-            val bytes = runBlocking { loader.getPageDataStream(imagePath)?.use { it.readBytes() } } ?: return null
             val cachedFile = makeCachedFile(cacheKey, imagePath)
-            cachedFile.writeBytes(bytes)
+            // Stream source → file (no full-image byte[] held in memory), then serve from the file.
+            val wrote = runBlocking {
+                loader.getPageDataStream(imagePath)?.use { input ->
+                    cachedFile.outputStream().use { output -> input.copyTo(output) }
+                    true
+                } ?: false
+            }
+            if (!wrote) return null
             cache[cacheKey] = cachedFile
-            WebResourceResponse(guessMimeType(imagePath), "UTF-8", bytes.inputStream())
+            WebResourceResponse(guessMimeType(imagePath), "UTF-8", cachedFile.inputStream())
         } catch (e: Exception) {
             logcat(LogPriority.DEBUG) { "NovelWebViewImageCache: sync load $imagePath failed: ${e.message}" }
             null
