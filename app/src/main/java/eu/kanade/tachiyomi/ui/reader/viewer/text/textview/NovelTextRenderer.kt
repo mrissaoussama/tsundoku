@@ -108,7 +108,9 @@ internal class NovelTextRenderer(
         return try {
             val doc = org.jsoup.Jsoup.parse(html)
             doc.select("style, script").remove()
+            val targetWidth = activity.resources.displayMetrics.widthPixels
             doc.select("img").forEach { img ->
+                applySrcsetCandidate(img, targetWidth)
                 if (img.parent()?.tagName() != "p" && img.parent()?.tagName() != "div") {
                     img.wrap("<p style=\"text-align:center;\"></p>")
                 }
@@ -117,6 +119,24 @@ internal class NovelTextRenderer(
         } catch (_: Exception) {
             html
         }
+    }
+
+    private fun applySrcsetCandidate(img: org.jsoup.nodes.Element, targetWidth: Int) {
+        val srcset = img.attr("srcset").takeIf { it.isNotBlank() } ?: return
+        val candidates = srcset.split(',').mapNotNull { entry ->
+            val parts = entry.trim().split(Regex("\\s+"), limit = 2)
+            val url = parts.getOrNull(0)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val width = parts.getOrNull(1)?.trim()
+                ?.let { Regex("^(\\d+)w$").find(it) }
+                ?.groupValues?.get(1)?.toIntOrNull()
+            url to width
+        }
+        if (candidates.isEmpty()) return
+        val withWidth = candidates.filter { it.second != null }
+        val best = withWidth.filter { it.second!! >= targetWidth }.minByOrNull { it.second!! }
+            ?: withWidth.maxByOrNull { it.second!! }
+            ?: candidates.first()
+        img.attr("src", best.first)
     }
 
     private fun applyParagraphSpans(spannable: Spannable, spacingPx: Int, indentPx: Int) {

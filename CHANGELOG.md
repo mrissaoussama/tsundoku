@@ -29,6 +29,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - TTS - Paragraph naviation, chapter auto-advance [@mrissaoussama](https://github.com/mrissaoussama) [#225](https://github.com/tsundoku-otaku/tsundoku/pull/225)
 - Novellist webview tracker login [@mrissaoussama](https://github.com/mrissaoussama) [#230](https://github.com/tsundoku-otaku/tsundoku/pull/230)
 - Novel Viewer Improvements - Refactors JS with infinite scroll, and more detailed metadata. [@mrissaoussama](https://github.com/mrissaoussama) [#198](https://github.com/tsundoku-otaku/tsundoku/pull/198)
+- Improve novel image loading and support SVGs [@mrissaoussama](https://github.com/mrissaoussama) [#253](https://github.com/tsundoku-otaku/tsundoku/pull/253)
 - Persist translation queue across restarts, group by series [@mrissaoussama](https://github.com/mrissaoussama) [#244](https://github.com/tsundoku-otaku/tsundoku/pull/244)
 - Novel description screen now supports novel searches when tapping novel title [@mrissaoussama](https://github.com/mrissaoussama) [#207](https://github.com/tsundoku-otaku/tsundoku/pull/207)
 - Library search performance improved, removed redundant parsing [@mrissaoussama](https://github.com/mrissaoussama) [#247](https://github.com/tsundoku-otaku/tsundoku/pull/247)
