@@ -1104,7 +1104,10 @@ class ReaderActivity : BaseActivity() {
 
     private fun startBackgroundTtsIfEnabled() {
         if (readerPreferences.novelTtsBackgroundPlayback.get()) {
-            TtsPlaybackService.start(this)
+            // Don't push a placeholder "TTS playback" notification here: every caller
+            // follows with syncBackgroundTtsState(), which starts the foreground service
+            // with the real novel/chapter title. Starting it twice just flashes the
+            // generic title for a frame.
             startTtsNotificationSync()
         }
     }

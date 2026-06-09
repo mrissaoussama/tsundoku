@@ -353,7 +353,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                 setPendingTtsHandoffTimeout()
             } else {
                 val chapters = currentChapters ?: return@launch
-                chapters.nextChapter ?: return@launch
+                if (chapters.nextChapter == null) {
+                    // End of novel: end the session so the background notification/service
+                    // tears down instead of lingering with isTtsAutoPlay stuck true.
+                    stopTts()
+                    return@launch
+                }
                 // Use a viewer-owned flag so ttsController.stop() (called from setChapters)
                 // cannot clear it before onPageFinished fires.
                 pendingTtsAutoStartOnLoad = true
@@ -426,14 +431,23 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         // Cancel any prior timeout regardless of state.
         handoffState.timeoutJob?.cancel()
 
+        val loadedCountAtSchedule = loadedChapters.size
         val timeoutJob = scope.launch {
             delay(5000L)
             if (handoffState.isAppending) {
-                logcat(LogPriority.WARN) {
-                    "TTS (WebView): Handoff timeout after 5000ms; clearing pending state and resuming playback"
-                }
                 clearPendingTtsHandoff()
-                if (ttsController.isTtsAutoPlay && !ttsController.isSpeaking()) {
+                if (loadedChapters.size <= loadedCountAtSchedule) {
+                    // No new chapter appended within the window (end of novel or fetch
+                    // failure). Restarting here would re-read the just-finished chapter on
+                    // a loop, so end the session and let the service tear down instead.
+                    logcat(LogPriority.WARN) {
+                        "TTS (WebView): Handoff timeout, no next chapter appended; stopping playback"
+                    }
+                    stopTts()
+                } else if (ttsController.isTtsAutoPlay && !ttsController.isSpeaking()) {
+                    logcat(LogPriority.WARN) {
+                        "TTS (WebView): Handoff timeout after 5000ms; resuming playback on new chapter"
+                    }
                     startTts()
                 }
             }

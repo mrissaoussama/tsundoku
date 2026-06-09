@@ -802,7 +802,13 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         }
 
         val chapters = currentChapters ?: return
-        chapters.nextChapter ?: return
+        if (chapters.nextChapter == null) {
+            // End of novel: no next chapter to hand off to. End the session so the
+            // background notification/service tears down instead of lingering with
+            // isTtsAutoPlay stuck true.
+            stopTts()
+            return
+        }
 
         pendingTtsAutoStart = true
         scope.launch {
@@ -884,8 +890,14 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
                 }
             } finally {
                 if (handoffState.isPreFetching) handoffState = TtsHandoffState.Idle
-                // Prefetch ended without caching (e.g. fetch failed); drop the pending retry.
-                pendingTtsHandoffAfterPrefetch = false
+                // Reaching here with the retry flag still set means the prefetch ended
+                // without caching (fetch failed or no next chapter). The handoff can't
+                // proceed, so end the session instead of leaving isTtsAutoPlay stuck true
+                // (which keeps the background notification/service alive forever).
+                if (pendingTtsHandoffAfterPrefetch) {
+                    pendingTtsHandoffAfterPrefetch = false
+                    stopTts()
+                }
             }
         }
     }
@@ -994,6 +1006,18 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         pendingTtsAutoStart = false
         handoffState = TtsHandoffState.Idle
         ttsController.stop()
+    }
+
+    /**
+     * A deferred TTS start ([pendingTtsAutoStart]) waits for [onChapterTextSet], which
+     * never fires when the chapter fails to load. Clear the pending session so
+     * isTtsAutoPlay doesn't stay stuck true (which would keep the background
+     * notification/service alive with nothing playing).
+     */
+    private fun abortPendingTtsOnLoadFailure() {
+        if (pendingTtsAutoStart || ttsController.isTtsAutoPlay) {
+            stopTts()
+        }
     }
 
     fun pauseTts() {
@@ -1200,6 +1224,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
                 }
             } catch (e: TimeoutCancellationException) {
                 hideLoadingIndicator()
+                abortPendingTtsOnLoadFailure()
                 displayError(e)
                 return@launch
             }
@@ -1212,6 +1237,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
                 }
                 is Page.State.Error -> {
                     hideLoadingIndicator()
+                    abortPendingTtsOnLoadFailure()
                     displayError(state.error)
                 }
                 else -> {}
@@ -1223,6 +1249,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         val rawContent = page.text
         if (rawContent.isNullOrBlank()) {
             logcat(LogPriority.ERROR) { "NovelViewer: Page text is null or blank for chapter ${chapter.chapter.name}" }
+            abortPendingTtsOnLoadFailure()
             displayError(Exception(activity.stringResource(TDMR.strings.novel_error_empty_chapter)))
             return
         }
