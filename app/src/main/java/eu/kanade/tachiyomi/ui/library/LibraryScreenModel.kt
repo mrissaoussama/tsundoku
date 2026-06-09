@@ -374,6 +374,15 @@ class LibraryScreenModel(
         val tagIncludeModeAnd = preferences.tagIncludeModeAnd
         val tagExcludeModeAnd = preferences.tagExcludeModeAnd
 
+        // Precompute excluded source ids as Longs once. The previous per-item
+        // `manga.source.toString()` allocated a String for every manga on every
+        // filter pass; with a large library (e.g. during a mass import) that
+        // churn could exhaust the heap.
+        val excludedSourceIds: Set<Long> = preferences.excludedExtensions
+            .takeIf { it.isNotEmpty() }
+            ?.mapNotNullTo(HashSet()) { it.toLongOrNull() }
+            .orEmpty()
+
         val downloadCounts = if (filterDownloaded != TriState.DISABLED) {
             downloadManager.getDownloadCounts(map { it.libraryManga.manga })
         } else {
@@ -423,7 +432,8 @@ class LibraryScreenModel(
             if (!trackingPasses) return@fastFilter false
 
             // Extension filter
-            val extensionPasses = it.libraryManga.manga.source.toString() !in preferences.excludedExtensions
+            val extensionPasses = excludedSourceIds.isEmpty() ||
+                it.libraryManga.manga.source !in excludedSourceIds
             if (!extensionPasses) return@fastFilter false
 
             // Novel filter
