@@ -1139,13 +1139,14 @@ class ReaderActivity : BaseActivity() {
     private fun startTtsNotificationSync() {
         ttsNotificationSyncJob?.cancel()
         ttsNotificationSyncJob = lifecycleScope.launch {
-            // Delay the first poll: lifecycleScope is Dispatchers.Main.immediate, so an
-            // immediate first iteration runs before the caller sets the TTS state, sees
-            // active=false, and stopService()s before startForeground() runs, crashing with
-            // ForegroundServiceDidNotStartInTimeException. Start sites sync explicitly after.
-            delay(750)
+            // The first loop pass runs immediately (Main.immediate), before the caller has
+            // set the TTS state. Don't let it stop the service until TTS has actually been
+            // active once: stopping the just-started service before it calls startForeground()
+            // crashes with ForegroundServiceDidNotStartInTimeException.
+            var ttsWasActive = false
             while (isActive) {
-                syncBackgroundTtsState()
+                if (currentNovelTtsState()?.active == true) ttsWasActive = true
+                if (ttsWasActive) syncBackgroundTtsState()
                 delay(750)
             }
         }
@@ -1384,11 +1385,9 @@ class ReaderActivity : BaseActivity() {
     }
 
     /**
-     * Loads the next chapter for a TTS auto-advance handoff WITHOUT stopping the
-     * active TTS session. The viewer has already set its `pendingTtsAutoStart`
-     * flag and relies on it surviving the chapter swap so playback resumes once
-     * the new chapter text is rendered. Routing through [loadNextChapter] would
-     * call [stopNovelTtsForManualNav] and clear that flag.
+     * Loads the next chapter for a TTS auto-advance without stopping TTS. The viewer
+     * has set pendingTtsAutoStart and needs it to survive the chapter swap so playback
+     * resumes; [loadNextChapter] would clear it via [stopNovelTtsForManualNav].
      */
     internal fun loadNextChapterForTtsHandoff() {
         loadNextChapterInternal()
