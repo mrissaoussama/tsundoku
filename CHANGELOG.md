@@ -53,6 +53,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Fix accuracy of mass import notification [@mrissaoussama](https://github.com/mrissaoussama) [#254](https://github.com/tsundoku-otaku/tsundoku/pull/254)
 - Properly remove TTS notification when stopped, more TTS states [@mrissaoussama](https://github.com/mrissaoussama) [#217](https://github.com/tsundoku-otaku/tsundoku/pull/217)
 - Manga mass import URL with JS plugins [@mrissaoussama](https://github.com/mrissaoussama) [#197](https://github.com/tsundoku-otaku/tsundoku/pull/197)
+- Throw errors properly instead of showing them as content in JS plugins [@mrissaoussama](https://github.com/mrissaoussama) [#262](https://github.com/tsundoku-otaku/tsundoku/pull/262)
 - Fix custom fonts not working with local files [@mrissaoussama](https://github.com/mrissaoussama) [#237](https://github.com/tsundoku-otaku/tsundoku/pull/237)
 - Imrpove NovelList session handling and fix API errors [@mrissaoussama](https://github.com/mrissaoussama) [#249](https://github.com/tsundoku-otaku/tsundoku/pull/249)
 - Correctly recognize .zip archives [@mrissaoussama](https://github.com/mrissaoussama) [#226](https://github.com/tsundoku-otaku/tsundoku/pull/226)
