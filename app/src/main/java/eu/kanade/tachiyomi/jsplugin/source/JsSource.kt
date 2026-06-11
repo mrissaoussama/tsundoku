@@ -713,7 +713,7 @@ class JsSource(
             settings.forEach { (key, value) ->
                 val settingObj = value as? JsonObject ?: return@forEach
                 val label = settingObj["label"]?.jsonPrimitive?.content ?: key
-                val type = settingObj["type"]?.jsonPrimitive?.content ?: "Switch"
+                val type = settingObj["type"]?.jsonPrimitive?.content ?: "Text"
 
                 when (type) {
                     "Switch" -> {
