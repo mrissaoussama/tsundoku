@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -54,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -98,8 +100,10 @@ class CustomSourcesScreen : Screen {
         var showCreateDialog by remember { mutableStateOf(false) }
         var sourceToDelete by remember { mutableStateOf<Long?>(null) }
         var showImportDialog by remember { mutableStateOf(false) }
+        var importJsonText by remember { mutableStateOf("") }
+        var importError by remember { mutableStateOf<String?>(null) }
 
-        // File picker for import
+        // File picker loads file content into the import dialog so errors can be shown inline.
         val importLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.GetContent(),
         ) { uri: Uri? ->
@@ -109,30 +113,15 @@ class CustomSourcesScreen : Screen {
                         val inputStream = context.contentResolver.openInputStream(it)
                         val json = inputStream?.bufferedReader()?.use { reader -> reader.readText() } ?: ""
                         inputStream?.close()
-
-                        val result = screenModel.importSource(json)
-                        result.fold(
-                            onSuccess = {
-                                snackbarHostState.showSnackbar(
-                                    context.stringResource(TDMR.strings.custom_source_imported),
-                                )
-                            },
-                            onFailure = { e ->
-                                snackbarHostState.showSnackbar(
-                                    context.stringResource(
-                                        TDMR.strings.custom_source_import_failed,
-                                        e.message ?: "",
-                                    ),
-                                )
-                            },
-                        )
+                        importJsonText = json
+                        importError = null
+                        showImportDialog = true
                     } catch (e: Exception) {
-                        snackbarHostState.showSnackbar(
-                            context.stringResource(
-                                TDMR.strings.custom_source_read_error,
-                                e.message ?: "",
-                            ),
+                        importError = context.stringResource(
+                            TDMR.strings.custom_source_read_error,
+                            e.message ?: "",
                         )
+                        showImportDialog = true
                     }
                 }
             }
@@ -152,7 +141,11 @@ class CustomSourcesScreen : Screen {
                     },
                     actions = {
                         // Import button
-                        IconButton(onClick = { importLauncher.launch("application/json") }) {
+                        IconButton(onClick = {
+                            importJsonText = ""
+                            importError = null
+                            showImportDialog = true
+                        }) {
                             Icon(
                                 Icons.Outlined.FileUpload,
                                 contentDescription = stringResource(TDMR.strings.custom_sources_import_source),
@@ -177,7 +170,11 @@ class CustomSourcesScreen : Screen {
                         .fillMaxSize()
                         .padding(paddingValues),
                     onCreateClick = { showCreateDialog = true },
-                    onImportClick = { importLauncher.launch("application/json") },
+                    onImportClick = {
+                        importJsonText = ""
+                        importError = null
+                        showImportDialog = true
+                    },
                 )
             } else {
                 LazyColumn(
@@ -272,7 +269,8 @@ class CustomSourcesScreen : Screen {
                     showCreateDialog = false
                 },
                 onUseWebViewSelector = { baseUrl ->
-                    navigator.push(eu.kanade.tachiyomi.ui.customsource.ElementSelectorVoyagerScreen(baseUrl))
+                    // Route through the pre-setup screen so the user picks features/steps first.
+                    navigator.push(eu.kanade.tachiyomi.ui.customsource.WizardSetupScreen(baseUrl))
                     showCreateDialog = false
                 },
                 onBaseOnExtension = { name, baseUrl, extensionSourceId ->
@@ -286,6 +284,39 @@ class CustomSourcesScreen : Screen {
                     )
                     showCreateDialog = false
                 },
+            )
+        }
+
+        // Import dialog (paste / from file / copy template, with inline validation errors)
+        if (showImportDialog) {
+            ImportSourceDialog(
+                jsonText = importJsonText,
+                error = importError,
+                onJsonChange = {
+                    importJsonText = it
+                    importError = null
+                },
+                onPickFile = { importLauncher.launch("application/json") },
+                onCopyTemplate = { importJsonText = screenModel.blankTemplateJson() },
+                onImport = {
+                    scope.launch {
+                        screenModel.importSource(importJsonText).fold(
+                            onSuccess = {
+                                showImportDialog = false
+                                snackbarHostState.showSnackbar(
+                                    context.stringResource(TDMR.strings.custom_source_imported),
+                                )
+                            },
+                            onFailure = { e ->
+                                importError = e.message ?: context.stringResource(
+                                    TDMR.strings.custom_source_import_failed,
+                                    "",
+                                )
+                            },
+                        )
+                    }
+                },
+                onDismiss = { showImportDialog = false },
             )
         }
 
@@ -311,6 +342,80 @@ class CustomSourcesScreen : Screen {
             )
         }
     }
+}
+
+@Composable
+private fun ImportSourceDialog(
+    jsonText: String,
+    error: String?,
+    onJsonChange: (String) -> Unit,
+    onPickFile: () -> Unit,
+    onCopyTemplate: () -> Unit,
+    onImport: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(TDMR.strings.custom_source_import_dialog_title)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TextButton(onClick = onPickFile) {
+                        Icon(
+                            Icons.Outlined.FileUpload,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(stringResource(TDMR.strings.custom_source_import_from_file))
+                    }
+                    TextButton(onClick = onCopyTemplate) {
+                        Text(stringResource(TDMR.strings.custom_source_paste_template))
+                    }
+                }
+
+                OutlinedTextField(
+                    value = jsonText,
+                    onValueChange = onJsonChange,
+                    label = { Text(stringResource(TDMR.strings.custom_source_import_paste_label)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp),
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    isError = error != null,
+                )
+
+                if (error != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onImport,
+                enabled = jsonText.isNotBlank(),
+            ) {
+                Text(stringResource(TDMR.strings.custom_sources_import))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(MR.strings.action_cancel))
+            }
+        },
+    )
 }
 
 @Composable
@@ -755,6 +860,25 @@ class CustomSourceEditorScreen(
         var postSearch by remember { mutableStateOf(initialConfig?.postSearch ?: false) }
         var isNovel by remember { mutableStateOf(initialConfig?.isNovel ?: true) }
 
+        // Which sections this source has — drives which selector inputs are shown. Inferred from an
+        // existing config, defaults to popular+latest+search for a new one.
+        var features by remember {
+            val c = initialConfig
+            mutableStateOf(
+                eu.kanade.tachiyomi.ui.customsource.SourceFeatures(
+                    hasPopular = c == null || c.popularUrl.isNotBlank(),
+                    hasLatest = c == null || c.latestUrl != null,
+                    hasSearch = c == null || c.searchUrl.isNotBlank(),
+                    popularPagination = c?.selectors?.popular?.nextPage != null || c?.popularPagedUrl != null,
+                    latestPagination = c?.selectors?.latest?.nextPage != null || c?.latestPagedUrl != null,
+                    searchPagination = c?.selectors?.search?.nextPage != null || c?.searchPagedUrl != null,
+                    chapterListPagination = c?.selectors?.chapters?.nextPage != null,
+                    chapterListSeparatePage = c?.selectors?.chapters?.indexLinkSelector != null,
+                    chapterGenerateFromPattern = c?.selectors?.chapters?.urlPattern != null,
+                ),
+            )
+        }
+
         // Selectors
         var popularListSelector by remember {
             mutableStateOf(initialConfig?.selectors?.popular?.list ?: "")
@@ -765,17 +889,79 @@ class CustomSourceEditorScreen(
         var popularCoverSelector by remember {
             mutableStateOf(initialConfig?.selectors?.popular?.cover ?: "")
         }
+        var popularNextPageSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.popular?.nextPage ?: "")
+        }
+        var latestNextPageSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.latest?.nextPage ?: "")
+        }
+        var searchNextPageSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.search?.nextPage ?: "")
+        }
         var detailsTitleSelector by remember {
             mutableStateOf(initialConfig?.selectors?.details?.title ?: "")
         }
         var detailsDescriptionSelector by remember {
             mutableStateOf(initialConfig?.selectors?.details?.description ?: "")
         }
+        var detailsCoverSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.details?.cover ?: "")
+        }
+        var detailsAuthorSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.details?.author ?: "")
+        }
+        var detailsGenreSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.details?.genre ?: "")
+        }
+        var detailsStatusSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.details?.status ?: "")
+        }
+        // Status mapping as editable text: "word=ongoing, 完结=completed". Parsed in buildConfig.
+        var statusMappingText by remember {
+            mutableStateOf(
+                initialConfig?.statusMapping
+                    ?.entries?.joinToString(", ") { "${it.key}=${it.value}" }
+                    ?: "",
+            )
+        }
         var chaptersListSelector by remember {
             mutableStateOf(initialConfig?.selectors?.chapters?.list ?: "")
         }
+        var chapterLinkSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.chapters?.link ?: "")
+        }
+        var chapterNameSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.chapters?.name ?: "")
+        }
+        var chapterDateSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.chapters?.date ?: "")
+        }
+        var chapterNextPageSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.chapters?.nextPage ?: "")
+        }
+        var chapterIndexLinkSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.chapters?.indexLinkSelector ?: "")
+        }
+        var chapterUrlPattern by remember {
+            mutableStateOf(initialConfig?.selectors?.chapters?.urlPattern ?: "")
+        }
+        var chapterCountSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.chapters?.countSelector ?: "")
+        }
+        var chapterFirstNumber by remember {
+            mutableStateOf(initialConfig?.selectors?.chapters?.firstNumber?.toString() ?: "")
+        }
+        var chapterLastNumber by remember {
+            mutableStateOf(initialConfig?.selectors?.chapters?.lastNumber?.toString() ?: "")
+        }
         var contentPrimarySelector by remember {
             mutableStateOf(initialConfig?.selectors?.content?.primary ?: "")
+        }
+        var contentFallbacksSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.content?.fallbacks?.joinToString(", ") ?: "")
+        }
+        var contentNextPageSelector by remember {
+            mutableStateOf(initialConfig?.selectors?.content?.nextPageSelector ?: "")
         }
 
         var isSaving by remember { mutableStateOf(false) }
@@ -926,15 +1112,6 @@ class CustomSourceEditorScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = latestUrl,
-                    onValueChange = { latestUrl = it },
-                    label = { Text(stringResource(TDMR.strings.custom_source_latest_url)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
                 // Source Options Section
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
@@ -1044,6 +1221,51 @@ class CustomSourceEditorScreen(
                     }
                 }
 
+                // Sections — choose what the source has; hides the inputs you don't need.
+                if (selectedBasedOnSourceId == null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = stringResource(TDMR.strings.selector_features_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    SectionToggle(TDMR.strings.selector_feature_popular, features.hasPopular) {
+                        features = features.copy(hasPopular = it)
+                    }
+                    if (features.hasPopular) {
+                        SectionToggle(TDMR.strings.selector_feature_popular_pagination, features.popularPagination, true) {
+                            features = features.copy(popularPagination = it)
+                        }
+                    }
+                    SectionToggle(TDMR.strings.selector_feature_latest, features.hasLatest) {
+                        features = features.copy(hasLatest = it)
+                    }
+                    if (features.hasLatest) {
+                        SectionToggle(TDMR.strings.selector_feature_latest_pagination, features.latestPagination, true) {
+                            features = features.copy(latestPagination = it)
+                        }
+                    }
+                    SectionToggle(TDMR.strings.selector_feature_search, features.hasSearch) {
+                        features = features.copy(hasSearch = it)
+                    }
+                    if (features.hasSearch) {
+                        SectionToggle(TDMR.strings.selector_feature_search_pagination, features.searchPagination, true) {
+                            features = features.copy(searchPagination = it)
+                        }
+                    }
+                    SectionToggle(TDMR.strings.selector_feature_chapter_generate, features.chapterGenerateFromPattern) {
+                        features = features.copy(chapterGenerateFromPattern = it)
+                    }
+                    if (!features.chapterGenerateFromPattern) {
+                        SectionToggle(TDMR.strings.selector_feature_chapter_separate_page, features.chapterListSeparatePage) {
+                            features = features.copy(chapterListSeparatePage = it)
+                        }
+                        SectionToggle(TDMR.strings.selector_feature_chapter_pagination, features.chapterListPagination) {
+                            features = features.copy(chapterListPagination = it)
+                        }
+                    }
+                }
+
                 // URLs Section (only for manual/selector-based sources)
                 if (selectedBasedOnSourceId == null) {
                     Spacer(modifier = Modifier.height(16.dp))
@@ -1059,21 +1281,34 @@ class CustomSourceEditorScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    OutlinedTextField(
-                        value = popularUrl,
-                        onValueChange = { popularUrl = it },
-                        label = { Text(stringResource(TDMR.strings.custom_source_popular_url)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(stringResource(TDMR.strings.custom_source_popular_url_hint)) },
-                    )
+                    if (features.hasPopular) {
+                        OutlinedTextField(
+                            value = popularUrl,
+                            onValueChange = { popularUrl = it },
+                            label = { Text(stringResource(TDMR.strings.custom_source_popular_url)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(stringResource(TDMR.strings.custom_source_popular_url_hint)) },
+                        )
+                    }
 
-                    OutlinedTextField(
-                        value = searchUrl,
-                        onValueChange = { searchUrl = it },
-                        label = { Text(stringResource(TDMR.strings.custom_source_search_url)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(stringResource(TDMR.strings.custom_source_search_url_hint)) },
-                    )
+                    if (features.hasLatest) {
+                        OutlinedTextField(
+                            value = latestUrl,
+                            onValueChange = { latestUrl = it },
+                            label = { Text(stringResource(TDMR.strings.custom_source_latest_url)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+
+                    if (features.hasSearch) {
+                        OutlinedTextField(
+                            value = searchUrl,
+                            onValueChange = { searchUrl = it },
+                            label = { Text(stringResource(TDMR.strings.custom_source_search_url)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(stringResource(TDMR.strings.custom_source_search_url_hint)) },
+                        )
+                    }
 
                     // Selectors Section
                     Spacer(modifier = Modifier.height(16.dp))
@@ -1110,6 +1345,34 @@ class CustomSourceEditorScreen(
                         label = { Text(stringResource(TDMR.strings.custom_source_cover_selector)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    // Pagination is per-section (popular / latest / search can differ).
+                    if (features.hasPopular && features.popularPagination) {
+                        OutlinedTextField(
+                            value = popularNextPageSelector,
+                            onValueChange = { popularNextPageSelector = it },
+                            label = { Text(stringResource(TDMR.strings.custom_source_pagination_popular)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(stringResource(TDMR.strings.custom_source_pagination_selector_hint)) },
+                        )
+                    }
+                    if (features.hasLatest && features.latestPagination) {
+                        OutlinedTextField(
+                            value = latestNextPageSelector,
+                            onValueChange = { latestNextPageSelector = it },
+                            label = { Text(stringResource(TDMR.strings.custom_source_pagination_latest)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(stringResource(TDMR.strings.custom_source_pagination_selector_hint)) },
+                        )
+                    }
+                    if (features.hasSearch && features.searchPagination) {
+                        OutlinedTextField(
+                            value = searchNextPageSelector,
+                            onValueChange = { searchNextPageSelector = it },
+                            label = { Text(stringResource(TDMR.strings.custom_source_pagination_search)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(stringResource(TDMR.strings.custom_source_pagination_selector_hint)) },
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -1127,17 +1390,117 @@ class CustomSourceEditorScreen(
                         label = { Text(stringResource(TDMR.strings.custom_source_description_selector)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    OutlinedTextField(
+                        value = detailsCoverSelector,
+                        onValueChange = { detailsCoverSelector = it },
+                        label = { Text(stringResource(TDMR.strings.custom_source_details_cover_selector)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = detailsAuthorSelector,
+                        onValueChange = { detailsAuthorSelector = it },
+                        label = { Text(stringResource(TDMR.strings.custom_source_author_selector)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = detailsGenreSelector,
+                        onValueChange = { detailsGenreSelector = it },
+                        label = { Text(stringResource(TDMR.strings.custom_source_genre_selector)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = detailsStatusSelector,
+                        onValueChange = { detailsStatusSelector = it },
+                        label = { Text("Status selector") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = statusMappingText,
+                        onValueChange = { statusMappingText = it },
+                        label = { Text("Status mapping (word=ongoing, word=completed)") },
+                        supportingText = {
+                            Text("Optional. Map this site's status words to ongoing/completed/hiatus/cancelled.")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // Chapter selectors
                     Text(stringResource(TDMR.strings.custom_source_chapters), fontWeight = FontWeight.Medium)
-                    OutlinedTextField(
-                        value = chaptersListSelector,
-                        onValueChange = { chaptersListSelector = it },
-                        label = { Text(stringResource(TDMR.strings.custom_source_chapter_list_selector)) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    if (features.chapterGenerateFromPattern) {
+                        // Generated chapter list (mode B): numeric URL pattern + range/count.
+                        OutlinedTextField(
+                            value = chapterUrlPattern,
+                            onValueChange = { chapterUrlPattern = it },
+                            label = { Text(stringResource(TDMR.strings.custom_source_chapter_url_pattern)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("/novel/abc/chapter-{n}") },
+                        )
+                        OutlinedTextField(
+                            value = chapterCountSelector,
+                            onValueChange = { chapterCountSelector = it },
+                            label = { Text(stringResource(TDMR.strings.custom_source_chapter_count_selector)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = chapterFirstNumber,
+                                onValueChange = { chapterFirstNumber = it.filter(Char::isDigit) },
+                                label = { Text(stringResource(TDMR.strings.custom_source_chapter_first_number)) },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                            OutlinedTextField(
+                                value = chapterLastNumber,
+                                onValueChange = { chapterLastNumber = it.filter(Char::isDigit) },
+                                label = { Text(stringResource(TDMR.strings.custom_source_chapter_last_number)) },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = chaptersListSelector,
+                            onValueChange = { chaptersListSelector = it },
+                            label = { Text(stringResource(TDMR.strings.custom_source_chapter_list_selector)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = chapterLinkSelector,
+                            onValueChange = { chapterLinkSelector = it },
+                            label = { Text(stringResource(TDMR.strings.custom_source_chapter_link_selector)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = chapterNameSelector,
+                            onValueChange = { chapterNameSelector = it },
+                            label = { Text(stringResource(TDMR.strings.custom_source_chapter_name_selector)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = chapterDateSelector,
+                            onValueChange = { chapterDateSelector = it },
+                            label = { Text(stringResource(TDMR.strings.custom_source_chapter_date_selector)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        if (features.chapterListPagination) {
+                            OutlinedTextField(
+                                value = chapterNextPageSelector,
+                                onValueChange = { chapterNextPageSelector = it },
+                                label = { Text(stringResource(TDMR.strings.custom_source_chapter_pagination_selector)) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        if (features.chapterListSeparatePage) {
+                            OutlinedTextField(
+                                value = chapterIndexLinkSelector,
+                                onValueChange = { chapterIndexLinkSelector = it },
+                                label = { Text(stringResource(TDMR.strings.custom_source_chapter_index_selector)) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -1149,6 +1512,18 @@ class CustomSourceEditorScreen(
                         label = { Text(stringResource(TDMR.strings.custom_source_content_selector)) },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(stringResource(TDMR.strings.custom_source_content_selector_hint)) },
+                    )
+                    OutlinedTextField(
+                        value = contentFallbacksSelector,
+                        onValueChange = { contentFallbacksSelector = it },
+                        label = { Text(stringResource(TDMR.strings.custom_source_content_fallbacks)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = contentNextPageSelector,
+                        onValueChange = { contentNextPageSelector = it },
+                        label = { Text(stringResource(TDMR.strings.custom_source_content_pagination_selector)) },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 } // end if (selectedBasedOnSourceId == null)
 
@@ -1173,8 +1548,14 @@ class CustomSourceEditorScreen(
                             val config = buildConfig(
                                 name, baseUrl, popularUrl, latestUrl, searchUrl,
                                 popularListSelector, popularTitleSelector, popularCoverSelector,
+                                popularNextPageSelector, latestNextPageSelector, searchNextPageSelector,
                                 detailsTitleSelector, detailsDescriptionSelector,
-                                chaptersListSelector, contentPrimarySelector,
+                                detailsCoverSelector, detailsAuthorSelector, detailsGenreSelector,
+                                detailsStatusSelector, statusMappingText,
+                                chaptersListSelector, chapterLinkSelector, chapterNameSelector,
+                                chapterDateSelector, chapterNextPageSelector, chapterIndexLinkSelector,
+                                chapterUrlPattern, chapterCountSelector, chapterFirstNumber, chapterLastNumber,
+                                contentPrimarySelector, contentFallbacksSelector, contentNextPageSelector,
                                 sourceId, useCloudflare, reverseChapters, postSearch,
                                 selectedBasedOnSourceId, isNovel, language,
                             )
@@ -1197,9 +1578,17 @@ class CustomSourceEditorScreen(
                     enabled = !isSaving && name.isNotBlank() && baseUrl.isNotBlank() &&
                         (
                             selectedBasedOnSourceId != null || (
-                                popularUrl.isNotBlank() && searchUrl.isNotBlank() &&
-                                    popularListSelector.isNotBlank() && detailsTitleSelector.isNotBlank() &&
-                                    chaptersListSelector.isNotBlank() && contentPrimarySelector.isNotBlank()
+                                (!features.hasPopular || (popularUrl.isNotBlank() && popularListSelector.isNotBlank())) &&
+                                    (!features.hasSearch || searchUrl.isNotBlank()) &&
+                                    (features.hasPopular || features.hasLatest) &&
+                                    detailsTitleSelector.isNotBlank() && contentPrimarySelector.isNotBlank() &&
+                                    (
+                                        if (features.chapterGenerateFromPattern) {
+                                            chapterUrlPattern.isNotBlank()
+                                        } else {
+                                            chaptersListSelector.isNotBlank()
+                                        }
+                                        )
                                 )
                             ),
                 ) {
@@ -1226,6 +1615,18 @@ class CustomSourceEditorScreen(
         }
     }
 
+    // Parses "word=ongoing, 完结=completed" into a status map. Blank/malformed entries are skipped.
+    private fun parseStatusMapping(text: String): Map<String, String>? {
+        val map = text.split(',').mapNotNull { entry ->
+            val parts = entry.split('=', limit = 2)
+            if (parts.size != 2) return@mapNotNull null
+            val key = parts[0].trim()
+            val value = parts[1].trim()
+            if (key.isBlank() || value.isBlank()) null else key to value
+        }.toMap()
+        return map.ifEmpty { null }
+    }
+
     private fun buildConfig(
         name: String,
         baseUrl: String,
@@ -1235,10 +1636,29 @@ class CustomSourceEditorScreen(
         popularListSelector: String,
         popularTitleSelector: String,
         popularCoverSelector: String,
+        popularNextPageSelector: String,
+        latestNextPageSelector: String,
+        searchNextPageSelector: String,
         detailsTitleSelector: String,
         detailsDescriptionSelector: String,
+        detailsCoverSelector: String,
+        detailsAuthorSelector: String,
+        detailsGenreSelector: String,
+        detailsStatusSelector: String,
+        statusMappingText: String,
         chaptersListSelector: String,
+        chapterLinkSelector: String,
+        chapterNameSelector: String,
+        chapterDateSelector: String,
+        chapterNextPageSelector: String,
+        chapterIndexLinkSelector: String,
+        chapterUrlPattern: String,
+        chapterCountSelector: String,
+        chapterFirstNumber: String,
+        chapterLastNumber: String,
         contentPrimarySelector: String,
+        contentFallbacksSelector: String,
+        contentNextPageSelector: String,
         existingId: Long?,
         useCloudflare: Boolean,
         reverseChapters: Boolean,
@@ -1255,21 +1675,55 @@ class CustomSourceEditorScreen(
             popularUrl = popularUrl,
             latestUrl = latestUrl.ifBlank { null },
             searchUrl = searchUrl,
+            statusMapping = parseStatusMapping(statusMappingText),
             selectors = eu.kanade.tachiyomi.source.custom.SourceSelectors(
                 popular = eu.kanade.tachiyomi.source.custom.MangaListSelectors(
                     list = popularListSelector,
                     title = popularTitleSelector.ifBlank { null },
                     cover = popularCoverSelector.ifBlank { null },
+                    nextPage = popularNextPageSelector.ifBlank { null },
+                ),
+                // Separate latest pagination only; latest reuses the popular card layout + URL.
+                latest = latestNextPageSelector.ifBlank { null }?.let {
+                    eu.kanade.tachiyomi.source.custom.MangaListSelectors(
+                        list = popularListSelector,
+                        title = popularTitleSelector.ifBlank { null },
+                        cover = popularCoverSelector.ifBlank { null },
+                        nextPage = it,
+                    )
+                },
+                // Search reuses the popular list layout; pagination can differ.
+                search = eu.kanade.tachiyomi.source.custom.MangaListSelectors(
+                    list = popularListSelector,
+                    title = popularTitleSelector.ifBlank { null },
+                    cover = popularCoverSelector.ifBlank { null },
+                    nextPage = searchNextPageSelector.ifBlank { null },
                 ),
                 details = eu.kanade.tachiyomi.source.custom.DetailSelectors(
                     title = detailsTitleSelector,
                     description = detailsDescriptionSelector.ifBlank { null },
+                    cover = detailsCoverSelector.ifBlank { null },
+                    author = detailsAuthorSelector.ifBlank { null },
+                    genre = detailsGenreSelector.ifBlank { null },
+                    status = detailsStatusSelector.ifBlank { null },
                 ),
                 chapters = eu.kanade.tachiyomi.source.custom.ChapterSelectors(
                     list = chaptersListSelector,
+                    link = chapterLinkSelector.ifBlank { null },
+                    name = chapterNameSelector.ifBlank { null },
+                    date = chapterDateSelector.ifBlank { null },
+                    nextPage = chapterNextPageSelector.ifBlank { null },
+                    indexLinkSelector = chapterIndexLinkSelector.ifBlank { null },
+                    urlPattern = chapterUrlPattern.ifBlank { null },
+                    countSelector = chapterCountSelector.ifBlank { null },
+                    firstNumber = chapterFirstNumber.toIntOrNull(),
+                    lastNumber = chapterLastNumber.toIntOrNull(),
                 ),
                 content = eu.kanade.tachiyomi.source.custom.ContentSelectors(
                     primary = contentPrimarySelector,
+                    fallbacks = contentFallbacksSelector.split(",")
+                        .map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { null },
+                    nextPageSelector = contentNextPageSelector.ifBlank { null },
                 ),
             ),
             useCloudflare = useCloudflare,
@@ -1278,6 +1732,25 @@ class CustomSourceEditorScreen(
             basedOnSourceId = basedOnSourceId,
             isNovel = isNovel,
         )
+    }
+}
+
+@Composable
+private fun SectionToggle(
+    labelRes: dev.icerock.moko.resources.StringResource,
+    checked: Boolean,
+    indent: Boolean = false,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = if (indent) 24.dp else 0.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.material3.Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(stringResource(labelRes), style = MaterialTheme.typography.bodyMedium)
     }
 }
 

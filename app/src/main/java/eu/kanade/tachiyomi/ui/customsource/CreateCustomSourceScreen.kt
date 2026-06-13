@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Launch
@@ -69,8 +70,6 @@ class CreateCustomSourceScreen : Screen {
         val navigator = LocalNavigator.currentOrThrow
         val context = LocalContext.current
 
-        var showUrlDialog by remember { mutableStateOf(false) }
-        var websiteUrl by remember { mutableStateOf("") }
         var showInstalledTemplateDialog by remember { mutableStateOf(false) }
         val sourceManager = remember { Injekt.get<SourceManager>() }
         val installedTemplateSources = remember {
@@ -133,7 +132,7 @@ class CreateCustomSourceScreen : Screen {
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                     ),
-                    onClick = { showUrlDialog = true },
+                    onClick = { navigator.push(WizardSetupScreen()) },
                 ) {
                     Row(
                         modifier = Modifier
@@ -267,55 +266,6 @@ class CreateCustomSourceScreen : Screen {
             }
         }
 
-        // URL input dialog
-        if (showUrlDialog) {
-            AlertDialog(
-                onDismissRequest = { showUrlDialog = false },
-                title = { Text(stringResource(TDMR.strings.custom_source_url_dialog_title)) },
-                text = {
-                    Column {
-                        Text(
-                            text = stringResource(TDMR.strings.custom_source_url_dialog_message),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        OutlinedTextField(
-                            value = websiteUrl,
-                            onValueChange = { websiteUrl = it },
-                            label = { Text(stringResource(TDMR.strings.custom_source_url_label)) },
-                            placeholder = { Text("https://example.com") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                        )
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            if (websiteUrl.isNotBlank()) {
-                                val url = if (!websiteUrl.startsWith("http")) {
-                                    "https://$websiteUrl"
-                                } else {
-                                    websiteUrl
-                                }
-                                showUrlDialog = false
-                                navigator.push(ElementSelectorVoyagerScreen(initialUrl = url))
-                            }
-                        },
-                        enabled = websiteUrl.isNotBlank(),
-                    ) {
-                        Text(stringResource(TDMR.strings.custom_source_start_wizard))
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showUrlDialog = false }) {
-                        Text(stringResource(MR.strings.action_cancel))
-                    }
-                },
-            )
-        }
-
         if (showInstalledTemplateDialog) {
             InstalledTemplateDialog(
                 templates = installedTemplateSources,
@@ -330,6 +280,183 @@ class CreateCustomSourceScreen : Screen {
                     )
                 },
             )
+        }
+    }
+}
+
+@Composable
+private fun FeatureToggle(
+    labelRes: dev.icerock.moko.resources.StringResource,
+    checked: Boolean,
+    indent: Boolean = false,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .padding(start = if (indent) 24.dp else 0.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.material3.Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Text(
+            text = stringResource(labelRes),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+/**
+ * Pre-wizard setup page: enter the site URL and choose which sections/pagination the source has,
+ * so the WebView wizard only walks the user through the steps that apply.
+ */
+class WizardSetupScreen(
+    private val initialUrl: String = "",
+) : Screen {
+
+    @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+    @Composable
+    override fun Content() {
+        val navigator = LocalNavigator.currentOrThrow
+        var websiteUrl by remember { mutableStateOf(initialUrl) }
+        var features by remember { mutableStateOf(SourceFeatures()) }
+        // At least one listing is required to reach novels in the browse UI.
+        val canStart = websiteUrl.isNotBlank() && (features.hasPopular || features.hasLatest)
+
+        Scaffold(
+            topBar = {
+                androidx.compose.material3.TopAppBar(
+                    title = { Text(stringResource(TDMR.strings.custom_source_url_dialog_title)) },
+                    navigationIcon = {
+                        androidx.compose.material3.IconButton(onClick = { navigator.pop() }) {
+                            Icon(
+                                Icons.AutoMirrored.Outlined.ArrowBack,
+                                contentDescription = stringResource(MR.strings.action_webview_back),
+                            )
+                        }
+                    },
+                )
+            },
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp)
+                    .verticalScroll(androidx.compose.foundation.rememberScrollState()),
+            ) {
+                Text(
+                    text = stringResource(TDMR.strings.custom_source_url_dialog_message),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                // Dynamic-site caveat: HTML parsing can't see JS-rendered content.
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                ) {
+                    Text(
+                        text = stringResource(TDMR.strings.selector_setup_dynamic_notice),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = websiteUrl,
+                    onValueChange = { websiteUrl = it },
+                    label = { Text(stringResource(TDMR.strings.custom_source_url_label)) },
+                    placeholder = { Text("https://example.com") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = stringResource(TDMR.strings.selector_features_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = stringResource(TDMR.strings.selector_features_desc),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                FeatureToggle(TDMR.strings.selector_feature_popular, features.hasPopular) {
+                    features = features.copy(hasPopular = it)
+                }
+                if (features.hasPopular) {
+                    FeatureToggle(
+                        TDMR.strings.selector_feature_popular_pagination,
+                        features.popularPagination,
+                        indent = true,
+                    ) { features = features.copy(popularPagination = it) }
+                }
+                FeatureToggle(TDMR.strings.selector_feature_latest, features.hasLatest) {
+                    features = features.copy(hasLatest = it)
+                }
+                if (features.hasLatest) {
+                    FeatureToggle(
+                        TDMR.strings.selector_feature_latest_pagination,
+                        features.latestPagination,
+                        indent = true,
+                    ) { features = features.copy(latestPagination = it) }
+                }
+                FeatureToggle(TDMR.strings.selector_feature_search, features.hasSearch) {
+                    features = features.copy(hasSearch = it)
+                }
+                if (features.hasSearch) {
+                    FeatureToggle(
+                        TDMR.strings.selector_feature_search_pagination,
+                        features.searchPagination,
+                        indent = true,
+                    ) { features = features.copy(searchPagination = it) }
+                }
+                FeatureToggle(
+                    TDMR.strings.selector_feature_chapter_generate,
+                    features.chapterGenerateFromPattern,
+                ) { features = features.copy(chapterGenerateFromPattern = it) }
+                if (!features.chapterGenerateFromPattern) {
+                    FeatureToggle(
+                        TDMR.strings.selector_feature_chapter_separate_page,
+                        features.chapterListSeparatePage,
+                    ) { features = features.copy(chapterListSeparatePage = it) }
+                    FeatureToggle(
+                        TDMR.strings.selector_feature_chapter_pagination,
+                        features.chapterListPagination,
+                    ) { features = features.copy(chapterListPagination = it) }
+                }
+                // (Chapter-text multi-page toggle removed — rarely useful; set it in the manual editor.)
+                FeatureToggle(
+                    TDMR.strings.selector_feature_content_pagination,
+                    features.contentPagination,
+                ) { features = features.copy(contentPagination = it) }
+
+                if (!features.hasPopular && !features.hasLatest) {
+                    Text(
+                        text = stringResource(TDMR.strings.selector_features_need_listing),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = {
+                        val url = if (!websiteUrl.startsWith("http")) "https://$websiteUrl" else websiteUrl
+                        navigator.push(ElementSelectorVoyagerScreen(initialUrl = url, features = features))
+                    },
+                    enabled = canStart,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(TDMR.strings.custom_source_start_wizard))
+                }
+            }
         }
     }
 }
@@ -427,6 +554,7 @@ private fun InstalledTemplateDialog(
 class ElementSelectorVoyagerScreen(
     private val initialUrl: String,
     private val initialSourceName: String = "",
+    private val features: SourceFeatures = SourceFeatures(),
 ) : Screen {
 
     @Composable
@@ -463,9 +591,13 @@ class ElementSelectorVoyagerScreen(
         ElementSelectorScreen(
             initialUrl = initialUrl,
             initialSourceName = initialSourceName,
+            features = features,
             onNavigateUp = { navigator.pop() },
             onSaveConfig = { config ->
                 screenModel.saveConfig(config)
+            },
+            onTestConfig = { config, section, onResult ->
+                screenModel.testConfig(config, section, onResult)
             },
         )
     }

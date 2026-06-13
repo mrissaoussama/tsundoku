@@ -9,6 +9,8 @@ import eu.kanade.tachiyomi.source.custom.CustomSourceManager
 import eu.kanade.tachiyomi.source.custom.DetailSelectors
 import eu.kanade.tachiyomi.source.custom.MangaListSelectors
 import eu.kanade.tachiyomi.source.custom.SourceSelectors
+import eu.kanade.tachiyomi.source.custom.SourceTestResult
+import eu.kanade.tachiyomi.source.custom.SourceTestSection
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
@@ -104,29 +106,66 @@ class ElementSelectorScreenModel(
     private fun convertToCustomSourceConfig(selectorConfig: SelectorConfig): CustomSourceConfig {
         val baseUrl = selectorConfig.baseUrl.trimEnd('/')
 
+        // Page 1 = the verbatim URL the user browsed. Page 2+ template = page1/page2 diff (handles
+        // ?page= vs /page/ alike). The source uses page1 for page 1 and the template afterwards, so
+        // the first page keeps or omits the page token exactly as the site does.
+        val popularUrl = selectorConfig.popularUrl.trim().ifBlank { baseUrl }.trimEnd('/')
+        val popularPagedUrl = derivePagedFromPair(popularUrl, selectorConfig.popularPage2Url.trim())
+
+        val hasLatest = selectorConfig.newNovelsSelector.isNotEmpty() ||
+            selectorConfig.latestPage2Url.isNotBlank()
+        val latestPage1 = selectorConfig.latestUrl.ifBlank { selectorConfig.popularUrl }.trim().trimEnd('/')
+        val latestUrl = if (hasLatest) latestPage1.ifBlank { popularUrl } else null
+        val latestPagedUrl = if (hasLatest) derivePagedFromPair(latestPage1, selectorConfig.latestPage2Url.trim()) else null
+
+        val searchUrl = selectorConfig.searchUrl.ifBlank { "$baseUrl/?s={query}" }
+        val searchPagedUrl = run {
+            val p1 = selectorConfig.searchSampleUrl.trim()
+            val p2 = selectorConfig.searchPage2Url.trim()
+            if (p1.isNotBlank() && p2.isNotBlank()) {
+                derivePagedFromPair(p1, p2)?.let { insertQueryPlaceholder(it, selectorConfig.searchKeyword) }
+            } else {
+                null
+            }
+        }
+
         return CustomSourceConfig(
             name = selectorConfig.sourceName.ifEmpty {
                 initialSourceName.ifEmpty { "Custom Source" }
             },
             baseUrl = baseUrl,
             language = "en",
-            popularUrl = "$baseUrl/{page}",
-            latestUrl = if (selectorConfig.newNovelsSelector.isNotEmpty()) "$baseUrl/{page}" else null,
-            searchUrl = selectorConfig.searchUrl.ifEmpty { "$baseUrl/?s={query}" },
+            reverseChapters = selectorConfig.reverseChapters,
+            popularUrl = popularUrl,
+            latestUrl = latestUrl,
+            searchUrl = searchUrl,
+            popularPagedUrl = popularPagedUrl,
+            latestPagedUrl = latestPagedUrl,
+            searchPagedUrl = searchPagedUrl,
+            sampleNovelUrl = selectorConfig.sampleNovelUrl.ifBlank { null },
+            testSearchQuery = selectorConfig.searchKeyword.ifBlank { null },
             selectors = SourceSelectors(
                 popular = MangaListSelectors(
                     list = selectorConfig.trendingSelector,
-                    link = selectorConfig.novelTitleSelector,
-                    title = selectorConfig.novelTitleSelector,
-                    cover = selectorConfig.novelCoverSelector,
-                    nextPage = selectorConfig.paginationPattern,
+                    link = selectorConfig.novelTitleSelector.ifBlank { null },
+                    title = selectorConfig.novelTitleSelector.ifBlank { null },
+                    cover = selectorConfig.novelCoverSelector.ifBlank { null },
                 ),
+                // Separate latest selectors when the latest list layout was captured; otherwise
+                // latest falls back to popular at parse time.
+                latest = selectorConfig.newNovelsSelector.ifBlank { null }?.let {
+                    MangaListSelectors(
+                        list = it,
+                        link = selectorConfig.novelTitleSelector.ifBlank { null },
+                        title = selectorConfig.novelTitleSelector.ifBlank { null },
+                        cover = selectorConfig.novelCoverSelector.ifBlank { null },
+                    )
+                },
                 search = MangaListSelectors(
                     list = selectorConfig.trendingSelector, // Usually same as popular
-                    link = selectorConfig.novelTitleSelector,
-                    title = selectorConfig.novelTitleSelector,
-                    cover = selectorConfig.novelCoverSelector,
-                    nextPage = selectorConfig.paginationPattern,
+                    link = selectorConfig.novelTitleSelector.ifBlank { null },
+                    title = selectorConfig.novelTitleSelector.ifBlank { null },
+                    cover = selectorConfig.novelCoverSelector.ifBlank { null },
                 ),
                 details = DetailSelectors(
                     title = selectorConfig.novelPageTitleSelector,
@@ -136,40 +175,62 @@ class ElementSelectorScreenModel(
                 ),
                 chapters = ChapterSelectors(
                     list = selectorConfig.chapterListSelector,
-                    link = findItemSelector(selectorConfig.chapterItems),
-                    name = findItemSelector(selectorConfig.chapterItems),
+                    link = selectorConfig.chapterLinkSelector.ifBlank { null },
+                    name = selectorConfig.chapterLinkSelector.ifBlank { null },
+                    date = selectorConfig.chapterDateSelector.ifBlank { null },
+                    nextPage = selectorConfig.chapterListPaginationSelector.ifBlank { null },
+                    indexLinkSelector = selectorConfig.chapterIndexLinkSelector.ifBlank { null },
+                    urlPattern = selectorConfig.chapterUrlPattern.ifBlank { null },
+                    countSelector = selectorConfig.chapterCountSelector.ifBlank { null },
+                    firstNumber = selectorConfig.chapterFirstNumber,
+                    lastNumber = selectorConfig.chapterLastNumber,
                 ),
                 content = ContentSelectors(
                     primary = selectorConfig.chapterContentSelector,
-                    fallbacks = listOf(".chapter-content", "#chapter-content", ".content"),
-                    removeSelectors = listOf(".ads", "script", ".share", ".navigation"),
+                    nextPageSelector = selectorConfig.contentPaginationSelector.ifBlank { null },
+                    // Boilerplate stripping is handled by the source's built-in cleanup pipeline.
+                    removeBoilerplate = true,
                 ),
             ),
         )
     }
 
-    private fun findItemSelector(items: List<String>): String {
-        if (items.isEmpty()) return ""
-        if (items.size == 1) return items.first()
+    /**
+     * Diffs two URLs that differ only by page number, returning the page-2 URL with the differing
+     * digits replaced by {page}. Works regardless of param vs path form. Null if they don't differ.
+     */
+    private fun derivePagedFromPair(p1: String, p2: String): String? {
+        if (p2.isBlank() || p1 == p2) return null
+        val maxLen = minOf(p1.length, p2.length)
+        var pre = 0
+        while (pre < maxLen && p1[pre] == p2[pre]) pre++
+        var suf = 0
+        while (suf < maxLen - pre && p1[p1.length - 1 - suf] == p2[p2.length - 1 - suf]) suf++
+        val mid = p2.substring(pre, p2.length - suf)
+        if (mid.isBlank() || !mid.any { it.isDigit() }) return null
+        val templated = mid.replace(Regex("""\d+"""), "{page}")
+        return p2.substring(0, pre) + templated + p2.substring(p2.length - suf)
+    }
 
-        // Find common parent selector
-        val parts = items.map { it.split(" > ", " ") }
-        val minLen = parts.minOf { it.size }
-
-        val common = mutableListOf<String>()
-        for (i in 0 until minLen - 1) {
-            val part = parts.first()[i]
-            if (parts.all { it.getOrNull(i) == part }) {
-                common.add(part)
-            } else {
-                break
-            }
+    private fun insertQueryPlaceholder(url: String, query: String): String? {
+        if (query.isBlank()) return null
+        val enc = java.net.URLEncoder.encode(query, "UTF-8")
+        val candidates = listOf(enc, enc.replace("+", "%20"), query).distinct().filter { it.isNotBlank() }
+        for (cand in candidates) {
+            val idx = url.indexOf(cand, ignoreCase = true)
+            if (idx >= 0) return url.substring(0, idx) + "{query}" + url.substring(idx + cand.length)
         }
+        return null
+    }
 
-        return if (common.isNotEmpty()) {
-            common.joinToString(" > ") + " > *"
-        } else {
-            items.first()
+    fun testConfig(
+        selectorConfig: SelectorConfig,
+        section: SourceTestSection = SourceTestSection.ALL,
+        onResult: (SourceTestResult) -> Unit,
+    ) {
+        screenModelScope.launch {
+            val result = customSourceManager.testSource(convertToCustomSourceConfig(selectorConfig), section)
+            onResult(result)
         }
     }
 

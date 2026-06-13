@@ -7,8 +7,6 @@ import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.annotation.Keep
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,22 +21,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlaylistAddCheck
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -46,25 +45,28 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,108 +76,166 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kevinnzou.web.AccompanistWebChromeClient
 import com.kevinnzou.web.AccompanistWebViewClient
 import com.kevinnzou.web.LoadingState
-import com.kevinnzou.web.WebContent
 import com.kevinnzou.web.WebView
-import com.kevinnzou.web.WebViewNavigator
-import com.kevinnzou.web.WebViewState
 import com.kevinnzou.web.rememberWebViewNavigator
 import com.kevinnzou.web.rememberWebViewState
 import dev.icerock.moko.resources.StringResource
 import eu.kanade.presentation.components.AppBar
+import eu.kanade.tachiyomi.source.custom.SourceTestResult
+import eu.kanade.tachiyomi.source.custom.SourceTestSection
 import eu.kanade.tachiyomi.util.system.setDefaultSettings
-import kotlinx.coroutines.launch
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.novel.TDMR
-import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.components.material.Scaffold as TachiyomiScaffold
+import tachiyomi.presentation.core.i18n.stringResource
 
 /**
- * Element Selector Wizard Steps
- * Reordered to collect essential selectors (cover/title/link) early for popular/latest/search
+ * Which sections a custom source exposes. Chosen up front (URL dialog) so the wizard only walks the
+ * user through the steps they actually need.
+ */
+data class SourceFeatures(
+    val hasPopular: Boolean = true,
+    val hasLatest: Boolean = true,
+    val hasSearch: Boolean = true,
+    // Per-section pagination — each adds its own capture step only when enabled.
+    val popularPagination: Boolean = false,
+    val latestPagination: Boolean = false,
+    val searchPagination: Boolean = false,
+    // The chapter list spans multiple pages (adds a chapter-list pagination step).
+    val chapterListPagination: Boolean = false,
+    // A single chapter's content spans multiple pages (adds a content pagination step).
+    val contentPagination: Boolean = false,
+    // The chapter list lives on a separate page linked from the details page (adds a step to tap
+    // that "all chapters / table of contents" link).
+    val chapterListSeparatePage: Boolean = false,
+    // Chapters have sequential numeric URLs (e.g. /chapter-12); generate the list from a pattern
+    // instead of scraping it (adds a "first/last chapter + total count" step).
+    val chapterGenerateFromPattern: Boolean = false,
+) : java.io.Serializable
+
+/**
+ * Element Selector Wizard Steps. The active list is derived from [SourceFeatures]; reading steps
+ * (details/chapters/content) are always included. Each step optionally maps to a [SourceTestSection]
+ * so its parsing can be validated in place instead of only at the end.
  */
 enum class SelectorWizardStep(
     val titleRes: StringResource,
     val descriptionRes: StringResource,
     val detailedHelpRes: StringResource,
+    val testSection: SourceTestSection? = null,
 ) {
-    TRENDING(
-        TDMR.strings.selector_step_trending_title,
-        TDMR.strings.selector_step_trending_desc,
-        TDMR.strings.selector_step_trending_detail,
-    ),
-    NOVEL_CARD(
+    POPULAR_LIST(
         TDMR.strings.selector_step_novel_card_title,
         TDMR.strings.selector_step_novel_card_desc,
         TDMR.strings.selector_step_novel_card_detail,
+        SourceTestSection.POPULAR,
     ),
-    TRENDING_NOVELS(
-        TDMR.strings.selector_step_trending_novels_title,
-        TDMR.strings.selector_step_trending_novels_desc,
-        TDMR.strings.selector_step_trending_novels_detail,
+    POPULAR_PAGINATION(
+        TDMR.strings.selector_step_pagination_title,
+        TDMR.strings.selector_step_pagination_desc,
+        TDMR.strings.selector_step_pagination_detail,
     ),
-    NEW_NOVELS_SECTION(
-        TDMR.strings.selector_step_new_section_title,
-        TDMR.strings.selector_step_new_section_desc,
-        TDMR.strings.selector_step_new_section_detail,
-    ),
-    NEW_NOVELS(
+    LATEST_LIST(
         TDMR.strings.selector_step_new_novels_title,
         TDMR.strings.selector_step_new_novels_desc,
         TDMR.strings.selector_step_new_novels_detail,
+        SourceTestSection.LATEST,
+    ),
+    LATEST_PAGINATION(
+        TDMR.strings.selector_step_pagination_title,
+        TDMR.strings.selector_step_pagination_desc,
+        TDMR.strings.selector_step_pagination_detail,
     ),
     SEARCH(
         TDMR.strings.selector_step_search_title,
         TDMR.strings.selector_step_search_desc,
         TDMR.strings.selector_step_search_detail,
+        SourceTestSection.SEARCH,
     ),
-    SEARCH_URL_PATTERN(
-        TDMR.strings.selector_step_search_url_title,
-        TDMR.strings.selector_step_search_url_desc,
-        TDMR.strings.selector_step_search_url_detail,
-    ),
-    PAGINATION(
+    SEARCH_PAGINATION(
         TDMR.strings.selector_step_pagination_title,
         TDMR.strings.selector_step_pagination_desc,
         TDMR.strings.selector_step_pagination_detail,
-    ),
-    NOVEL_PAGE(
-        TDMR.strings.selector_step_novel_page_title,
-        TDMR.strings.selector_step_novel_page_desc,
-        TDMR.strings.selector_step_novel_page_detail,
     ),
     NOVEL_DETAILS(
         TDMR.strings.selector_step_novel_details_title,
         TDMR.strings.selector_step_novel_details_desc,
         TDMR.strings.selector_step_novel_details_detail,
     ),
+    CHAPTER_INDEX_LINK(
+        TDMR.strings.selector_step_chapter_index_title,
+        TDMR.strings.selector_step_chapter_index_desc,
+        TDMR.strings.selector_step_chapter_index_detail,
+    ),
+    CHAPTER_RANGE(
+        TDMR.strings.selector_step_chapter_range_title,
+        TDMR.strings.selector_step_chapter_range_desc,
+        TDMR.strings.selector_step_chapter_range_detail,
+    ),
     CHAPTER_LIST(
         TDMR.strings.selector_step_chapter_list_title,
         TDMR.strings.selector_step_chapter_list_desc,
         TDMR.strings.selector_step_chapter_list_detail,
     ),
-    CHAPTER_PAGE(
-        TDMR.strings.selector_step_chapter_page_title,
-        TDMR.strings.selector_step_chapter_page_desc,
-        TDMR.strings.selector_step_chapter_page_detail,
+    CHAPTER_LIST_PAGINATION(
+        TDMR.strings.selector_step_chapter_pagination_title,
+        TDMR.strings.selector_step_chapter_pagination_desc,
+        TDMR.strings.selector_step_chapter_pagination_detail,
+    ),
+    CHAPTER_DATE(
+        TDMR.strings.selector_step_chapter_date_title,
+        TDMR.strings.selector_step_chapter_date_desc,
+        TDMR.strings.selector_step_chapter_date_detail,
     ),
     CHAPTER_CONTENT(
         TDMR.strings.selector_step_chapter_content_title,
         TDMR.strings.selector_step_chapter_content_desc,
         TDMR.strings.selector_step_chapter_content_detail,
+        SourceTestSection.READING,
     ),
-    COMPLETE(
-        TDMR.strings.selector_step_complete_title,
-        TDMR.strings.selector_step_complete_desc,
+    CONTENT_PAGINATION(
+        TDMR.strings.selector_step_content_pagination_title,
+        TDMR.strings.selector_step_content_pagination_desc,
+        TDMR.strings.selector_step_content_pagination_detail,
+    ),
+    REVIEW(
+        TDMR.strings.selector_review_title,
+        TDMR.strings.selector_review_desc,
         TDMR.strings.selector_step_complete_detail,
     ),
     ;
 
     companion object {
-        fun fromOrdinal(ordinal: Int): SelectorWizardStep = entries.getOrElse(ordinal) { TRENDING }
-        val totalSteps: Int get() = entries.size
+        /** Steps shown for the given features, in order. */
+        fun activeSteps(features: SourceFeatures): List<SelectorWizardStep> = buildList {
+            if (features.hasPopular) {
+                add(POPULAR_LIST)
+                if (features.popularPagination) add(POPULAR_PAGINATION)
+            }
+            if (features.hasLatest) {
+                add(LATEST_LIST)
+                if (features.latestPagination) add(LATEST_PAGINATION)
+            }
+            if (features.hasSearch) {
+                add(SEARCH)
+                if (features.searchPagination) add(SEARCH_PAGINATION)
+            }
+            add(NOVEL_DETAILS)
+            if (features.chapterGenerateFromPattern) {
+                // Generated mode: derive chapters from a numeric URL pattern; no list scraping.
+                add(CHAPTER_RANGE)
+            } else {
+                if (features.chapterListSeparatePage) add(CHAPTER_INDEX_LINK)
+                add(CHAPTER_LIST)
+                if (features.chapterListPagination) add(CHAPTER_LIST_PAGINATION)
+                add(CHAPTER_DATE)
+            }
+            add(CHAPTER_CONTENT)
+            if (features.contentPagination) add(CONTENT_PAGINATION)
+            add(REVIEW)
+        }
     }
 }
 
@@ -185,13 +245,26 @@ enum class SelectorWizardStep(
 data class SelectorConfig(
     var sourceName: String = "",
     var baseUrl: String = "",
+    var popularUrl: String = "",
+    var latestUrl: String = "",
     var trendingSelector: String = "",
     var trendingNovels: MutableList<String> = mutableListOf(),
     var newNovelsSelector: String = "",
     var newNovels: MutableList<String> = mutableListOf(),
     var searchUrl: String = "",
     var searchKeyword: String = "",
-    var paginationPattern: String = "",
+    // Raw page-1 search URL (with the probe word) — paired with searchPage2Url to derive {page}.
+    var searchSampleUrl: String = "",
+    // Listing pagination: the page-2 URL the user navigated to. Diffed against the page-1 URL to
+    // build a correct {page} template (handles ?page= vs /page/ vs trailing-number forms).
+    var popularPage2Url: String = "",
+    var latestPage2Url: String = "",
+    var searchPage2Url: String = "",
+    // Followed-link pagination selectors (the source follows these links itself).
+    var chapterListPaginationSelector: String = "",
+    var contentPaginationSelector: String = "",
+    // Details-page selector linking to a separate chapter-list page.
+    var chapterIndexLinkSelector: String = "",
     var novelCoverSelector: String = "",
     var novelTitleSelector: String = "",
     var novelPageTitleSelector: String = "",
@@ -200,7 +273,18 @@ data class SelectorConfig(
     var novelTagsSelector: String = "",
     var chapterListSelector: String = "",
     var chapterItems: MutableList<String> = mutableListOf(),
+    var chapterLinkSelector: String = "",
+    var chapterDateSelector: String = "",
     var chapterContentSelector: String = "",
+    // Generated chapter list (mode B): numeric URL pattern + range/count.
+    var chapterUrlPattern: String = "",
+    var chapterCountSelector: String = "",
+    var chapterFirstNumber: Int? = null,
+    var chapterLastNumber: Int? = null,
+    // Some sites list newest chapter first; reverse so reading order is correct.
+    var reverseChapters: Boolean = false,
+    // Details page URL the user browsed; lets the reading test open a known novel without a listing.
+    var sampleNovelUrl: String = "",
 )
 
 /**
@@ -208,12 +292,18 @@ data class SelectorConfig(
  */
 @Keep
 class ElementSelectorJSInterface(
-    private val onElementSelected: (String, String, String, String) -> Unit,
+    private val onElementSelected: (String, String, String, String, String) -> Unit,
     private val onSelectionModeChanged: (Boolean) -> Unit,
 ) {
     @JavascriptInterface
-    fun onElementClick(selector: String, outerHtml: String, textContent: String, parentSelectorsJson: String) {
-        onElementSelected(selector, outerHtml, textContent, parentSelectorsJson)
+    fun onElementClick(
+        selector: String,
+        outerHtml: String,
+        textContent: String,
+        parentSelectorsJson: String,
+        href: String,
+    ) {
+        onElementSelected(selector, outerHtml, textContent, parentSelectorsJson, href)
     }
 
     @JavascriptInterface
@@ -226,16 +316,20 @@ class ElementSelectorJSInterface(
  * WebView Element Selector Screen
  * Guides user through selecting CSS selectors for custom source creation
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ElementSelectorScreen(
     initialUrl: String,
     initialSourceName: String = "",
+    features: SourceFeatures = SourceFeatures(),
     onNavigateUp: () -> Unit,
     onSaveConfig: (SelectorConfig) -> Unit,
+    onTestConfig: ((SelectorConfig, SourceTestSection, (SourceTestResult) -> Unit) -> Unit)? = null,
 ) {
-    val scope = rememberCoroutineScope()
+    val steps = remember(features) { SelectorWizardStep.activeSteps(features) }
+    var currentStep by remember { mutableStateOf(steps.first()) }
+    val stepIndex = steps.indexOf(currentStep).coerceAtLeast(0)
 
-    var currentStep by remember { mutableStateOf(SelectorWizardStep.TRENDING) }
     var config by remember {
         mutableStateOf(
             SelectorConfig(
@@ -248,94 +342,217 @@ fun ElementSelectorScreen(
     var lastSelectedElement by remember { mutableStateOf<SelectedElement?>(null) }
     var showSelectorDialog by remember { mutableStateOf(false) }
     var showSourceNameDialog by remember { mutableStateOf(false) }
-    var showPatternLibrary by remember { mutableStateOf(false) }
+    var showSelectedSheet by remember { mutableStateOf(false) }
     var currentUrl by remember { mutableStateOf(initialUrl) }
+    var pageLoadTick by remember { mutableStateOf(0) }
 
-    // Site framework detection
-    var detectedFramework by remember { mutableStateOf(SitePatternLibrary.SiteFramework.CUSTOM) }
-    var pageHtml by remember { mutableStateOf("") }
+    // Dynamic search probe state
+    var showSearchProbeDialog by remember { mutableStateOf(false) }
+    var searchProbeQuery by remember { mutableStateOf("") }
+    var searchStatus by remember { mutableStateOf<String?>(null) }
 
-    // Test selector state
-    var testSelectorResult by remember { mutableStateOf<String?>(null) }
+    // Inline test (per section) + final test state
+    var testResult by remember { mutableStateOf<SourceTestResult?>(null) }
+    var isTesting by remember { mutableStateOf(false) }
+    // Live test (runs the step's selectors against the loaded page; shows a preview).
+    var liveTest by remember { mutableStateOf<String?>(null) }
 
     // WebView state
     val webViewState = rememberWebViewState(url = initialUrl)
     val navigator = rememberWebViewNavigator()
     var webView by remember { mutableStateOf<WebView?>(null) }
 
-    // Selected elements for current step
-    val selectedElements = remember { mutableStateListOf<SelectedElement>() }
+    // Selections are kept per step so going back restores (and re-highlights) what was picked.
+    val selectionsByStep = remember { mutableStateMapOf<SelectorWizardStep, SnapshotStateList<SelectedElement>>() }
+    fun selectionsFor(step: SelectorWizardStep): SnapshotStateList<SelectedElement> =
+        selectionsByStep.getOrPut(step) { mutableStateListOf() }
+    val selectedElements = selectionsFor(currentStep)
+    // DOM-detected list selector per step (POPULAR_LIST/LATEST_LIST/CHAPTER_LIST), so the commit
+    // for the review/save doesn't clobber it with the weaker Kotlin heuristic.
+    val detectedList = remember { mutableStateMapOf<SelectorWizardStep, String>() }
 
     val jsInterface = remember {
         ElementSelectorJSInterface(
-            onElementSelected = { selector, html, text, parentSelectorsJson ->
+            onElementSelected = { selector, html, text, parentSelectorsJson, href ->
                 val parentSelectors = try {
                     val json = org.json.JSONObject(parentSelectorsJson)
                     val map = mutableMapOf<String, String>()
                     json.keys().forEach { key ->
-                        if (!json.isNull(key)) {
-                            map[key] = json.getString(key)
-                        }
+                        if (!json.isNull(key)) map[key] = json.getString(key)
                     }
                     map
                 } catch (e: Exception) {
                     emptyMap()
                 }
-                lastSelectedElement = SelectedElement(selector, html, text, parentSelectors)
+                lastSelectedElement = SelectedElement(selector, html, text, parentSelectors, href)
                 showSelectorDialog = true
             },
-            onSelectionModeChanged = { enabled ->
-                selectionModeEnabled = enabled
-            },
+            onSelectionModeChanged = { enabled -> selectionModeEnabled = enabled },
         )
     }
 
-    // Inject JavaScript for element selection
     fun injectSelectionScript() {
         webView?.evaluateJavascript(ELEMENT_SELECTOR_JS, null)
     }
 
-    // Enable selection mode
     fun enableSelectionMode() {
         webView?.evaluateJavascript("window.enableSelectionMode(true);", null)
         selectionModeEnabled = true
     }
 
-    // Disable selection mode
     fun disableSelectionMode() {
         webView?.evaluateJavascript("window.enableSelectionMode(false);", null)
         selectionModeEnabled = false
     }
 
-    // Highlight elements matching a selector
     fun highlightSelector(selector: String) {
-        webView?.evaluateJavascript(
-            "window.highlightElements('$selector');",
-            null,
-        )
+        webView?.evaluateJavascript("window.highlightElements('$selector');", null)
     }
 
-    // Clear all highlights
+    // parent selector + child (selector,label) list for the confirm dialog's up/down navigation.
+    fun resolveRelatives(selector: String, callback: (String, List<Pair<String, String>>) -> Unit) {
+        val wv = webView ?: return callback("", emptyList())
+        wv.evaluateJavascript("window.relatives(${org.json.JSONObject.quote(selector)});") { result ->
+            val json = result?.trim('"').orEmpty().replace("\\\"", "\"").replace("\\\\", "\\")
+            val obj = runCatching { org.json.JSONObject(json) }.getOrNull()
+            if (obj == null) {
+                callback("", emptyList())
+            } else {
+                val parent = obj.optString("parent")
+                val children = obj.optJSONArray("children")?.let { arr ->
+                    (0 until arr.length()).map {
+                        val c = arr.getJSONObject(it)
+                        c.optString("selector") to c.optString("label")
+                    }
+                }.orEmpty()
+                callback(parent, children)
+            }
+        }
+    }
+
     fun clearHighlights() {
         webView?.evaluateJavascript("window.clearHighlights();", null)
     }
 
-    // Test a selector and get count of matching elements
-    fun testSelector(selector: String, callback: (Int) -> Unit) {
-        val escapedSelector = selector.replace("'", "\\'")
-        webView?.evaluateJavascript(
-            "window.testSelector('$escapedSelector');",
-        ) { result ->
-            val count = result?.toIntOrNull() ?: 0
-            callback(count)
+    fun autoDetectContent(callback: (String) -> Unit) {
+        webView?.evaluateJavascript("window.autoDetectContent();") { result ->
+            callback(result?.trim('"').orEmpty().replace("\\\"", "\""))
         }
     }
 
-    // Get page HTML for framework detection
-    fun getPageHtml(callback: (String) -> Unit) {
-        webView?.evaluateJavascript("document.documentElement.outerHTML.substring(0, 5000);") { result ->
-            val html = result?.trim('"')?.replace("\\n", "\n")?.replace("\\\"", "\"") ?: ""
-            callback(html)
+    fun autoDetectChapters(callback: (String) -> Unit) {
+        webView?.evaluateJavascript("window.autoDetectChapters();") { result ->
+            callback(result?.trim('"').orEmpty().replace("\\\"", "\""))
+        }
+    }
+
+    // Derive one repeating selector from the picked items via the DOM (handles tables/lists/divs,
+    // unordered picks). Falls back to the Kotlin heuristic if the JS returns nothing.
+    fun detectItemSelector(selectors: List<String>, fallback: List<SelectedElement>, callback: (String) -> Unit) {
+        val arg = org.json.JSONObject.quote(org.json.JSONArray(selectors).toString())
+        val wv = webView
+        if (wv == null) {
+            callback(deriveListSelector(fallback)); return
+        }
+        wv.evaluateJavascript("window.detectItemSelector($arg);") { result ->
+            val detected = result?.trim('"').orEmpty().replace("\\\"", "\"").replace("\\\\", "\\")
+            callback(detected.ifBlank { deriveListSelector(fallback) })
+        }
+    }
+
+    // Flush every step's stored selections into the config so it can be tested/saved at any point.
+    fun commitAllSelections() {
+        steps.forEach { step -> saveSelectionsForStep(step, selectionsFor(step), config, detectedList[step]) }
+        if (config.popularUrl.isBlank() && currentStep == SelectorWizardStep.POPULAR_LIST) {
+            config.popularUrl = currentUrl
+        }
+        if (config.latestUrl.isBlank() && currentStep == SelectorWizardStep.LATEST_LIST) {
+            config.latestUrl = currentUrl
+        }
+    }
+
+    fun runSectionTest(section: SourceTestSection) {
+        val test = onTestConfig ?: return
+        commitAllSelections()
+        isTesting = true
+        test(config, section) { result ->
+            isTesting = false
+            testResult = result
+        }
+    }
+
+    // Test the current step's selectors against the loaded page (no network). For list/chapter steps
+    // the repeating selector is DOM-detected from the current picks first.
+    fun runLiveTest() {
+        val wv = webView ?: return
+        val picks = selectedElements.toList()
+        fun quote(s: String) = org.json.JSONObject.quote(s)
+        fun fire(kind: String, cfg: org.json.JSONObject) {
+            wv.evaluateJavascript("window.testStep(${quote(kind)}, ${quote(cfg.toString())});") { result ->
+                liveTest = result?.trim('"').orEmpty().replace("\\\"", "\"").replace("\\\\", "\\")
+            }
+        }
+        when (currentStep) {
+            SelectorWizardStep.SEARCH -> {
+                // Reuse the popular list selectors against the loaded search-results page.
+                val listSel = config.trendingSelector
+                if (listSel.isBlank()) return
+                fire(
+                    "list",
+                    org.json.JSONObject().apply {
+                        put("list", listSel)
+                        if (config.novelTitleSelector.isNotBlank()) put("name", config.novelTitleSelector)
+                        if (config.novelCoverSelector.isNotBlank()) put("cover", config.novelCoverSelector)
+                    },
+                )
+            }
+            SelectorWizardStep.POPULAR_LIST, SelectorWizardStep.LATEST_LIST -> {
+                if (picks.isEmpty()) return
+                detectItemSelector(picks.map { it.selector }, picks) { listSel ->
+                    val cover = picks.getOrNull(0)?.let { relativize(it.selector, listSel) }.orEmpty()
+                    val title = picks.getOrNull(1)?.let { relativize(it.selector, listSel) }.orEmpty()
+                    fire(
+                        "list",
+                        org.json.JSONObject().apply {
+                            put("list", listSel)
+                            if (title.isNotBlank()) put("name", title)
+                            if (cover.isNotBlank()) put("cover", cover)
+                        },
+                    )
+                }
+            }
+            SelectorWizardStep.CHAPTER_LIST -> {
+                if (picks.isEmpty()) return
+                detectItemSelector(picks.map { it.selector }, picks) { listSel ->
+                    val link = relativize(picks.first().selector, listSel)
+                    fire(
+                        "chapters",
+                        org.json.JSONObject().apply {
+                            put("list", listSel)
+                            if (link.isNotBlank() && link != "a") put("name", link)
+                            if (config.chapterDateSelector.isNotBlank()) put("date", config.chapterDateSelector)
+                        },
+                    )
+                }
+            }
+            SelectorWizardStep.NOVEL_DETAILS -> {
+                if (picks.isEmpty()) return
+                fire(
+                    "details",
+                    org.json.JSONObject().apply {
+                        picks.getOrNull(0)?.let { put("title", it.selector) }
+                        picks.getOrNull(1)?.let { put("description", it.selector) }
+                        picks.getOrNull(2)?.let { put("cover", it.selector) }
+                        picks.getOrNull(3)?.let { put("genre", it.selector) }
+                    },
+                )
+            }
+            SelectorWizardStep.CHAPTER_CONTENT -> {
+                val primary = picks.firstOrNull()?.selector ?: config.chapterContentSelector
+                if (primary.isBlank()) return
+                fire("content", org.json.JSONObject().apply { put("primary", primary) })
+            }
+            else -> {}
         }
     }
 
@@ -351,30 +568,27 @@ fun ElementSelectorScreen(
                 url?.let { newUrl ->
                     currentUrl = newUrl
 
-                    // Detect site framework
-                    getPageHtml { html ->
-                        pageHtml = html
-                        detectedFramework = SitePatternLibrary.SiteFramework.detect(html)
-                    }
-
-                    // Auto-detect search URL when on SEARCH step
-                    if (currentStep == SelectorWizardStep.SEARCH ||
-                        currentStep == SelectorWizardStep.SEARCH_URL_PATTERN
-                    ) {
-                        val detectedSearchUrl = detectSearchUrl(newUrl, config.baseUrl)
-                        if (detectedSearchUrl != null) {
-                            config.searchUrl = detectedSearchUrl.first
-                            config.searchKeyword = detectedSearchUrl.second
+                    // Dynamic search capture: if the user gave a probe word and it shows up in the
+                    // resulting URL (raw or percent-encoded), derive the {query} pattern.
+                    if (currentStep == SelectorWizardStep.SEARCH && searchProbeQuery.isNotBlank()) {
+                        val derived = deriveSearchUrl(newUrl, config.baseUrl, searchProbeQuery)
+                        if (derived != null) {
+                            config.searchUrl = derived
+                            config.searchKeyword = searchProbeQuery
+                            config.searchSampleUrl = newUrl // raw page-1 search URL for pagination diff
+                            searchStatus = "ok:$derived"
                         }
                     }
                 }
                 injectSelectionScript()
+                // The fresh page injects a clean script with selectionMode=false; re-push the
+                // current mode so the JS and the FAB never disagree (the "tap navigates instead of
+                // selects, or vice-versa" bug after navigating).
+                webView?.evaluateJavascript("window.enableSelectionMode($selectionModeEnabled);", null)
+                pageLoadTick++
             }
 
-            override fun shouldOverrideUrlLoading(
-                view: WebView?,
-                request: WebResourceRequest?,
-            ): Boolean {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return false
                 if (url.startsWith("http") || url.startsWith("https")) {
                     view?.loadUrl(url)
@@ -385,39 +599,49 @@ fun ElementSelectorScreen(
         }
     }
 
-    BackHandler(enabled = true) {
-        if (selectionModeEnabled) {
-            disableSelectionMode()
-        } else if (navigator.canGoBack) {
-            navigator.navigateBack()
-        } else {
-            onNavigateUp()
+    // Re-highlight the current step's saved selections after a step change or page (re)load, since
+    // navigating wipes the DOM highlight classes.
+    LaunchedEffect(currentStep, pageLoadTick) {
+        clearHighlights()
+        selectionsFor(currentStep).forEach { highlightSelector(it.selector) }
+    }
+
+    // Flush selections into config when the review step opens so its summary reflects every prior
+    // step (was showing "not captured" because the commit only ran on Save).
+    LaunchedEffect(currentStep) {
+        if (currentStep == SelectorWizardStep.REVIEW) commitAllSelections()
+        // Search needs the probe set up before browsing, or "search a" does nothing. Prompt on entry.
+        if (currentStep == SelectorWizardStep.SEARCH && config.searchUrl.isBlank() && searchProbeQuery.isBlank()) {
+            showSearchProbeDialog = true
         }
     }
+
+    BackHandler(enabled = true) {
+        when {
+            selectionModeEnabled -> disableSelectionMode()
+            navigator.canGoBack -> navigator.navigateBack()
+            else -> onNavigateUp()
+        }
+    }
+
+    val isReview = currentStep == SelectorWizardStep.REVIEW
 
     TachiyomiScaffold(
         topBar = {
             Column {
-                // Top App Bar
                 AppBar(
                     title = stringResource(TDMR.strings.selector_title_format, stringResource(currentStep.titleRes)),
-                    subtitle = "${currentStep.ordinal + 1}/${SelectorWizardStep.totalSteps}",
+                    subtitle = "${stepIndex + 1}/${steps.size}",
                     navigateUp = onNavigateUp,
                     navigationIcon = Icons.Outlined.Close,
+                    // Save lives only on the final Review step's button — no duplicate top-bar save.
                     actions = {
                         IconButton(onClick = { navigator.reload() }) {
                             Icon(Icons.Outlined.Refresh, stringResource(MR.strings.action_webview_refresh))
                         }
-                        IconButton(onClick = {
-                            // Show name dialog before saving
-                            showSourceNameDialog = true
-                        }) {
-                            Icon(Icons.Outlined.Save, stringResource(MR.strings.action_save))
-                        }
                     },
                 )
 
-                // Progress indicator
                 val loadingState = webViewState.loadingState
                 if (loadingState is LoadingState.Loading) {
                     LinearProgressIndicator(
@@ -426,47 +650,35 @@ fun ElementSelectorScreen(
                     )
                 }
 
-                // Step indicator bar
-                StepIndicatorBar(
-                    currentStep = currentStep,
-                    onStepClick = { step ->
-                        currentStep = step
-                    },
-                )
+                StepIndicatorBar(steps = steps, currentStep = currentStep, onStepClick = { currentStep = it })
             }
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    if (selectionModeEnabled) {
-                        disableSelectionMode()
+            if (!isReview) {
+                ExtendedFloatingActionButton(
+                    onClick = { if (selectionModeEnabled) disableSelectionMode() else enableSelectionMode() },
+                    containerColor = if (selectionModeEnabled) {
+                        MaterialTheme.colorScheme.primary
                     } else {
-                        enableSelectionMode()
-                    }
-                },
-                containerColor = if (selectionModeEnabled) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.secondaryContainer
-                },
-                icon = {
-                    Icon(
-                        if (selectionModeEnabled) Icons.Filled.TouchApp else Icons.Filled.Edit,
-                        contentDescription = stringResource(TDMR.strings.selector_select_element),
-                    )
-                },
-                text = {
-                    Text(
-                        if (selectionModeEnabled) {
-                            stringResource(
-                                TDMR.strings.selector_selection_on,
-                            )
-                        } else {
-                            stringResource(TDMR.strings.selector_select_element)
-                        },
-                    )
-                },
-            )
+                        MaterialTheme.colorScheme.secondaryContainer
+                    },
+                    icon = {
+                        Icon(
+                            if (selectionModeEnabled) Icons.Filled.TouchApp else Icons.Filled.Edit,
+                            contentDescription = stringResource(TDMR.strings.selector_select_element),
+                        )
+                    },
+                    text = {
+                        Text(
+                            if (selectionModeEnabled) {
+                                stringResource(TDMR.strings.selector_selection_on)
+                            } else {
+                                stringResource(TDMR.strings.selector_select_element)
+                            },
+                        )
+                    },
+                )
+            }
         },
     ) { padding ->
         Column(
@@ -474,151 +686,225 @@ fun ElementSelectorScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            // Step instruction card
-            StepInstructionCard(
-                step = currentStep,
-                selectedCount = selectedElements.size,
-                detectedFramework = detectedFramework,
-                onClearSelections = {
-                    selectedElements.clear()
-                    clearHighlights()
-                },
-                onShowPatternLibrary = { showPatternLibrary = true },
-                onSkipStep = if (currentStep == SelectorWizardStep.SEARCH ||
-                    currentStep == SelectorWizardStep.SEARCH_URL_PATTERN ||
-                    currentStep == SelectorWizardStep.PAGINATION
-                ) {
-                    {
-                        // Move to next step, skipping current
-                        val nextOrdinal = currentStep.ordinal + 1
-                        if (nextOrdinal < SelectorWizardStep.totalSteps) {
-                            currentStep = SelectorWizardStep.fromOrdinal(nextOrdinal)
-                        }
-                    }
-                } else {
-                    null
-                },
-            )
-
-            // Navigation bar
-            NavigationBar(
-                canGoBack = navigator.canGoBack,
-                canGoForward = navigator.canGoForward,
-                onBack = { navigator.navigateBack() },
-                onForward = { navigator.navigateForward() },
-                currentUrl = currentUrl,
-                onUrlSubmit = { url ->
-                    navigator.loadUrl(url)
-                },
-            )
-
-            // WebView
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .border(
-                        width = if (selectionModeEnabled) 3.dp else 0.dp,
-                        color = if (selectionModeEnabled) MaterialTheme.colorScheme.primary else Color.Transparent,
-                    ),
-            ) {
-                WebView(
-                    state = webViewState,
-                    navigator = navigator,
-                    modifier = Modifier.fillMaxSize(),
-                    onCreated = { wv ->
-                        webView = wv
-                        wv.setDefaultSettings()
-                        wv.settings.javaScriptEnabled = true
-                        wv.settings.domStorageEnabled = true
-                        wv.addJavascriptInterface(jsInterface, "AndroidSelector")
+            if (isReview) {
+                ReviewContent(
+                    config = config,
+                    modifier = Modifier.weight(1f),
+                    onRunFullTest = { runSectionTest(SourceTestSection.ALL) },
+                )
+            } else {
+                val liveTestable = currentStep in setOf(
+                    SelectorWizardStep.POPULAR_LIST,
+                    SelectorWizardStep.LATEST_LIST,
+                    SelectorWizardStep.SEARCH,
+                    SelectorWizardStep.CHAPTER_LIST,
+                    SelectorWizardStep.NOVEL_DETAILS,
+                    SelectorWizardStep.CHAPTER_CONTENT,
+                )
+                val testEnabled = when (currentStep) {
+                    // Search has no element picks; it reuses the popular list selectors on the loaded
+                    // results page, so enable once those exist.
+                    SelectorWizardStep.SEARCH -> config.trendingSelector.isNotBlank()
+                    SelectorWizardStep.CHAPTER_CONTENT ->
+                        selectedElements.isNotEmpty() || config.chapterContentSelector.isNotBlank()
+                    else -> selectedElements.isNotEmpty()
+                }
+                StepInstructionCard(
+                    step = currentStep,
+                    selectedCount = selectedElements.size,
+                    searchStatus = searchStatus,
+                    onViewSelected = { showSelectedSheet = true },
+                    onTest = if (liveTestable) ({ runLiveTest() }) else null,
+                    testEnabled = testEnabled,
+                    onSetupSearch = if (currentStep == SelectorWizardStep.SEARCH) {
+                        { showSearchProbeDialog = true }
+                    } else {
+                        null
                     },
-                    client = webClient,
+                    onAutoDetect = when (currentStep) {
+                        SelectorWizardStep.CHAPTER_LIST -> {
+                            {
+                                autoDetectChapters { selector ->
+                                    if (selector.isNotBlank()) {
+                                        selectedElements.add(SelectedElement(selector, "", "(auto-detected)", emptyMap()))
+                                        highlightSelector(selector)
+                                    }
+                                }
+                            }
+                        }
+                        SelectorWizardStep.CHAPTER_CONTENT -> {
+                            {
+                                autoDetectContent { selector ->
+                                    if (selector.isNotBlank()) {
+                                        selectedElements.add(SelectedElement(selector, "", "(auto-detected)", emptyMap()))
+                                        highlightSelector(selector)
+                                    }
+                                }
+                            }
+                        }
+                        else -> null
+                    },
                 )
 
-                // Selection mode overlay indicator
-                if (selectionModeEnabled) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(8.dp)
-                            .background(
-                                MaterialTheme.colorScheme.primary,
-                                RoundedCornerShape(16.dp),
+                NavigationBar(
+                    canGoBack = navigator.canGoBack,
+                    canGoForward = navigator.canGoForward,
+                    onBack = { navigator.navigateBack() },
+                    onForward = { navigator.navigateForward() },
+                    currentUrl = currentUrl,
+                    onUrlSubmit = { navigator.loadUrl(it) },
+                )
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .border(
+                            width = if (selectionModeEnabled) 3.dp else 0.dp,
+                            color = if (selectionModeEnabled) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        ),
+                ) {
+                    WebView(
+                        state = webViewState,
+                        navigator = navigator,
+                        modifier = Modifier.fillMaxSize(),
+                        onCreated = { wv ->
+                            webView = wv
+                            wv.setDefaultSettings()
+                            wv.settings.javaScriptEnabled = true
+                            wv.settings.domStorageEnabled = true
+                            wv.addJavascriptInterface(jsInterface, "AndroidSelector")
+                        },
+                        client = webClient,
+                    )
+
+                    if (selectionModeEnabled) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(8.dp)
+                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                stringResource(TDMR.strings.selector_tap_to_select),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                style = MaterialTheme.typography.labelMedium,
                             )
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                    ) {
-                        Text(
-                            stringResource(TDMR.strings.selector_tap_to_select),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            style = MaterialTheme.typography.labelMedium,
-                        )
+                        }
                     }
                 }
             }
 
-            // Selected elements panel
-            AnimatedVisibility(
-                visible = selectedElements.isNotEmpty(),
-                enter = expandVertically(),
-                exit = shrinkVertically(),
-            ) {
-                SelectedElementsPanel(
-                    elements = selectedElements,
-                    onRemove = { element ->
-                        selectedElements.remove(element)
-                        clearHighlights()
-                        selectedElements.forEach { highlightSelector(it.selector) }
-                    },
-                    onHighlight = { element ->
-                        highlightSelector(element.selector)
-                    },
-                )
-            }
-
-            // Step navigation
             StepNavigationBar(
-                currentStep = currentStep,
+                isFirstStep = stepIndex == 0,
+                isLastStep = currentStep == SelectorWizardStep.REVIEW,
                 canProceed = canProceedToNextStep(currentStep, selectedElements, config),
                 onPrevious = {
-                    if (currentStep.ordinal > 0) {
-                        currentStep = SelectorWizardStep.fromOrdinal(currentStep.ordinal - 1)
-                    }
+                    if (stepIndex > 0) currentStep = steps[stepIndex - 1]
                 },
                 onNext = {
-                    saveSelectionsForStep(currentStep, selectedElements, config)
-                    selectedElements.clear()
-                    clearHighlights()
-                    if (currentStep.ordinal < SelectorWizardStep.totalSteps - 1) {
-                        currentStep = SelectorWizardStep.fromOrdinal(currentStep.ordinal + 1)
+                    val step = currentStep
+                    val advance = { if (stepIndex < steps.size - 1) currentStep = steps[stepIndex + 1] }
+                    when (step) {
+                        // List steps: detect the repeating selector from the DOM, then save + advance.
+                        SelectorWizardStep.POPULAR_LIST, SelectorWizardStep.CHAPTER_LIST -> {
+                            if (step == SelectorWizardStep.POPULAR_LIST && config.popularUrl.isBlank()) {
+                                config.popularUrl = currentUrl
+                            }
+                            if (selectedElements.isNotEmpty()) {
+                                val list = selectedElements.toList()
+                                detectItemSelector(list.map { it.selector }, list) { detected ->
+                                    detectedList[step] = detected
+                                    saveSelectionsForStep(step, list, config, detected)
+                                    advance()
+                                }
+                            } else {
+                                saveSelectionsForStep(step, selectedElements, config)
+                                advance()
+                            }
+                        }
+                        SelectorWizardStep.LATEST_LIST -> {
+                            if (config.latestUrl.isBlank()) config.latestUrl = currentUrl
+                            if (selectedElements.isNotEmpty()) {
+                                val list = selectedElements.toList()
+                                detectItemSelector(list.map { it.selector }, list) { detected ->
+                                    detectedList[step] = detected
+                                    saveSelectionsForStep(step, list, config, detected)
+                                    advance()
+                                }
+                            } else {
+                                saveSelectionsForStep(step, selectedElements, config)
+                                advance()
+                            }
+                        }
+                        // Listing pagination: the page-2 URL the user navigated to (diffed later).
+                        SelectorWizardStep.POPULAR_PAGINATION -> { config.popularPage2Url = currentUrl; advance() }
+                        SelectorWizardStep.LATEST_PAGINATION -> { config.latestPage2Url = currentUrl; advance() }
+                        SelectorWizardStep.SEARCH_PAGINATION -> { config.searchPage2Url = currentUrl; advance() }
+                        SelectorWizardStep.NOVEL_DETAILS -> {
+                            // Remember the novel page so the reading test can open it without a listing.
+                            config.sampleNovelUrl = currentUrl
+                            saveSelectionsForStep(step, selectedElements, config)
+                            advance()
+                        }
+                        else -> {
+                            saveSelectionsForStep(step, selectedElements, config)
+                            advance()
+                        }
                     }
                 },
                 onComplete = {
-                    saveSelectionsForStep(currentStep, selectedElements, config)
-                    // Show name dialog before saving
+                    commitAllSelections()
                     showSourceNameDialog = true
                 },
             )
         }
     }
 
-    // Selector confirmation dialog
+    if (showSelectedSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSelectedSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            SelectedElementsPanel(
+                elements = selectedElements,
+                onRemove = { element ->
+                    selectedElements.remove(element)
+                    clearHighlights()
+                    selectedElements.forEach { highlightSelector(it.selector) }
+                },
+                onHighlight = { element -> highlightSelector(element.selector) },
+            )
+        }
+    }
+
     if (showSelectorDialog && lastSelectedElement != null) {
+        val reHighlight = {
+            clearHighlights()
+            selectedElements.forEach { highlightSelector(it.selector) }
+        }
         SelectorConfirmDialog(
             element = lastSelectedElement!!,
+            onResolveRelatives = ::resolveRelatives,
+            onHighlight = { sel ->
+                clearHighlights()
+                highlightSelector(sel)
+            },
             onConfirm = { selector ->
                 selectedElements.add(lastSelectedElement!!.copy(selector = selector))
                 showSelectorDialog = false
                 lastSelectedElement = null
+                reHighlight()
             },
             onDismiss = {
                 showSelectorDialog = false
                 lastSelectedElement = null
+                reHighlight()
             },
         )
     }
 
-    // Source name dialog (shown before saving)
     if (showSourceNameDialog) {
         SourceNameDialog(
             currentName = config.sourceName,
@@ -632,52 +918,57 @@ fun ElementSelectorScreen(
         )
     }
 
-    // Pattern Library dialog
-    if (showPatternLibrary) {
-        PatternLibraryDialog(
-            framework = detectedFramework,
-            currentStep = currentStep,
-            onSelectPattern = { selector ->
-                // Test the selector and highlight matches
-                testSelector(selector) { count ->
-                    testSelectorResult = "$count matches for: $selector"
-                }
-                highlightSelector(selector)
+    if (showSearchProbeDialog) {
+        SearchProbeDialog(
+            initialQuery = searchProbeQuery,
+            onConfirm = { query ->
+                searchProbeQuery = query
+                searchStatus = null
+                showSearchProbeDialog = false
             },
-            onApplySelector = { selector ->
-                // Add as selected element
-                selectedElements.add(
-                    SelectedElement(
-                        selector = selector,
-                        outerHtml = "",
-                        textContent = "(Pattern suggestion)",
-                        parentSelectors = emptyMap(),
-                    ),
-                )
-                showPatternLibrary = false
-            },
-            onDismiss = { showPatternLibrary = false },
-            testResult = testSelectorResult,
+            onDismiss = { showSearchProbeDialog = false },
+        )
+    }
+
+    if (isTesting) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text(stringResource(TDMR.strings.selector_testing)) },
+            text = { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) },
+            confirmButton = { },
+        )
+    }
+
+    testResult?.let { result ->
+        TestResultDialog(result = result, onDismiss = { testResult = null })
+    }
+
+    liveTest?.let { json ->
+        LiveTestDialog(
+            json = json,
+            showReverse = currentStep == SelectorWizardStep.CHAPTER_LIST,
+            reversed = config.reverseChapters,
+            onReverseChange = { config = config.copy(reverseChapters = it) },
+            onDismiss = { liveTest = null },
         )
     }
 }
 
 @Composable
 private fun StepIndicatorBar(
+    steps: List<SelectorWizardStep>,
     currentStep: SelectorWizardStep,
     onStepClick: (SelectorWizardStep) -> Unit,
 ) {
+    val currentIndex = steps.indexOf(currentStep)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(8.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        SelectorWizardStep.entries.forEach { step ->
-            val isCompleted = step.ordinal < currentStep.ordinal
-            val isCurrent = step == currentStep
-
+        steps.forEachIndexed { index, step ->
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -685,8 +976,8 @@ private fun StepIndicatorBar(
                     .clip(RoundedCornerShape(2.dp))
                     .background(
                         when {
-                            isCompleted -> MaterialTheme.colorScheme.primary
-                            isCurrent -> MaterialTheme.colorScheme.tertiary
+                            index < currentIndex -> MaterialTheme.colorScheme.primary
+                            step == currentStep -> MaterialTheme.colorScheme.tertiary
                             else -> MaterialTheme.colorScheme.outlineVariant
                         },
                     )
@@ -700,106 +991,215 @@ private fun StepIndicatorBar(
 private fun StepInstructionCard(
     step: SelectorWizardStep,
     selectedCount: Int,
-    detectedFramework: SitePatternLibrary.SiteFramework = SitePatternLibrary.SiteFramework.CUSTOM,
-    onClearSelections: () -> Unit,
-    onShowPatternLibrary: () -> Unit,
-    onSkipStep: (() -> Unit)? = null,
+    searchStatus: String?,
+    onViewSelected: () -> Unit,
+    onTest: (() -> Unit)? = null,
+    testEnabled: Boolean = false,
+    onSetupSearch: (() -> Unit)? = null,
+    onAutoDetect: (() -> Unit)? = null,
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        ),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(step.descriptionRes),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    if (true) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(step.detailedHelpRes),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
-                        )
-                    }
-                    if (selectedCount > 0) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(TDMR.strings.selector_elements_selected, selectedCount),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-                Row {
-                    if (onSkipStep != null) {
-                        TextButton(onClick = onSkipStep) {
-                            Text(
-                                stringResource(TDMR.strings.custom_selector_skip),
-                                color = MaterialTheme.colorScheme.tertiary,
-                            )
-                        }
-                    }
-                    if (selectedCount > 0) {
-                        IconButton(onClick = onClearSelections) {
-                            Icon(Icons.Filled.Delete, stringResource(TDMR.strings.selector_clear_selections))
-                        }
-                    }
-                }
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(
+                text = stringResource(step.descriptionRes),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+            )
+
+            // Captured search confirmation (compact, replaces the detailed help on the search step).
+            if (step == SelectorWizardStep.SEARCH && searchStatus != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                val ok = searchStatus.startsWith("ok:")
+                Text(
+                    text = if (ok) {
+                        stringResource(TDMR.strings.selector_search_captured, searchStatus.removePrefix("ok:"))
+                    } else {
+                        stringResource(TDMR.strings.selector_search_not_captured)
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                )
             }
 
-            // Detected framework info
-            if (detectedFramework != SitePatternLibrary.SiteFramework.CUSTOM) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Divider()
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.CheckCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
+            // Action row: per-step helpers + selected count, all on one compact line.
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (onSetupSearch != null) {
+                    CompactAction(Icons.Outlined.Search, TDMR.strings.selector_setup_search, onSetupSearch)
+                }
+                if (onAutoDetect != null) {
+                    CompactAction(Icons.Filled.TouchApp, TDMR.strings.selector_auto_detect, onAutoDetect)
+                }
+                if (onTest != null) {
+                    CompactAction(
+                        Icons.Filled.Science,
+                        TDMR.strings.selector_test_section,
+                        onTest,
+                        enabled = testEnabled,
+                    )
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                if (selectedCount > 0) {
+                    FilledTonalButton(
+                        onClick = onViewSelected,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    ) {
+                        Icon(Icons.Filled.PlaylistAddCheck, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = stringResource(TDMR.strings.selector_detected_format, detectedFramework.displayName),
+                            stringResource(TDMR.strings.selector_view_selected, selectedCount),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
                         )
-                    }
-                    TextButton(onClick = onShowPatternLibrary) {
-                        Icon(
-                            Icons.Filled.Code,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(stringResource(TDMR.strings.custom_selector_suggestions))
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun CompactAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    labelRes: StringResource,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(stringResource(labelRes), style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+/**
+ * Renders the live-test preview JSON (from window.testStep) for the current step. For chapter lists
+ * it also offers a reverse toggle (some sites list newest-first).
+ */
+@Composable
+private fun LiveTestDialog(
+    json: String,
+    showReverse: Boolean,
+    reversed: Boolean,
+    onReverseChange: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val obj = remember(json) { runCatching { org.json.JSONObject(json) }.getOrNull() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(TDMR.strings.selector_test_results)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                if (obj == null) {
+                    Text("No result", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    val ok = obj.optBoolean("ok", false)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (ok) Icons.Filled.CheckCircle else Icons.Outlined.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        val summary = when {
+                            obj.has("count") -> "${obj.optInt("count")} found, ${obj.optInt("withUrl")} with URL" +
+                                (obj.opt("next")?.takeIf { it != org.json.JSONObject.NULL }?.let { ", next page: $it" } ?: "")
+                            obj.has("length") -> "Content length: ${obj.optInt("length")} chars"
+                            obj.has("title") -> "Title: ${obj.optString("title").ifBlank { "(none)" }}"
+                            else -> obj.optString("message", "")
+                        }
+                        Text(summary, style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    // List/chapter rows.
+                    obj.optJSONArray("rows")?.let { rows ->
+                        Spacer(Modifier.height(8.dp))
+                        for (i in 0 until rows.length()) {
+                            val r = rows.getJSONObject(i)
+                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                Text(
+                                    r.optString("name").ifBlank { "(no name)" },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                val sub = buildList {
+                                    r.optString("url").ifBlank { null }?.let { add(it) }
+                                    r.optString("date").ifBlank { null }?.let { add(it) }
+                                }.joinToString("  •  ")
+                                if (sub.isNotBlank()) {
+                                    Text(
+                                        sub,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                            Divider()
+                        }
+                    }
+
+                    // Details fields.
+                    if (obj.has("title")) {
+                        listOf(
+                            "Title" to obj.optString("title"),
+                            "Description" to obj.optString("description"),
+                            "Cover" to obj.optString("cover"),
+                            "Tags" to obj.optString("genre"),
+                        ).forEach { (k, v) ->
+                            if (v.isNotBlank()) {
+                                Text(
+                                    "$k: $v",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+
+                    // Content preview.
+                    obj.optString("preview").ifBlank { null }?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 6, overflow = TextOverflow.Ellipsis)
+                    }
+
+                    if (showReverse) {
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Switch(checked = reversed, onCheckedChange = onReverseChange)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                stringResource(TDMR.strings.selector_reverse_chapters),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) { Text(stringResource(MR.strings.action_ok)) }
+        },
+    )
 }
 
 @Composable
@@ -811,20 +1211,19 @@ private fun NavigationBar(
     currentUrl: String,
     onUrlSubmit: (String) -> Unit,
 ) {
-    var editingUrl by remember { mutableStateOf(false) }
     var urlText by remember(currentUrl) { mutableStateOf(currentUrl) }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(4.dp),
+            .padding(horizontal = 4.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack, enabled = canGoBack) {
+        IconButton(onClick = onBack, enabled = canGoBack, modifier = Modifier.size(36.dp)) {
             Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(MR.strings.nav_zone_prev))
         }
-        IconButton(onClick = onForward, enabled = canGoForward) {
+        IconButton(onClick = onForward, enabled = canGoForward, modifier = Modifier.size(36.dp)) {
             Icon(Icons.AutoMirrored.Outlined.ArrowForward, stringResource(MR.strings.nav_zone_next))
         }
 
@@ -837,11 +1236,7 @@ private fun NavigationBar(
             singleLine = true,
             textStyle = MaterialTheme.typography.bodySmall,
             trailingIcon = {
-                IconButton(
-                    onClick = {
-                        onUrlSubmit(urlText)
-                    },
-                ) {
+                IconButton(onClick = { onUrlSubmit(urlText) }) {
                     Icon(Icons.Outlined.Search, stringResource(MR.strings.action_search))
                 }
             },
@@ -855,126 +1250,205 @@ private fun SelectedElementsPanel(
     onRemove: (SelectedElement) -> Unit,
     onHighlight: (SelectedElement) -> Unit,
 ) {
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp),
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 24.dp),
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
-            Text(
-                text = stringResource(TDMR.strings.selector_selected_elements),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = stringResource(TDMR.strings.selector_selected_elements),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
 
-            elements.forEach { element ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = element.selector,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = element.textContent.take(50),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+        elements.forEach { element ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = element.selector,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = element.textContent.take(50),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Row {
+                    IconButton(onClick = { onHighlight(element) }) {
+                        Icon(Icons.Filled.TouchApp, stringResource(TDMR.strings.selector_select_element), Modifier.height(20.dp))
                     }
-                    Row {
-                        IconButton(onClick = { onHighlight(element) }) {
-                            Icon(
-                                Icons.Filled.TouchApp,
-                                stringResource(TDMR.strings.selector_select_element),
-                                Modifier.height(20.dp),
-                            )
-                        }
-                        IconButton(onClick = { onRemove(element) }) {
-                            Icon(Icons.Filled.Delete, stringResource(MR.strings.action_delete), Modifier.height(20.dp))
-                        }
+                    IconButton(onClick = { onRemove(element) }) {
+                        Icon(Icons.Filled.Delete, stringResource(MR.strings.action_delete), Modifier.height(20.dp))
                     }
                 }
-                Divider()
             }
+            Divider()
         }
     }
 }
 
 @Composable
 private fun StepNavigationBar(
-    currentStep: SelectorWizardStep,
+    isFirstStep: Boolean,
+    isLastStep: Boolean,
     canProceed: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onComplete: () -> Unit,
 ) {
-    val isLastStep = currentStep == SelectorWizardStep.COMPLETE
-    val isFirstStep = currentStep == SelectorWizardStep.TRENDING
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .padding(8.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        OutlinedButton(
-            onClick = onPrevious,
-            enabled = !isFirstStep,
-        ) {
+        OutlinedButton(onClick = onPrevious, enabled = !isFirstStep) {
             Text(stringResource(TDMR.strings.custom_selector_previous))
         }
 
         if (isLastStep) {
             Button(
                 onClick = onComplete,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                ),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             ) {
                 Icon(Icons.Filled.CheckCircle, null)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(TDMR.strings.custom_selector_save_source))
             }
         } else {
-            Button(
-                onClick = onNext,
-                enabled = canProceed,
-            ) {
+            Button(onClick = onNext, enabled = canProceed) {
                 Text(stringResource(TDMR.strings.custom_selector_next_step))
             }
         }
     }
 }
 
+/** Final summary: captured selectors at a glance, a full end-to-end test, then save. */
+@Composable
+private fun ReviewContent(
+    config: SelectorConfig,
+    modifier: Modifier = Modifier,
+    onRunFullTest: () -> Unit,
+) {
+    val none = stringResource(TDMR.strings.selector_review_none)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+    ) {
+        Text(
+            text = stringResource(TDMR.strings.selector_review_desc),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        ReviewRow("Popular list", config.trendingSelector, none)
+        ReviewRow("Cover", config.novelCoverSelector, none)
+        ReviewRow("Title", config.novelTitleSelector, none)
+        ReviewRow("Popular page 2", config.popularPage2Url, none)
+        ReviewRow("Latest list", config.newNovelsSelector, none)
+        ReviewRow("Latest page 2", config.latestPage2Url, none)
+        ReviewRow("Search URL", config.searchUrl, none)
+        ReviewRow("Search page 2", config.searchPage2Url, none)
+        ReviewRow("Details title", config.novelPageTitleSelector, none)
+        ReviewRow("Details description", config.novelDescriptionSelector, none)
+        ReviewRow("Details cover", config.novelCoverPageSelector, none)
+        ReviewRow("Details tags", config.novelTagsSelector, none)
+        ReviewRow("Chapter list link", config.chapterIndexLinkSelector, none)
+        ReviewRow("Chapter list", config.chapterListSelector, none)
+        ReviewRow("Chapter list pagination", config.chapterListPaginationSelector, none)
+        ReviewRow("Chapter URL pattern", config.chapterUrlPattern, none)
+        ReviewRow(
+            "Chapter range",
+            if (config.chapterUrlPattern.isNotBlank()) {
+                "${config.chapterFirstNumber ?: 1}..${config.chapterLastNumber?.toString() ?: config.chapterCountSelector.ifBlank { "?" }}"
+            } else {
+                ""
+            },
+            none,
+        )
+        ReviewRow("Chapter date", config.chapterDateSelector, none)
+        ReviewRow("Chapter content", config.chapterContentSelector, none)
+        ReviewRow("Content pagination", config.contentPaginationSelector, none)
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onRunFullTest, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Filled.Science, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(stringResource(TDMR.strings.selector_run_full_test))
+        }
+    }
+}
+
+@Composable
+private fun ReviewRow(label: String, value: String, none: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.width(140.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value.ifBlank { none },
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            color = if (value.isBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 @Composable
 private fun SelectorConfirmDialog(
     element: SelectedElement,
+    onResolveRelatives: (String, (String, List<Pair<String, String>>) -> Unit) -> Unit,
+    onHighlight: (String) -> Unit,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var editedSelector by remember { mutableStateOf(element.selector) }
     var showHtml by remember { mutableStateOf(false) }
+    var parentSelector by remember { mutableStateOf("") }
+    var children by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+
+    // Whenever the working selector changes, highlight it on the page and refresh up/down navigation
+    // so the user can correct an imprecise tap.
+    LaunchedEffect(editedSelector) {
+        if (editedSelector.isNotBlank()) {
+            onHighlight(editedSelector)
+            onResolveRelatives(editedSelector) { parent, kids ->
+                parentSelector = parent
+                children = kids
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(TDMR.strings.custom_selector_confirm_selection)) },
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-            ) {
-                // Visual preview card - shows what the selected element looks like
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -983,7 +1457,7 @@ private fun SelectorConfirmDialog(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
-                            text = "Selected Text:",
+                            text = stringResource(TDMR.strings.selector_selected_text),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -997,36 +1471,47 @@ private fun SelectorConfirmDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Parent selectors options
-                if (element.parentSelectors.isNotEmpty()) {
+                // Up/down DOM navigation — pick the right element when the tap wasn't precise.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = { if (parentSelector.isNotBlank()) editedSelector = parentSelector },
+                        enabled = parentSelector.isNotBlank(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    ) {
+                        Icon(Icons.Filled.ArrowUpward, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(stringResource(TDMR.strings.selector_select_parent), style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                if (children.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = stringResource(TDMR.strings.selector_select_parent),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        text = stringResource(TDMR.strings.selector_select_child),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    element.parentSelectors.forEach { (tag, selector) ->
-                        if (selector.isNotEmpty() && selector != element.selector) {
-                            OutlinedButton(
-                                onClick = { editedSelector = selector },
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            ) {
-                                Text(
-                                    stringResource(
-                                        TDMR.strings.custom_selector_select_parent_format,
-                                        tag.uppercase(),
-                                    ),
-                                )
-                            }
+                    children.take(12).forEach { (sel, label) ->
+                        OutlinedButton(
+                            onClick = { editedSelector = sel },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Icon(Icons.Filled.ArrowDownward, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                label.ifBlank { sel },
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // CSS Selector input
+                Spacer(modifier = Modifier.height(8.dp))
+
                 OutlinedTextField(
                     value = editedSelector,
                     onValueChange = { editedSelector = it },
@@ -1038,7 +1523,6 @@ private fun SelectorConfirmDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Toggle to show/hide HTML
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1047,7 +1531,7 @@ private fun SelectorConfirmDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        imageVector = if (showHtml) Icons.Filled.Code else Icons.Filled.Code,
+                        imageVector = Icons.Filled.Code,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1055,9 +1539,7 @@ private fun SelectorConfirmDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = if (showHtml) {
-                            stringResource(
-                                TDMR.strings.selector_hide_html,
-                            )
+                            stringResource(TDMR.strings.selector_hide_html)
                         } else {
                             stringResource(TDMR.strings.selector_show_html)
                         },
@@ -1066,26 +1548,21 @@ private fun SelectorConfirmDialog(
                     )
                 }
 
-                // HTML preview (collapsible)
                 AnimatedVisibility(visible = showHtml) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(120.dp)
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant,
-                                RoundedCornerShape(4.dp),
-                            )
+                            .height(160.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+                            .verticalScroll(rememberScrollState())
                             .padding(8.dp),
                     ) {
                         Text(
-                            text = element.outerHtml.take(800),
+                            text = element.outerHtml,
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 10.sp,
                             ),
-                            maxLines = 8,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -1113,7 +1590,6 @@ private fun SourceNameDialog(
     onSave: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // Extract domain name as default suggestion
     val customSourceFallback = stringResource(TDMR.strings.selector_custom_source)
     val suggestedName = remember(baseUrl, customSourceFallback) {
         try {
@@ -1169,10 +1645,7 @@ private fun SourceNameDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = { onSave(sourceName) },
-                enabled = sourceName.isNotBlank(),
-            ) {
+            Button(onClick = { onSave(sourceName) }, enabled = sourceName.isNotBlank()) {
                 Text(stringResource(MR.strings.action_save))
             }
         },
@@ -1189,6 +1662,7 @@ data class SelectedElement(
     val outerHtml: String,
     val textContent: String,
     val parentSelectors: Map<String, String> = emptyMap(),
+    val href: String = "",
 )
 
 private fun canProceedToNextStep(
@@ -1197,51 +1671,129 @@ private fun canProceedToNextStep(
     config: SelectorConfig,
 ): Boolean {
     return when (step) {
-        SelectorWizardStep.TRENDING -> true // Navigation step
-        SelectorWizardStep.NOVEL_CARD -> selectedElements.size >= 2 // Cover + Title (essential!)
-        SelectorWizardStep.TRENDING_NOVELS -> selectedElements.size >= 1
-        SelectorWizardStep.NEW_NOVELS_SECTION -> true
-        SelectorWizardStep.NEW_NOVELS -> selectedElements.size >= 1
-        SelectorWizardStep.SEARCH -> true // Optional - can skip
-        SelectorWizardStep.SEARCH_URL_PATTERN -> true // Optional - can skip (removed keyword requirement)
-        SelectorWizardStep.PAGINATION -> true // Optional - can skip
-        SelectorWizardStep.NOVEL_PAGE -> true // Navigation step
-        SelectorWizardStep.NOVEL_DETAILS -> selectedElements.size >= 1
-        // Fixed: Allow proceeding with at least 1 chapter selected (was requiring 3)
+        SelectorWizardStep.POPULAR_LIST -> selectedElements.size >= 2 // Cover + Title
+        // Optional: by default latest reuses the popular card layout, so no taps are required —
+        // only the latest page URL (captured on Next) is needed.
+        SelectorWizardStep.LATEST_LIST -> true
+        SelectorWizardStep.SEARCH -> true // Optional
+        SelectorWizardStep.NOVEL_DETAILS -> selectedElements.isNotEmpty()
+        // Required: the separate chapter-list page can't be reached without this link.
+        SelectorWizardStep.CHAPTER_INDEX_LINK -> selectedElements.isNotEmpty()
+        // Need the first and last chapter to derive the numeric URL pattern + range.
+        SelectorWizardStep.CHAPTER_RANGE -> selectedElements.size >= 2 || config.chapterUrlPattern.isNotEmpty()
         SelectorWizardStep.CHAPTER_LIST -> selectedElements.isNotEmpty() || config.chapterItems.isNotEmpty()
-        SelectorWizardStep.CHAPTER_PAGE -> true // Navigation step
-        // Fixed: Check both current selections AND saved config for chapter content
         SelectorWizardStep.CHAPTER_CONTENT -> selectedElements.isNotEmpty() ||
             config.chapterContentSelector.isNotEmpty()
-        SelectorWizardStep.COMPLETE -> true
+        // Pagination / date steps are all optional.
+        SelectorWizardStep.POPULAR_PAGINATION,
+        SelectorWizardStep.LATEST_PAGINATION,
+        SelectorWizardStep.SEARCH_PAGINATION,
+        SelectorWizardStep.CHAPTER_LIST_PAGINATION,
+        SelectorWizardStep.CONTENT_PAGINATION,
+        SelectorWizardStep.CHAPTER_DATE,
+        SelectorWizardStep.REVIEW,
+        -> true
     }
+}
+
+/**
+ * The wizard captures document-unique selectors (e.g. `div.list > div.card > a.title`), but the
+ * source parses title/cover/link relative to each list item. Strip the list-container prefix so the
+ * selector resolves inside a card; fall back to the trailing segment when there's no shared prefix.
+ */
+private fun relativize(full: String, listSel: String): String {
+    if (full.isBlank()) return ""
+    if (listSel.isNotBlank()) {
+        // Exact prefix: strip the whole card path, keep the full descendant path.
+        if (full.startsWith("$listSel > ")) return full.removePrefix("$listSel > ")
+        // The card selector was generalized (positional bits stripped) so it may not prefix-match
+        // the picked path verbatim. Cut at the card's last segment wherever it appears, keeping the
+        // intermediate descendant path rather than collapsing to just the trailing element.
+        val cardLast = listSel.substringAfterLast(" > ")
+        val marker = "$cardLast > "
+        val idx = full.lastIndexOf(marker)
+        if (idx >= 0) return full.substring(idx + marker.length)
+    }
+    return full.substringAfterLast(" > ")
+}
+
+/**
+ * From the first and last chapter URLs, derive a numeric pattern ({n} at the chapter number) plus
+ * both numbers. Uses the LAST digit run as the chapter number (robust to a novel id earlier in the
+ * path). Returns (relativePattern, firstNumber, lastNumber) or null.
+ */
+private fun deriveNumericPattern(url1: String, url2: String, baseUrl: String): Triple<String, Int, Int>? {
+    if (url1.isBlank() || url2.isBlank()) return null
+    val rx = Regex("""\d+""")
+    val m1 = rx.findAll(url1).lastOrNull() ?: return null
+    val m2 = rx.findAll(url2).lastOrNull() ?: return null
+    val n1 = m1.value.toIntOrNull() ?: return null
+    val n2 = m2.value.toIntOrNull() ?: return null
+    if (n1 == n2) return null
+    val patternAbs = url1.substring(0, m1.range.first) + "{n}" + url1.substring(m1.range.last + 1)
+    val base = baseUrl.trimEnd('/')
+    val pattern = if (patternAbs.startsWith(base)) patternAbs.removePrefix(base) else patternAbs
+    return Triple(pattern, n1, n2)
+}
+
+private fun stripPositional(selector: String): String =
+    selector.replace(Regex(""":nth-of-type\(\d+\)"""), "").replace(Regex(""":nth-child\(\d+\)"""), "")
+
+/**
+ * Derive the repeating list-item (card) selector from the tapped elements. Prefers the common path
+ * prefix; if the unique selectors share none, falls back to a common closest container (li/div/a)
+ * reported by the JS, generalized so it matches every card rather than one.
+ */
+private fun deriveListSelector(elements: List<SelectedElement>): String {
+    val prefix = findCommonSelector(elements)
+    if (prefix.isNotBlank()) return stripPositional(prefix)
+    for (tag in listOf("li", "div", "a")) {
+        val vals = elements.mapNotNull { it.parentSelectors[tag]?.ifBlank { null } }
+        if (vals.size == elements.size && vals.distinct().size == 1) return stripPositional(vals.first())
+    }
+    return elements.firstOrNull()?.selector.orEmpty()
 }
 
 private fun saveSelectionsForStep(
     step: SelectorWizardStep,
     selectedElements: List<SelectedElement>,
     config: SelectorConfig,
+    detectedListSelector: String? = null,
 ) {
     when (step) {
-        SelectorWizardStep.TRENDING_NOVELS -> {
+        SelectorWizardStep.POPULAR_LIST -> {
+            // First tap = cover image, second = title/link. List = repeating item selector (DOM-
+            // detected when available); cover/title stored RELATIVE to it so the source resolves
+            // them per item.
             config.trendingNovels.clear()
             config.trendingNovels.addAll(selectedElements.map { it.selector })
-            // Generate a common selector from selected elements
             if (selectedElements.isNotEmpty()) {
-                config.trendingSelector = findCommonSelector(selectedElements)
+                val listSel = detectedListSelector?.ifBlank { null } ?: deriveListSelector(selectedElements)
+                config.trendingSelector = listSel
+                selectedElements.getOrNull(0)?.let { config.novelCoverSelector = relativize(it.selector, listSel) }
+                selectedElements.getOrNull(1)?.let { config.novelTitleSelector = relativize(it.selector, listSel) }
             }
         }
-        SelectorWizardStep.NEW_NOVELS -> {
+        SelectorWizardStep.LATEST_LIST -> {
             config.newNovels.clear()
             config.newNovels.addAll(selectedElements.map { it.selector })
             if (selectedElements.isNotEmpty()) {
-                config.newNovelsSelector = findCommonSelector(selectedElements)
+                config.newNovelsSelector = detectedListSelector?.ifBlank { null }
+                    ?: deriveListSelector(selectedElements)
+            } else {
+                // No taps: reuse the popular card layout so latest still works (just needs the URL).
+                config.newNovelsSelector = config.trendingSelector
             }
         }
-        SelectorWizardStep.NOVEL_CARD -> {
-            // Expect cover first, then title
-            selectedElements.getOrNull(0)?.let { config.novelCoverSelector = it.selector }
-            selectedElements.getOrNull(1)?.let { config.novelTitleSelector = it.selector }
+        SelectorWizardStep.CHAPTER_LIST_PAGINATION -> {
+            selectedElements.firstOrNull()?.let { config.chapterListPaginationSelector = it.selector }
+        }
+        SelectorWizardStep.CONTENT_PAGINATION -> {
+            selectedElements.firstOrNull()?.let { config.contentPaginationSelector = it.selector }
+        }
+        SelectorWizardStep.CHAPTER_INDEX_LINK -> {
+            // On the details page; stored as a document selector (resolved against the details doc).
+            selectedElements.firstOrNull()?.let { config.chapterIndexLinkSelector = it.selector }
         }
         SelectorWizardStep.NOVEL_DETAILS -> {
             selectedElements.forEachIndexed { index, element ->
@@ -1257,13 +1809,42 @@ private fun saveSelectionsForStep(
             config.chapterItems.clear()
             config.chapterItems.addAll(selectedElements.map { it.selector })
             if (selectedElements.isNotEmpty()) {
-                config.chapterListSelector = findCommonSelector(selectedElements)
+                val listSel = detectedListSelector?.ifBlank { null } ?: deriveListSelector(selectedElements)
+                config.chapterListSelector = listSel
+                // Chapter link relative to the list item (usually "a"); blank means "first <a>".
+                config.chapterLinkSelector = relativize(selectedElements.first().selector, listSel)
+            }
+        }
+        SelectorWizardStep.CHAPTER_DATE -> {
+            selectedElements.firstOrNull()?.let {
+                config.chapterDateSelector = relativize(it.selector, config.chapterListSelector)
+            }
+        }
+        SelectorWizardStep.CHAPTER_RANGE -> {
+            // First + last chapter hrefs → numeric URL pattern + range. Optional 3rd pick = an
+            // element holding the total chapter count (overrides the last number).
+            val first = selectedElements.getOrNull(0)?.href.orEmpty()
+            val last = selectedElements.getOrNull(1)?.href.orEmpty()
+            deriveNumericPattern(first, last, config.baseUrl)?.let { (pattern, n1, n2) ->
+                config.chapterUrlPattern = pattern
+                config.chapterFirstNumber = minOf(n1, n2)
+                config.chapterLastNumber = maxOf(n1, n2)
+            }
+            selectedElements.getOrNull(2)?.let {
+                config.chapterCountSelector = it.selector
+                config.chapterLastNumber = null // count element is authoritative
             }
         }
         SelectorWizardStep.CHAPTER_CONTENT -> {
             selectedElements.firstOrNull()?.let { config.chapterContentSelector = it.selector }
         }
-        else -> { /* Navigation steps, no selections to save */ }
+        // Listing pagination (page-2 URL) is captured in onNext; these have no element selection.
+        SelectorWizardStep.POPULAR_PAGINATION,
+        SelectorWizardStep.LATEST_PAGINATION,
+        SelectorWizardStep.SEARCH_PAGINATION,
+        SelectorWizardStep.SEARCH,
+        SelectorWizardStep.REVIEW,
+        -> { /* No element selections */ }
     }
 }
 
@@ -1271,7 +1852,6 @@ private fun findCommonSelector(elements: List<SelectedElement>): String {
     if (elements.isEmpty()) return ""
     if (elements.size == 1) return elements.first().selector
 
-    // Find common parent path
     val selectors = elements.map { it.selector }
     val parts = selectors.map { it.split(" > ", " ").toMutableList() }
 
@@ -1280,163 +1860,119 @@ private fun findCommonSelector(elements: List<SelectedElement>): String {
 
     for (i in 0 until minLength) {
         val part = parts.first()[i]
-        if (parts.all { it[i] == part }) {
-            commonParts.add(part)
-        } else {
-            break
-        }
+        if (parts.all { it[i] == part }) commonParts.add(part) else break
     }
 
     return commonParts.joinToString(" > ")
 }
 
 /**
- * Pattern Library Dialog - shows selector suggestions based on detected site framework
+ * Dynamic search probe dialog. The user types a word to search for; after they perform the
+ * search on the site, the resulting URL is captured and turned into a {query} pattern.
  */
 @Composable
-private fun PatternLibraryDialog(
-    framework: SitePatternLibrary.SiteFramework,
-    currentStep: SelectorWizardStep,
-    onSelectPattern: (String) -> Unit,
-    onApplySelector: (String) -> Unit,
+private fun SearchProbeDialog(
+    initialQuery: String,
+    onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
-    testResult: String? = null,
 ) {
-    val suggestions = SitePatternLibrary.getSuggestedSelectors(framework, currentStep)
+    var query by remember { mutableStateOf(initialQuery) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
+        title = { Text(stringResource(TDMR.strings.selector_search_probe_title)) },
+        text = {
             Column {
-                Text(stringResource(TDMR.strings.custom_selector_pattern_library))
                 Text(
-                    text = framework.displayName,
+                    text = stringResource(TDMR.strings.selector_search_probe_message),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text(stringResource(TDMR.strings.selector_search_probe_label)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
                 )
             }
         },
+        confirmButton = {
+            Button(onClick = { onConfirm(query.trim()) }, enabled = query.isNotBlank()) {
+                Text(stringResource(MR.strings.action_ok))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(MR.strings.action_cancel))
+            }
+        },
+    )
+}
+
+/**
+ * Shows the result of running the configured source (or one section of it) through a live test.
+ * Each step renders its parsed sample data so the user sees what the selectors actually returned.
+ */
+@Composable
+private fun TestResultDialog(
+    result: SourceTestResult,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(TDMR.strings.selector_test_results)) },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
             ) {
-                if (suggestions.isEmpty()) {
-                    Text(
-                        text = stringResource(TDMR.strings.selector_no_patterns),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    Text(
-                        text = stringResource(
-                            TDMR.strings.selector_suggested_format,
-                            stringResource(currentStep.titleRes),
-                        ),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Show test result if available
-                    testResult?.let { result ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                            ),
-                        ) {
+                result.steps.forEach { (step, stepResult) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Icon(
+                            imageVector = if (stepResult.success) Icons.Filled.CheckCircle else Icons.Outlined.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp).padding(top = 2.dp),
+                            tint = if (stepResult.success) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = result,
-                                modifier = Modifier.padding(8.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
+                                text = step.replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
                             )
-                        }
-                    }
-
-                    suggestions
-                        .sortedByDescending { it.priority }
-                        .forEach { preset ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                ),
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp),
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(
-                                            text = preset.name,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Medium,
-                                        )
-                                        Row {
-                                            TextButton(
-                                                onClick = { onSelectPattern(preset.selector) },
-                                            ) {
-                                                Text(stringResource(TDMR.strings.custom_selector_test))
-                                            }
-                                            TextButton(
-                                                onClick = { onApplySelector(preset.selector) },
-                                            ) {
-                                                Text(stringResource(TDMR.strings.custom_selector_use))
-                                            }
-                                        }
-                                    }
-                                    Text(
-                                        text = preset.selector,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                    Text(
-                                        text = preset.description,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                            Text(
+                                text = stepResult.message,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            stepResult.data?.forEach { (k, v) ->
+                                Text(
+                                    text = "$k: $v",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
-                }
-
-                // Show all frameworks option
-                Spacer(modifier = Modifier.height(16.dp))
-                Divider()
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = stringResource(TDMR.strings.selector_available_frameworks),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-
-                SitePatternLibrary.getAvailableFrameworks().forEach { fw ->
-                    Text(
-                        text = "• ${fw.displayName}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (fw == framework) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
+                    }
+                    Divider()
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(MR.strings.action_close))
+            Button(onClick = onDismiss) {
+                Text(stringResource(MR.strings.action_ok))
             }
         },
     )
@@ -1459,42 +1995,57 @@ private val ELEMENT_SELECTOR_JS = """
     styleEl.textContent = '.element-selector-highlight { ' + highlightStyle + ' } .element-selector-hover { ' + hoverStyle + ' }';
     document.head.appendChild(styleEl);
 
-    // Generate CSS selector for element
+    function cleanClasses(element) {
+        if (!element.className || typeof element.className !== 'string') return [];
+        return element.className.trim().split(/\s+/)
+            .filter(c => c && !c.startsWith('element-selector') && !/^(active|selected|current|hover|on)${'$'}/i.test(c));
+    }
+
+    // Build the shortest selector segment that is unique among siblings.
+    function segmentFor(element) {
+        let tag = element.nodeName.toLowerCase();
+        let classes = cleanClasses(element);
+
+        // Prefer a single class that is unique within the parent.
+        if (element.parentNode) {
+            for (let c of classes) {
+                let sel = tag + '.' + CSS.escape(c);
+                let matches = Array.from(element.parentNode.children).filter(e => e.matches(sel));
+                if (matches.length === 1) return sel;
+            }
+        }
+
+        if (classes.length > 0) {
+            tag += '.' + classes.slice(0, 2).map(c => CSS.escape(c)).join('.');
+        }
+
+        // Disambiguate with nth-of-type only when still ambiguous.
+        if (element.parentNode) {
+            let sameTag = Array.from(element.parentNode.children).filter(e => e.nodeName === element.nodeName);
+            if (sameTag.length > 1 && classes.length === 0) {
+                tag += ':nth-of-type(' + (sameTag.indexOf(element) + 1) + ')';
+            }
+        }
+        return tag;
+    }
+
+    // Generate a CSS selector for an element, preferring stable id/class anchors and
+    // stopping early once the selector is document-unique.
     function getSelector(element) {
-        if (element.id) {
+        if (element.id && document.querySelectorAll('#' + CSS.escape(element.id)).length === 1) {
             return '#' + CSS.escape(element.id);
         }
 
         let path = [];
-        while (element && element.nodeType === Node.ELEMENT_NODE) {
-            let selector = element.nodeName.toLowerCase();
-
-            if (element.className) {
-                const classes = element.className.toString().trim().split(/\s+/)
-                    .filter(c => c && !c.startsWith('element-selector'))
-                    .slice(0, 2);
-                if (classes.length > 0) {
-                    selector += '.' + classes.map(c => CSS.escape(c)).join('.');
-                }
-            }
-
-            // Add nth-child if needed
-            if (element.parentNode) {
-                const siblings = Array.from(element.parentNode.children)
-                    .filter(e => e.nodeName === element.nodeName);
-                if (siblings.length > 1) {
-                    const index = siblings.indexOf(element) + 1;
-                    selector += ':nth-child(' + index + ')';
-                }
-            }
-
-            path.unshift(selector);
-            element = element.parentNode;
-
-            // Limit depth
-            if (path.length > 6) break;
+        while (element && element.nodeType === Node.ELEMENT_NODE && element.nodeName.toLowerCase() !== 'body') {
+            path.unshift(segmentFor(element));
+            let candidate = path.join(' > ');
+            try {
+                if (document.querySelectorAll(candidate).length === 1) return candidate;
+            } catch (e) { /* keep walking */ }
+            element = element.parentElement;
+            if (path.length > 5) break;
         }
-
         return path.join(' > ');
     }
 
@@ -1534,9 +2085,13 @@ private val ELEMENT_SELECTOR_JS = """
             div: closestDiv ? getSelector(closestDiv) : null
         };
 
+        // Resolve a link href (the element itself or its closest anchor), for numeric URL patterns.
+        const hrefEl = (element.tagName === 'A' && element.href) ? element : closestA;
+        const href = hrefEl ? hrefEl.href : '';
+
         // Notify Android
         if (window.AndroidSelector) {
-            window.AndroidSelector.onElementClick(selector, outerHtml, textContent, JSON.stringify(parentSelectors));
+            window.AndroidSelector.onElementClick(selector, outerHtml, textContent, JSON.stringify(parentSelectors), href);
         }
 
         // Highlight selected element
@@ -1592,74 +2147,254 @@ private val ELEMENT_SELECTOR_JS = """
         }
     };
 
+    // Auto-detect the main chapter text block: pick the element with the highest
+    // text density (most characters that are not inside links/nav).
+    window.autoDetectContent = function() {
+        let best = null;
+        let bestScore = 0;
+        // Score by paragraph text (chapter bodies are <p>-heavy), penalise link text.
+        document.querySelectorAll('div, section, article, main').forEach(el => {
+            let pText = Array.from(el.querySelectorAll('p')).reduce((n, p) => n + (p.innerText || '').length, 0);
+            let linkText = Array.from(el.querySelectorAll('a')).reduce((n, a) => n + (a.innerText || '').length, 0);
+            let score = pText - linkText;
+            if (score > bestScore && (el.innerText || '').length > 200) {
+                bestScore = score;
+                best = el;
+            }
+        });
+        if (!best) return '';
+        // Unwrap generic wrappers (e.g. #novel) down to the tightest element that still holds nearly
+        // all the text — avoids returning a huge page container.
+        let guard = 0;
+        while (best && guard++ < 6) {
+            let kids = Array.from(best.children).filter(c => c.nodeType === 1);
+            let bigKid = kids.find(k =>
+                (k.innerText || '').length >= (best.innerText || '').length * 0.85 &&
+                k.querySelectorAll('p').length > 0
+            );
+            if (bigKid) best = bigKid; else break;
+        }
+        best.classList.add('element-selector-highlight');
+        highlightedElements.push(best);
+        return getSelector(best);
+    };
+
+    // Auto-detect the chapter list container: the element holding the most
+    // same-host links that look like chapters.
+    window.autoDetectChapters = function() {
+        let host = location.hostname;
+        let best = null;
+        let bestCount = 0;
+        document.querySelectorAll('ul, ol, div, section, table').forEach(el => {
+            let links = Array.from(el.querySelectorAll(':scope > li a, :scope > a, :scope > tr a, :scope a'));
+            let chapterLinks = links.filter(a => {
+                try {
+                    return a.hostname === host && (a.innerText || '').trim().length > 0;
+                } catch (e) { return false; }
+            });
+            // Prefer the tightest container (fewest descendants per link).
+            if (chapterLinks.length > bestCount && chapterLinks.length >= 2) {
+                bestCount = chapterLinks.length;
+                best = el;
+            }
+        });
+        if (best) {
+            best.classList.add('element-selector-highlight');
+            highlightedElements.push(best);
+            return getSelector(best);
+        }
+        return '';
+    };
+
+    // Given the selectors of several picked items (e.g. 5 chapters or 2 cards), derive ONE
+    // repeating selector that matches them all and their siblings — even when the picks are
+    // unordered or in a table/list/div. Returns a generalized (no nth-of-type) selector.
+    window.detectItemSelector = function(selectorsJson) {
+        let sels;
+        try { sels = JSON.parse(selectorsJson); } catch (e) { return ''; }
+        let els = sels.map(s => { try { return document.querySelector(s); } catch (e) { return null; } })
+            .filter(Boolean);
+        if (els.length === 0) return '';
+
+        function genSelf(e) {
+            let t = e.nodeName.toLowerCase();
+            let c = cleanClasses(e);
+            return c.length ? t + '.' + CSS.escape(c[0]) : t;
+        }
+        function lca(nodes) {
+            let a = nodes[0];
+            while (a && !nodes.every(n => a.contains(n))) a = a.parentElement;
+            return a;
+        }
+        // Generalize an element to a selector that matches its repeating siblings (the card).
+        function generalizeRepeating(el) {
+            let sel = genSelf(el);
+            try { if (document.querySelectorAll(sel).length >= 2) return sel; } catch (e) {}
+            if (el.parentElement && el.parentElement.nodeName.toLowerCase() !== 'body') {
+                let scoped = genSelf(el.parentElement) + ' > ' + sel;
+                try { if (document.querySelectorAll(scoped).length >= 2) return scoped; } catch (e) {}
+            }
+            return sel;
+        }
+
+        // CASE 1: every pick is the same kind of element (e.g. several chapter links / titles) — the
+        // picks themselves ARE the repeating items.
+        let self0 = genSelf(els[0]);
+        if (els.length > 1 && els.every(e => genSelf(e) === self0)) {
+            try {
+                if (els.every(e => e.matches(self0))) {
+                    let count = document.querySelectorAll(self0).length;
+                    if (count > els.length * 6) {
+                        // Too broad (bare "a" catching nav): scope under the common ancestor.
+                        let anc = lca(els);
+                        if (anc && anc.nodeName.toLowerCase() !== 'body') {
+                            let scoped = genSelf(anc) + ' ' + self0;
+                            try { if (els.every(e => e.matches(scoped))) return scoped; } catch (e) {}
+                        }
+                    }
+                    return self0;
+                }
+            } catch (e) {}
+        }
+
+        // CASE 2: picks are different parts of ONE card (e.g. cover + title). The repeating unit is
+        // their common ancestor (the card); cover/title get resolved RELATIVE to it. Returning a
+        // descendant here was the bug that made link resolution grab the wrong <a>.
+        if (els.length > 1) {
+            let anc = lca(els);
+            if (anc && anc.nodeName.toLowerCase() !== 'body') {
+                return generalizeRepeating(anc);
+            }
+        }
+
+        // Single pick: itself if it repeats, else its repeating parent card.
+        if (els.length === 1) {
+            try { if (document.querySelectorAll(self0).length >= 2) return self0; } catch (e) {}
+            if (els[0].parentElement) return generalizeRepeating(els[0].parentElement);
+        }
+        return self0;
+    };
+
+    // Returns the parent selector + child elements of a selector, so the confirm dialog can walk up
+    // AND down the DOM when the tap wasn't precise.
+    window.relatives = function(sel) {
+        let el;
+        try { el = document.querySelector(sel); } catch (e) { el = null; }
+        if (!el) return JSON.stringify({ children: [] });
+        let parent = (el.parentElement && el.parentElement.nodeName.toLowerCase() !== 'body')
+            ? getSelector(el.parentElement) : '';
+        let children = [];
+        Array.from(el.children).forEach(c => {
+            if (c.nodeType === 1) {
+                let cls = (c.className && typeof c.className === 'string')
+                    ? '.' + c.className.trim().split(/\s+/)[0] : '';
+                let text = (c.innerText || '').trim().slice(0, 30);
+                children.push({ label: c.nodeName.toLowerCase() + cls + (text ? ': ' + text : ''), selector: getSelector(c) });
+            }
+        });
+        return JSON.stringify({ parent: parent, children: children });
+    };
+
+    // Run a step's selectors against the CURRENTLY LOADED page and return a preview, so the user
+    // verifies exactly what they see (no network round-trip). kind: list | chapters | details | content.
+    window.testStep = function(kind, cfgJson) {
+        let cfg;
+        try { cfg = JSON.parse(cfgJson); } catch (e) { return JSON.stringify({ ok: false, message: 'bad config' }); }
+
+        function hrefOf(el) {
+            if (!el) return '';
+            if (el.tagName === 'A' && el.href) return el.href;
+            let d = el.querySelector('a[href]'); if (d) return d.href;
+            let p = el.closest('a[href]'); if (p) return p.href;
+            return '';
+        }
+        function txtIn(scope, sel) {
+            if (!sel) return '';
+            try { let e = scope.querySelector(sel); return e ? (e.innerText || '').trim() : ''; } catch (x) { return ''; }
+        }
+        function q(sel) { try { return sel ? document.querySelectorAll(sel) : []; } catch (e) { return []; } }
+        // Mirror CustomNovelSource.resolveImageUrl so the preview matches what the source will parse.
+        function imgUrl(el) {
+            if (!el) return '';
+            const attrs = ['data-src','data-original','data-lazy-src','data-lazy','data-cfsrc','srcset','src','poster','content'];
+            for (const a of attrs) {
+                let v = el.getAttribute && el.getAttribute(a);
+                if (v) { v = v.trim().split(' ')[0].split(',')[0].trim(); if (v) { try { return new URL(v, document.baseURI).href; } catch (e) { return v; } } }
+            }
+            const style = el.getAttribute && el.getAttribute('style');
+            if (style) { const m = style.match(/url\(\s*['"]?([^'")]+)/); if (m) return m[1]; }
+            return el.src || '';
+        }
+        function imgIn(scope, sel) { try { return sel ? imgUrl(scope.querySelector(sel)) : ''; } catch (e) { return ''; } }
+
+        try {
+            if (kind === 'list' || kind === 'chapters') {
+                let items = q(cfg.list);
+                let rows = [];
+                for (let i = 0; i < items.length && i < 4; i++) {
+                    let el = items[i];
+                    rows.push({
+                        name: cfg.name ? txtIn(el, cfg.name) : (el.innerText || '').trim().slice(0, 80),
+                        url: hrefOf(el),
+                        date: cfg.date ? txtIn(el, cfg.date) : '',
+                        cover: cfg.cover ? imgIn(el, cfg.cover) : '',
+                    });
+                }
+                let withUrl = Array.from(items).map(hrefOf).filter(Boolean).length;
+                let next = (cfg.next != null && cfg.next !== '') ? !!document.querySelector(cfg.next) : null;
+                return JSON.stringify({ ok: items.length > 0 && withUrl > 0, count: items.length, withUrl: withUrl, rows: rows, next: next });
+            }
+            if (kind === 'details') {
+                let title = txtIn(document, cfg.title);
+                return JSON.stringify({
+                    ok: !!title,
+                    title: title,
+                    description: txtIn(document, cfg.description).slice(0, 200),
+                    cover: cfg.cover ? imgIn(document, cfg.cover) : '',
+                    genre: txtIn(document, cfg.genre),
+                });
+            }
+            if (kind === 'content') {
+                let e = cfg.primary ? document.querySelector(cfg.primary) : null;
+                let t = e ? (e.innerText || '').trim() : '';
+                return JSON.stringify({ ok: t.length > 0, length: t.length, preview: t.slice(0, 200) });
+            }
+        } catch (e) {
+            return JSON.stringify({ ok: false, message: String(e) });
+        }
+        return JSON.stringify({ ok: false, message: 'unknown kind' });
+    };
+
 })();
 """
 
 /**
- * Detect search URL pattern from current URL
- * Returns Pair(searchUrlPattern, detectedKeyword) or null if not detected
+ * Derive a {query} search URL template from a URL the user produced by searching for [userQuery].
+ * Handles both raw and percent-encoded occurrences (including '+' for spaces), regardless of which
+ * query parameter or path segment the site uses. Returns the template, or null if not found.
  */
-private fun detectSearchUrl(url: String, baseUrl: String): Pair<String, String>? {
-    val baseUri = try {
-        java.net.URI(baseUrl.trimEnd('/'))
-    } catch (e: Exception) {
-        null
-    }
-    val currentUri = try {
-        java.net.URI(url)
-    } catch (e: Exception) {
-        null
+private fun deriveSearchUrl(url: String, baseUrl: String, userQuery: String): String? {
+    if (userQuery.isBlank()) return null
+
+    val baseHost = runCatching { java.net.URI(baseUrl.trimEnd('/')).host }.getOrNull()
+    val currentHost = runCatching { java.net.URI(url).host }.getOrNull()
+    if (baseHost != null && currentHost != null && !currentHost.equals(baseHost, ignoreCase = true)) {
+        return null
     }
 
-    if (baseUri != null && currentUri != null && baseUri.host != null && currentUri.host != null) {
-        if (!currentUri.host.equals(baseUri.host, ignoreCase = true)) return null
-    }
+    val encoded = java.net.URLEncoder.encode(userQuery, "UTF-8")
+    val encodedSpaces = encoded.replace("+", "%20")
 
-    // Common search parameter patterns
-    val searchParams = listOf(
-        "s" to Regex("""[?&]s=([^&]+)"""),
-        "q" to Regex("""[?&]q=([^&]+)"""),
-        "query" to Regex("""[?&]query=([^&]+)"""),
-        "keyword" to Regex("""[?&]keyword=([^&]+)"""),
-        "search" to Regex("""[?&]search=([^&]+)"""),
-        "k" to Regex("""[?&]k=([^&]+)"""),
-        "term" to Regex("""[?&]term=([^&]+)"""),
-    )
+    // Try the most specific encodings first so we don't partially match.
+    val candidates = listOf(encoded, encodedSpaces, userQuery)
+        .distinct()
+        .filter { it.isNotBlank() }
 
-    // Try each query-param pattern
-    for ((param, regex) in searchParams) {
-        val match = regex.find(url)
-        if (match != null) {
-            val keyword = java.net.URLDecoder.decode(match.groupValues[1], "UTF-8")
-            if (keyword.isBlank()) continue
-
-            val searchUrlPattern = url
-                .replace(match.groupValues[1], "{query}")
-                .replace("&&", "&")
-                .replace("?&", "?")
-
-            return Pair(searchUrlPattern, keyword)
+    for (candidate in candidates) {
+        val idx = url.indexOf(candidate, ignoreCase = true)
+        if (idx >= 0) {
+            return url.substring(0, idx) + "{query}" + url.substring(idx + candidate.length)
         }
     }
-
-    // Check for path-based search patterns like /search/keyword or /s/keyword
-    val pathPatterns = listOf(
-        Regex("""(/search/)([^/?]+)"""),
-        Regex("""(/s/)([^/?]+)"""),
-        Regex("""(/find/)([^/?]+)"""),
-    )
-
-    for (regex in pathPatterns) {
-        val match = regex.find(url)
-        if (match != null) {
-            val keyword = java.net.URLDecoder.decode(match.groupValues[2], "UTF-8")
-            if (keyword.isBlank()) continue
-            val searchUrlPattern = url
-                .replace(match.groupValues[2], "{query}")
-
-            return Pair(searchUrlPattern, keyword)
-        }
-    }
-
     return null
 }
