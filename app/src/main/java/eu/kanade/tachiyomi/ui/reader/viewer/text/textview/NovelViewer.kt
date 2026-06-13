@@ -838,6 +838,9 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
 
         if (preferences.novelInfiniteScroll.get()) {
             if (moveToLoadedNextChapterForTts(anchorChapterIndex)) {
+                // Free chapters well behind the playback head so a long unattended autoplay run
+                // doesn't keep every read chapter's views + precomputed text in memory.
+                trimReadChaptersForTts()
                 // For already-loaded chapters, text is ready — start immediately.
                 // For pre-fetched chapters, moveToLoadedNextChapterForTts sets pendingTtsAutoStart
                 // and fires setChapterContent; startTts() will be called once the chunks are ready.
@@ -1027,6 +1030,39 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         return true
     }
 
+    // Read chapters kept behind the TTS head for back-scroll; older ones unloaded to bound memory.
+    private val ttsKeepBehindChapters = 2
+
+    // Drops chapters far behind the TTS head and scrolls back their height so the read chapter
+    // doesn't jump. Autoplay only. Trimming shifts currentChapterIndex; next startTts re-derives it.
+    private fun trimReadChaptersForTts() {
+        if (!ttsController.isTtsAutoPlay) return
+        val removeCount = currentChapterIndex - ttsKeepBehindChapters
+        if (removeCount <= 0) return
+        val toRemove = loadedChapters.take(removeCount)
+        if (toRemove.isEmpty()) return
+
+        var removedHeight = 0
+        isRestoringScroll = true
+        toRemove.forEach { lc ->
+            lc.separatorView?.let { sep ->
+                removedHeight += sep.height
+                contentContainer.removeView(sep)
+            }
+            removedHeight += lc.headerView.height
+            contentContainer.removeView(lc.headerView)
+            removedHeight += lc.block.container.height
+            contentContainer.removeView(lc.block.container)
+        }
+        chapterQueue.removeFirstN(removeCount)
+        // Removed views were above the viewport; compensate so the read chapter stays put.
+        if (removedHeight > 0) scrollView.scrollBy(0, -removedHeight)
+        scrollView.post { isRestoringScroll = false }
+        logcat(LogPriority.DEBUG) {
+            "TTS: trimmed $removeCount read chapter(s), now ${loadedChapters.size} loaded, currentIndex=$currentChapterIndex"
+        }
+    }
+
     fun startTts() {
         ttsController.ensureInitialized()
         if (!ttsController.ttsInitialized) {
@@ -1054,6 +1090,18 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             chapterIndex = currentChapterIndex,
             chapterId = currentPage?.chapter?.chapter?.id ?: currentChapters?.currChapter?.chapter?.id,
         )
+
+        // Inf-scroll TTS reads in place, so the scroll listener that normally kicks the
+        // prefetch may never reach the load threshold (keep-in-view off, or a chapter shorter
+        // than the viewport). Start the prefetch when playback begins on the last loaded
+        // chapter so the next chapter is cached before onLastChunkDone hands off — otherwise
+        // the handoff stalls on a cold fetch and playback fails to advance. Idempotent: the
+        // prefetch no-ops unless handoffState is Idle.
+        if (preferences.novelInfiniteScroll.get() &&
+            currentChapterIndex == (loadedChapters.size - 1).coerceAtLeast(0)
+        ) {
+            preFetchNextChapterForTts()
+        }
     }
 
     fun stopTts() {
@@ -1838,6 +1886,26 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
     fun setProgressPercent(percent: Int) {
         val progress = percent.coerceIn(0, 100) / 100f
         setScrollProgress(progress)
+        // The scroll listener that drives infinite scroll can swallow a slider jump (grace
+        // period after chapter entry, or the chapter-changed early-return), so a drag to the
+        // end of the last loaded chapter would not load the next one. Re-check explicitly.
+        maybeLoadNextChapterFromSlider()
+    }
+
+    private fun maybeLoadNextChapterFromSlider() {
+        if (!preferences.novelInfiniteScroll.get()) return
+        if (ttsController.isTtsAutoPlay || isLoadingNext || isRestoringScroll) return
+        scrollView.post {
+            val onLastLoaded = currentChapterIndex == (loadedChapters.size - 1).coerceAtLeast(0)
+            if (!onLastLoaded) return@post
+            val autoLoadAt = preferences.novelAutoLoadNextChapterAt.get()
+            val effectiveThreshold = if (autoLoadAt > 0) autoLoadAt / 100f else 0.95f
+            val chapterProgress = calculateCurrentChapterProgress(scrollView.scrollY)
+            if (chapterProgress >= effectiveThreshold && !isLoadingNext) {
+                logcat(LogPriority.DEBUG) { "NovelViewer: slider jump hit threshold ($chapterProgress), loading next" }
+                loadNextChapterIfAvailable()
+            }
+        }
     }
 
     override fun moveToPage(page: ReaderPage) {
