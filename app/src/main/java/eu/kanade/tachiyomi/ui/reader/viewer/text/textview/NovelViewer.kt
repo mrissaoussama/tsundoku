@@ -1031,7 +1031,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
     }
 
     // Read chapters kept behind the TTS head for back-scroll; older ones unloaded to bound memory.
-    private val ttsKeepBehindChapters = 2
+    private val ttsKeepBehindChapters = 1
 
     // Drops chapters far behind the TTS head and scrolls back their height so the read chapter
     // doesn't jump. Autoplay only. Trimming shifts currentChapterIndex; next startTts re-derives it.
