@@ -1763,7 +1763,6 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
         if (loadedChapterIds.contains(nextId)) {
             logcat(LogPriority.DEBUG) { "NovelWebViewViewer: next chapter $nextId already loaded, skipping" }
-            // Already in the DOM — advancing TTS onto it is still valid.
             return true
         }
 
