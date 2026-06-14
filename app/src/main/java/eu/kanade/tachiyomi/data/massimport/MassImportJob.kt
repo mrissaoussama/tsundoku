@@ -36,7 +36,9 @@ import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import logcat.LogPriority
@@ -98,6 +100,10 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
     private var lastNotificationTime = 0L
     private var lastNotifiedProgress = -1
     private var lastNotificationStatus: String? = null
+
+    // Serializes the memory-pressure back-off so concurrent fetch coroutines don't all spin
+    // (and previously all fire System.gc()) at once.
+    private val memoryPressureMutex = Mutex()
 
     private val notificationBuilder = context.notificationBuilder(Notifications.CHANNEL_MASS_IMPORT) {
         setSmallIcon(android.R.drawable.stat_sys_download)
@@ -1087,33 +1093,36 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
 
     private suspend fun waitForMemoryPressure() {
         val runtime = Runtime.getRuntime()
-        // Block new fetches until the heap drops below threshold (a single GC rarely reclaims
-        // enough); bounded so a heap that never recovers can't stall the import forever.
-        var iteration = 0
-        while (iteration < MAX_MEMORY_WAIT_ITERATIONS) {
+
+        fun pressured(): Boolean {
             val maxMem = runtime.maxMemory().coerceAtMost(MAX_HEAP_BYTES)
             val usedMem = runtime.totalMemory() - runtime.freeMemory()
             val freeMem = maxMem - usedMem
-
             val exceedsThreshold = usedMem.toDouble() / maxMem > MEMORY_PRESSURE_THRESHOLD
             val lowFreeMemory = freeMem < MIN_FREE_MEMORY_BYTES
-            if (!exceedsThreshold && !lowFreeMemory) return
-
-            val usagePercent = (usedMem.toDouble() / maxMem * 100).toInt()
-            val reason = if (exceedsThreshold) "threshold" else "low free"
-            logcat(LogPriority.WARN) {
-                "MassImport: Memory pressure $usagePercent% ($reason): ${usedMem / 1024 / 1024}MB / " +
-                    "${maxMem / 1024 / 1024}MB, waiting ${iteration + 1}/$MAX_MEMORY_WAIT_ITERATIONS..."
-            }
-            try {
-                System.gc()
-            } catch (_: Throwable) {
-            }
-            delay(GC_DELAY_MS)
-            iteration++
+            return exceedsThreshold || lowFreeMemory
         }
-        logcat(LogPriority.WARN) {
-            "MassImport: heap still pressured after ${MAX_MEMORY_WAIT_ITERATIONS} waits; proceeding to avoid deadlock"
+
+        if (!pressured()) return
+
+         memoryPressureMutex.withLock {
+            if (!pressured()) return
+            var iteration = 0
+            while (iteration < MAX_MEMORY_WAIT_ITERATIONS) {
+                if (!pressured()) return
+                val maxMem = runtime.maxMemory().coerceAtMost(MAX_HEAP_BYTES)
+                val usedMem = runtime.totalMemory() - runtime.freeMemory()
+                val usagePercent = (usedMem.toDouble() / maxMem * 100).toInt()
+                logcat(LogPriority.WARN) {
+                    "MassImport: Memory pressure $usagePercent%: ${usedMem / 1024 / 1024}MB / " +
+                        "${maxMem / 1024 / 1024}MB, waiting ${iteration + 1}/$MAX_MEMORY_WAIT_ITERATIONS..."
+                }
+                delay(GC_DELAY_MS)
+                iteration++
+            }
+            logcat(LogPriority.WARN) {
+                "MassImport: heap still pressured after $MAX_MEMORY_WAIT_ITERATIONS waits; proceeding to avoid deadlock"
+            }
         }
     }
 
