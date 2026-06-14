@@ -718,7 +718,7 @@ class CustomNovelSource(
             author = document.selectText(selectors.author)
             artist = document.selectText(selectors.artist)
             description = document.selectFormattedText(selectors.description)
-            genre = document.selectText(selectors.genre)
+            genre = document.selectJoinedText(selectors.genre)
             thumbnail_url = document.selectImageUrl(selectors.cover)
             status = parseStatus(document.selectText(selectors.status))
         }
@@ -831,24 +831,7 @@ class CustomNovelSource(
         // Guard against empty selector (Jsoup throws on empty string)
         if (selectors.primary.isBlank()) return ""
 
-        var html = fetchContentHtml(pageUrl, selectors) ?: return ""
-
-        // Follow paginated chapters by appending each subsequent page's content.
-        if (!selectors.nextPageSelector.isNullOrBlank()) {
-            var nextUrl: String? = pageUrl
-            var guard = 0
-            val visited = mutableSetOf(pageUrl)
-            while (guard++ < MAX_CHAPTER_PAGES) {
-                val doc = client.newCall(GET(nextUrl!!, headers)).awaitSuccess().asJsoup()
-                val next = doc.selectFirst(selectors.nextPageSelector)?.absUrl("href")?.ifBlank { null }
-                if (next == null || next == nextUrl || !visited.add(next)) break
-                val pageHtml = fetchContentHtml(next, selectors) ?: break
-                html += "<br/>" + pageHtml
-                nextUrl = next
-            }
-        }
-
-        return html
+        return fetchContentHtml(pageUrl, selectors) ?: ""
     }
 
     private suspend fun fetchContentHtml(url: String, selectors: ContentSelectors): String? {
@@ -990,6 +973,17 @@ class CustomNovelSource(
     private fun Document.selectText(selector: String?): String? {
         if (selector.isNullOrBlank()) return null
         return selectFirst(selector)?.text()?.trim()?.ifBlank { null }
+    }
+
+    // Joins the text of EVERY element matching [selector] (deduped, comma-separated). Used for genre
+    // so a selector group like "a.tag1, a.tag2" (or a multi-match ".genre a") merges into one string.
+    private fun Document.selectJoinedText(selector: String?): String? {
+        if (selector.isNullOrBlank()) return null
+        return select(selector)
+            .mapNotNull { it.text().trim().ifBlank { null } }
+            .distinct()
+            .joinToString(", ")
+            .ifBlank { null }
     }
 
     private fun Element.selectText(selector: String?): String? {
@@ -1342,8 +1336,6 @@ data class ContentSelectors(
     val primary: String,
     val fallbacks: List<String>? = null,
     val removeSelectors: List<String>? = null,
-    // Optional selector pointing to the "next page" link when a single chapter is paginated.
-    val nextPageSelector: String? = null,
     // When true (default), strip common boilerplate (scripts, ads, share widgets,
     // next/prev chapter links, empty nodes) in addition to removeSelectors.
     val removeBoilerplate: Boolean = true,

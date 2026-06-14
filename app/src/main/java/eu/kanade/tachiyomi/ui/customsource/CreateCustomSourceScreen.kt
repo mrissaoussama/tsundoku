@@ -430,11 +430,8 @@ class WizardSetupScreen(
                         features.chapterListPagination,
                     ) { features = features.copy(chapterListPagination = it) }
                 }
-                // (Chapter-text multi-page toggle removed — rarely useful; set it in the manual editor.)
-                FeatureToggle(
-                    TDMR.strings.selector_feature_content_pagination,
-                    features.contentPagination,
-                ) { features = features.copy(contentPagination = it) }
+                // Content pagination (a single chapter split across pages) is rarely useful for
+                // novels — set it in the manual editor when actually needed.
 
                 if (!features.hasPopular && !features.hasLatest) {
                     Text(
@@ -589,6 +586,7 @@ class ElementSelectorVoyagerScreen(
         }
 
         ElementSelectorScreen(
+            screenModel = screenModel,
             initialUrl = initialUrl,
             initialSourceName = initialSourceName,
             features = features,

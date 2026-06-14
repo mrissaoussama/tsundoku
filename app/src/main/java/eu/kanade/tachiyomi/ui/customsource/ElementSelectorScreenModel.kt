@@ -1,5 +1,8 @@
 package eu.kanade.tachiyomi.ui.customsource
 
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import eu.kanade.tachiyomi.source.custom.ChapterSelectors
@@ -29,6 +32,19 @@ class ElementSelectorScreenModel(
 ) : StateScreenModel<ElementSelectorScreenModel.State>(State()) {
 
     private val json = Json { prettyPrint = true }
+
+    // ---- Wizard UI state, held here (not in the composable) so it survives Activity recreation
+    // on rotation — the same reason the rest of the app keeps screen state in ScreenModels. The
+    // composable delegates to these directly. ----
+    val wizardConfigState = mutableStateOf(
+        SelectorConfig(sourceName = initialSourceName, baseUrl = initialUrl),
+    )
+    val currentStepState = mutableStateOf<SelectorWizardStep?>(null)
+    val currentUrlState = mutableStateOf(initialUrl)
+    val searchProbeQueryState = mutableStateOf("")
+    val searchStatusState = mutableStateOf<String?>(null)
+    val selectionsByStep = mutableStateMapOf<SelectorWizardStep, SnapshotStateList<SelectedElement>>()
+    val detectedListState = mutableStateMapOf<SelectorWizardStep, String>()
 
     data class State(
         val isLoading: Boolean = false,
@@ -192,7 +208,6 @@ class ElementSelectorScreenModel(
                 ),
                 content = ContentSelectors(
                     primary = selectorConfig.chapterContentSelector,
-                    nextPageSelector = selectorConfig.contentPaginationSelector.ifBlank { null },
                     // Boilerplate stripping is handled by the source's built-in cleanup pipeline.
                     removeBoilerplate = true,
                 ),

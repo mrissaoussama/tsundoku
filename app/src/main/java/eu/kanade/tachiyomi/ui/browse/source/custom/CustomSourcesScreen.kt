@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -960,12 +961,29 @@ class CustomSourceEditorScreen(
         var contentFallbacksSelector by remember {
             mutableStateOf(initialConfig?.selectors?.content?.fallbacks?.joinToString(", ") ?: "")
         }
-        var contentNextPageSelector by remember {
-            mutableStateOf(initialConfig?.selectors?.content?.nextPageSelector ?: "")
-        }
 
         var isSaving by remember { mutableStateOf(false) }
         var errorMessage by remember { mutableStateOf<String?>(null) }
+
+        // WebView element-picker: opened from the trailing icon next to a selector field. pickerTarget
+        // holds the setter for the field being edited; it's non-null while the picker is shown.
+        var pickerTarget by remember { mutableStateOf<((String) -> Unit)?>(null) }
+        var pickerUrl by remember { mutableStateOf("") }
+        var pickerLabel by remember { mutableStateOf("") }
+        fun firstPageUrl(u: String): String =
+            u.replace("{page}", "1").replace("{query}", "a").ifBlank { baseUrl }
+        fun pickTrailing(url: String, fieldLabel: String, set: (String) -> Unit): @Composable () -> Unit = {
+            IconButton(onClick = {
+                pickerUrl = url.ifBlank { baseUrl }
+                pickerLabel = fieldLabel
+                pickerTarget = set
+            }) {
+                Icon(
+                    Icons.Outlined.Language,
+                    contentDescription = stringResource(TDMR.strings.custom_source_pick_from_site),
+                )
+            }
+        }
 
         Scaffold(
             topBar = {
@@ -1221,8 +1239,19 @@ class CustomSourceEditorScreen(
                     }
                 }
 
+                // Manga (non-novel) sources can't be built from CSS selectors here — they must
+                // delegate to an installed extension. Force the user toward an extension base.
+                if (!isNovel && selectedBasedOnSourceId == null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(TDMR.strings.custom_source_manga_requires_base),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
                 // Sections — choose what the source has; hides the inputs you don't need.
-                if (selectedBasedOnSourceId == null) {
+                if (selectedBasedOnSourceId == null && isNovel) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = stringResource(TDMR.strings.selector_features_title),
@@ -1267,7 +1296,7 @@ class CustomSourceEditorScreen(
                 }
 
                 // URLs Section (only for manual/selector-based sources)
-                if (selectedBasedOnSourceId == null) {
+                if (selectedBasedOnSourceId == null && isNovel) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = stringResource(TDMR.strings.custom_source_url_patterns),
@@ -1330,6 +1359,7 @@ class CustomSourceEditorScreen(
                         value = popularListSelector,
                         onValueChange = { popularListSelector = it },
                         label = { Text(stringResource(TDMR.strings.custom_source_list_item_selector)) },
+                        trailingIcon = pickTrailing(firstPageUrl(popularUrl), stringResource(TDMR.strings.custom_source_list_item_selector)) { popularListSelector = it },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(stringResource(TDMR.strings.custom_source_list_item_hint)) },
                     )
@@ -1337,12 +1367,14 @@ class CustomSourceEditorScreen(
                         value = popularTitleSelector,
                         onValueChange = { popularTitleSelector = it },
                         label = { Text(stringResource(TDMR.strings.custom_source_title_selector)) },
+                        trailingIcon = pickTrailing(firstPageUrl(popularUrl), stringResource(TDMR.strings.custom_source_title_selector)) { popularTitleSelector = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                         value = popularCoverSelector,
                         onValueChange = { popularCoverSelector = it },
                         label = { Text(stringResource(TDMR.strings.custom_source_cover_selector)) },
+                        trailingIcon = pickTrailing(firstPageUrl(popularUrl), stringResource(TDMR.strings.custom_source_cover_selector)) { popularCoverSelector = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     // Pagination is per-section (popular / latest / search can differ).
@@ -1351,6 +1383,7 @@ class CustomSourceEditorScreen(
                             value = popularNextPageSelector,
                             onValueChange = { popularNextPageSelector = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_pagination_popular)) },
+                            trailingIcon = pickTrailing(firstPageUrl(popularUrl), stringResource(TDMR.strings.custom_source_pagination_popular)) { popularNextPageSelector = it },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text(stringResource(TDMR.strings.custom_source_pagination_selector_hint)) },
                         )
@@ -1360,6 +1393,7 @@ class CustomSourceEditorScreen(
                             value = latestNextPageSelector,
                             onValueChange = { latestNextPageSelector = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_pagination_latest)) },
+                            trailingIcon = pickTrailing(firstPageUrl(latestUrl), stringResource(TDMR.strings.custom_source_pagination_latest)) { latestNextPageSelector = it },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text(stringResource(TDMR.strings.custom_source_pagination_selector_hint)) },
                         )
@@ -1369,6 +1403,7 @@ class CustomSourceEditorScreen(
                             value = searchNextPageSelector,
                             onValueChange = { searchNextPageSelector = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_pagination_search)) },
+                            trailingIcon = pickTrailing(firstPageUrl(searchUrl), stringResource(TDMR.strings.custom_source_pagination_search)) { searchNextPageSelector = it },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text(stringResource(TDMR.strings.custom_source_pagination_selector_hint)) },
                         )
@@ -1382,36 +1417,42 @@ class CustomSourceEditorScreen(
                         value = detailsTitleSelector,
                         onValueChange = { detailsTitleSelector = it },
                         label = { Text(stringResource(TDMR.strings.custom_source_title_selector_required)) },
+                        trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_title_selector_required)) { detailsTitleSelector = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                         value = detailsDescriptionSelector,
                         onValueChange = { detailsDescriptionSelector = it },
                         label = { Text(stringResource(TDMR.strings.custom_source_description_selector)) },
+                        trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_description_selector)) { detailsDescriptionSelector = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                         value = detailsCoverSelector,
                         onValueChange = { detailsCoverSelector = it },
                         label = { Text(stringResource(TDMR.strings.custom_source_details_cover_selector)) },
+                        trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_details_cover_selector)) { detailsCoverSelector = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                         value = detailsAuthorSelector,
                         onValueChange = { detailsAuthorSelector = it },
                         label = { Text(stringResource(TDMR.strings.custom_source_author_selector)) },
+                        trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_author_selector)) { detailsAuthorSelector = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                         value = detailsGenreSelector,
                         onValueChange = { detailsGenreSelector = it },
                         label = { Text(stringResource(TDMR.strings.custom_source_genre_selector)) },
+                        trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_genre_selector)) { detailsGenreSelector = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                         value = detailsStatusSelector,
                         onValueChange = { detailsStatusSelector = it },
                         label = { Text("Status selector") },
+                        trailingIcon = pickTrailing(baseUrl, "Status selector") { detailsStatusSelector = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
@@ -1441,6 +1482,7 @@ class CustomSourceEditorScreen(
                             value = chapterCountSelector,
                             onValueChange = { chapterCountSelector = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_chapter_count_selector)) },
+                            trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_chapter_count_selector)) { chapterCountSelector = it },
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1464,24 +1506,28 @@ class CustomSourceEditorScreen(
                             value = chaptersListSelector,
                             onValueChange = { chaptersListSelector = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_chapter_list_selector)) },
+                            trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_chapter_list_selector)) { chaptersListSelector = it },
                             modifier = Modifier.fillMaxWidth(),
                         )
                         OutlinedTextField(
                             value = chapterLinkSelector,
                             onValueChange = { chapterLinkSelector = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_chapter_link_selector)) },
+                            trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_chapter_link_selector)) { chapterLinkSelector = it },
                             modifier = Modifier.fillMaxWidth(),
                         )
                         OutlinedTextField(
                             value = chapterNameSelector,
                             onValueChange = { chapterNameSelector = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_chapter_name_selector)) },
+                            trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_chapter_name_selector)) { chapterNameSelector = it },
                             modifier = Modifier.fillMaxWidth(),
                         )
                         OutlinedTextField(
                             value = chapterDateSelector,
                             onValueChange = { chapterDateSelector = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_chapter_date_selector)) },
+                            trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_chapter_date_selector)) { chapterDateSelector = it },
                             modifier = Modifier.fillMaxWidth(),
                         )
                         if (features.chapterListPagination) {
@@ -1489,6 +1535,7 @@ class CustomSourceEditorScreen(
                                 value = chapterNextPageSelector,
                                 onValueChange = { chapterNextPageSelector = it },
                                 label = { Text(stringResource(TDMR.strings.custom_source_chapter_pagination_selector)) },
+                                trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_chapter_pagination_selector)) { chapterNextPageSelector = it },
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
@@ -1497,6 +1544,7 @@ class CustomSourceEditorScreen(
                                 value = chapterIndexLinkSelector,
                                 onValueChange = { chapterIndexLinkSelector = it },
                                 label = { Text(stringResource(TDMR.strings.custom_source_chapter_index_selector)) },
+                                trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_chapter_index_selector)) { chapterIndexLinkSelector = it },
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
@@ -1510,6 +1558,7 @@ class CustomSourceEditorScreen(
                         value = contentPrimarySelector,
                         onValueChange = { contentPrimarySelector = it },
                         label = { Text(stringResource(TDMR.strings.custom_source_content_selector)) },
+                        trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_content_selector)) { contentPrimarySelector = it },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text(stringResource(TDMR.strings.custom_source_content_selector_hint)) },
                     )
@@ -1517,12 +1566,7 @@ class CustomSourceEditorScreen(
                         value = contentFallbacksSelector,
                         onValueChange = { contentFallbacksSelector = it },
                         label = { Text(stringResource(TDMR.strings.custom_source_content_fallbacks)) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = contentNextPageSelector,
-                        onValueChange = { contentNextPageSelector = it },
-                        label = { Text(stringResource(TDMR.strings.custom_source_content_pagination_selector)) },
+                        trailingIcon = pickTrailing(baseUrl, stringResource(TDMR.strings.custom_source_content_fallbacks)) { contentFallbacksSelector = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } // end if (selectedBasedOnSourceId == null)
@@ -1555,7 +1599,7 @@ class CustomSourceEditorScreen(
                                 chaptersListSelector, chapterLinkSelector, chapterNameSelector,
                                 chapterDateSelector, chapterNextPageSelector, chapterIndexLinkSelector,
                                 chapterUrlPattern, chapterCountSelector, chapterFirstNumber, chapterLastNumber,
-                                contentPrimarySelector, contentFallbacksSelector, contentNextPageSelector,
+                                contentPrimarySelector, contentFallbacksSelector,
                                 sourceId, useCloudflare, reverseChapters, postSearch,
                                 selectedBasedOnSourceId, isNovel, language,
                             )
@@ -1578,6 +1622,7 @@ class CustomSourceEditorScreen(
                     enabled = !isSaving && name.isNotBlank() && baseUrl.isNotBlank() &&
                         (
                             selectedBasedOnSourceId != null || (
+                                isNovel &&
                                 (!features.hasPopular || (popularUrl.isNotBlank() && popularListSelector.isNotBlank())) &&
                                     (!features.hasSearch || searchUrl.isNotBlank()) &&
                                     (features.hasPopular || features.hasLatest) &&
@@ -1611,6 +1656,15 @@ class CustomSourceEditorScreen(
                     language = lang
                     showBaseSourcePicker = false
                 },
+            )
+        }
+
+        pickerTarget?.let { setter ->
+            eu.kanade.tachiyomi.ui.customsource.ElementPickerDialog(
+                initialUrl = pickerUrl.ifBlank { baseUrl },
+                label = pickerLabel,
+                onDismiss = { pickerTarget = null },
+                onPicked = { selector -> setter(selector) },
             )
         }
     }
@@ -1658,7 +1712,6 @@ class CustomSourceEditorScreen(
         chapterLastNumber: String,
         contentPrimarySelector: String,
         contentFallbacksSelector: String,
-        contentNextPageSelector: String,
         existingId: Long?,
         useCloudflare: Boolean,
         reverseChapters: Boolean,
@@ -1723,7 +1776,6 @@ class CustomSourceEditorScreen(
                     primary = contentPrimarySelector,
                     fallbacks = contentFallbacksSelector.split(",")
                         .map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { null },
-                    nextPageSelector = contentNextPageSelector.ifBlank { null },
                 ),
             ),
             useCloudflare = useCloudflare,
