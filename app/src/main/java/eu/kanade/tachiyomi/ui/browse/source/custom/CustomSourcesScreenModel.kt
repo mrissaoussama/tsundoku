@@ -150,6 +150,11 @@ class CustomSourcesScreenModel(
     }
 
     /**
+     * A hand-editable skeleton config users can copy and fill in.
+     */
+    fun blankTemplateJson(): String = customSourceManager.blankTemplateJson()
+
+    /**
      * Test a custom source
      */
     suspend fun testSource(sourceId: Long): SourceTestResult? {

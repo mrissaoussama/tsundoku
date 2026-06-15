@@ -14,6 +14,9 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 ### Added
 - Add advanced preference to prevent entries metadata from being overwritten [@mrissaoussama](https://github.com/mrissaoussama) [#271](https://github.com/tsundoku-otaku/tsundoku/pull/271)
 
+### Improved
+- Custom Source Overhaul [@mrissaoussama](https://github.com/mrissaoussama) [#273](https://github.com/tsundoku-otaku/tsundoku/pull/273)
+
 ### Fixed
 - Paginated library export to prevent potential OOM, added cancel to notif [@mrissaoussama](https://github.com/mrissaoussama) [#270](https://github.com/tsundoku-otaku/tsundoku/pull/270)
 - Correct import stats when app is restarted [@mrissaoussama](https://github.com/mrissaoussama) [#272](https://github.com/tsundoku-otaku/tsundoku/pull/272)

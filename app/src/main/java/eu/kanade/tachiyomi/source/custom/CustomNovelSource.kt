@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.source.custom
 
 import eu.kanade.tachiyomi.jsplugin.source.JsSource
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.awaitSuccess
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.isNovelSource
@@ -19,6 +20,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import tachiyomi.domain.source.service.SourceManager
@@ -297,6 +300,124 @@ private fun sanitizeCustomSourceFilename(name: String): String {
     return name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
 }
 
+// {page} is substituted on every page including page 1, so a template like "list/{page}" yields
+// list/1, list/2, … (sites that number page 1 in the path work). When a site's first page has no
+// page segment at all, the caller passes the verbatim page-1 URL (no {page}) for page 1 and the
+// {page} template only for page 2+.
+internal fun buildPagedUrlTemplate(template: String, baseUrl: String, page: Int): String {
+    return template
+        .replace("{baseUrl}", baseUrl)
+        .replace("{page}", page.toString())
+        .trimEnd('/', '?', '&')
+}
+
+internal fun buildPagedSearchUrlTemplate(template: String, baseUrl: String, query: String, page: Int): String {
+    return template
+        .replace("{baseUrl}", baseUrl)
+        .replace("{query}", java.net.URLEncoder.encode(query, "UTF-8"))
+        .replace("{page}", page.toString())
+        .trimEnd('/', '?', '&')
+}
+
+/**
+ * Maps a site's status text to an [SManga] status constant. [mapping] (substring -> one of
+ * ongoing/completed/hiatus/cancelled, case-insensitive) is consulted first so non-English sites
+ * can define their own words; the built-in English keywords are the fallback.
+ */
+internal fun parseCustomSourceStatus(status: String?, mapping: Map<String, String>? = null): Int {
+    if (status.isNullOrBlank()) return SManga.UNKNOWN
+    fun toConst(value: String): Int = when (value.trim().lowercase()) {
+        "ongoing", "publishing", "releasing" -> SManga.ONGOING
+        "completed", "complete", "finished" -> SManga.COMPLETED
+        "hiatus", "on_hiatus", "on hiatus", "paused" -> SManga.ON_HIATUS
+        "cancelled", "canceled", "dropped" -> SManga.CANCELLED
+        else -> SManga.UNKNOWN
+    }
+    mapping?.forEach { (needle, value) ->
+        if (needle.isNotBlank() && status.contains(needle, ignoreCase = true)) {
+            val mapped = toConst(value)
+            if (mapped != SManga.UNKNOWN) return mapped
+        }
+    }
+    return when {
+        status.contains("ongoing", ignoreCase = true) -> SManga.ONGOING
+        status.contains("completed", ignoreCase = true) -> SManga.COMPLETED
+        status.contains("hiatus", ignoreCase = true) -> SManga.ON_HIATUS
+        status.contains("cancelled", ignoreCase = true) || status.contains("canceled", ignoreCase = true) ->
+            SManga.CANCELLED
+        else -> SManga.UNKNOWN
+    }
+}
+
+// Lazy-load / non-<img> cover sources, tried in order before the plain src. Covers a div with a
+// CSS background-image, <img srcset>, the usual data-* lazy attributes, <video poster> and og:image.
+private val IMAGE_URL_ATTRS = listOf(
+    "data-src", "data-original", "data-lazy-src", "data-lazy", "data-cfsrc",
+    "data-echo", "data-srcset", "srcset", "src", "poster", "content",
+)
+
+/**
+ * Resolves a usable, absolute image URL from [element] (a cover image or its wrapper). Prefers the
+ * absolute form (`abs:`) of each candidate attribute so relative covers like `/img/x.jpg` are not
+ * returned bare, falls back to a `background-image:url(...)` style, and unwraps `srcset` to its
+ * first URL. Returns null when nothing usable is present.
+ */
+internal fun resolveImageUrl(element: Element): String? {
+    for (attr in IMAGE_URL_ATTRS) {
+        // abs: yields the resolved absolute URL when the attribute holds a relative path.
+        val raw = element.attr("abs:$attr").ifBlank { element.attr(attr) }.ifBlank { null } ?: continue
+        val first = raw.trim().substringBefore(' ').substringBefore(',').trim()
+        if (first.isNotBlank()) return first
+    }
+    // CSS background-image on the element itself.
+    val style = element.attr("style")
+    if (style.isNotBlank()) {
+        Regex("""url\(\s*['"]?([^'")]+)['"]?\s*\)""").find(style)?.groupValues?.getOrNull(1)
+            ?.trim()?.ifBlank { null }?.let { return it }
+    }
+    return null
+}
+
+/**
+ * Converts an element's inner HTML to plain text while preserving paragraph and line breaks:
+ * `<br>` becomes a newline and `</p>`/`</div>` a blank line, so multi-paragraph novel synopses keep
+ * their structure instead of collapsing to one space-joined line (what Jsoup `.text()` does).
+ */
+internal fun htmlToFormattedText(html: String): String {
+    val withBreaks = html
+        .replace(Regex("(?i)<br\\s*/?>"), "\n")
+        .replace(Regex("(?i)</(p|div|li|h[1-6])>"), "\n\n")
+    return org.jsoup.Jsoup.parse(withBreaks).wholeText()
+        .lineSequence()
+        .joinToString("\n") { it.trim() }
+        .replace(Regex("\n{3,}"), "\n\n")
+        .trim()
+}
+
+/** Numeric chapter URL/name pair for a generated chapter list (mode B). */
+internal data class GeneratedChapterEntry(val url: String, val name: String, val number: Float)
+
+/**
+ * Builds the [start]..[end] generated chapter entries from a numeric URL [pattern]. URLs are kept
+ * as the raw substituted template; callers normalize them against the base URL.
+ */
+internal fun generatedChapterEntries(
+    pattern: String,
+    start: Int,
+    end: Int,
+    nameTemplate: String?,
+): List<GeneratedChapterEntry> {
+    if (end < start) return emptyList()
+    val names = nameTemplate?.ifBlank { null } ?: "Chapter {n}"
+    return (start..end).map { n ->
+        GeneratedChapterEntry(
+            url = pattern.replace("{n}", n.toString()),
+            name = names.replace("{n}", n.toString()),
+            number = n.toFloat(),
+        )
+    }
+}
+
 /**
  * Custom Novel Extension - User-defined novel source
  *
@@ -411,7 +532,118 @@ class CustomNovelSource(
         baseSource?.let { source ->
             return source.getChapterList(toBaseSourceManga(manga)).map { rebaseChapter(it) }
         }
+        val chSel = config.selectors.chapters
+        if (isNovelSource && !chSel.urlPattern.isNullOrBlank()) {
+            return generateChapterList(manga)
+        }
+        if (isNovelSource && (!chSel.nextPage.isNullOrBlank() || !chSel.indexLinkSelector.isNullOrBlank())) {
+            return fetchResolvedChapterList(manga, null)
+        }
         return super.getChapterList(manga)
+    }
+
+    override suspend fun getChapterList(
+        manga: SManga,
+        context: eu.kanade.tachiyomi.source.model.RefreshContext,
+    ): List<SChapter> {
+        if (baseSource != null) return getChapterList(manga)
+        val chSel = config.selectors.chapters
+        if (isNovelSource && !chSel.urlPattern.isNullOrBlank()) {
+            return generateChapterList(manga)
+        }
+        if (isNovelSource && (!chSel.nextPage.isNullOrBlank() || !chSel.indexLinkSelector.isNullOrBlank())) {
+            return fetchResolvedChapterList(manga, context)
+        }
+        return getChapterList(manga)
+    }
+
+    // Mode B: build the chapter list from a numeric URL pattern instead of scraping it. The range
+    // is [firstNumber..lastNumber]; lastNumber falls back to the total parsed from countSelector on
+    // the details page. One fetch at most (only when a count must be read).
+    private suspend fun generateChapterList(manga: SManga): List<SChapter> {
+        val sel = config.selectors.chapters
+        val pattern = sel.urlPattern ?: return emptyList()
+        val start = sel.firstNumber ?: 1
+        val end = sel.lastNumber ?: run {
+            val countSel = sel.countSelector
+            if (countSel.isNullOrBlank()) {
+                start
+            } else {
+                val doc = client.newCall(GET(buildAbsoluteUrl(manga.url), headers)).awaitSuccess().asJsoup()
+                doc.selectFirst(countSel)?.text()
+                    ?.let { Regex("""\d+""").find(it.replace(",", ""))?.value?.toIntOrNull() }
+                    ?: start
+            }
+        }
+        val chapters = generatedChapterEntries(pattern, start, end, sel.nameTemplate).map { entry ->
+            SChapter.create().apply {
+                // Normalize to a path relative to baseUrl (getPageList rebuilds the absolute URL).
+                url = buildAbsoluteUrl(entry.url).removePrefix(baseUrl.trimEnd('/')).ifBlank { entry.url }
+                name = entry.name
+                chapter_number = entry.number
+            }
+        }
+        // Lists are stored newest-first in the app; generated order is ascending, so reverse unless
+        // the source explicitly wants ascending (reverseChapters).
+        return if (config.reverseChapters) chapters else chapters.reversed()
+    }
+
+    // Resolves the chapter list across two optional dimensions:
+    //  - indexLinkSelector: the chapter list lives on a separate page linked from the details page.
+    //  - nextPage: the chapter list spans multiple pages.
+    // Reversal is applied once at the end so multi-page lists keep a single consistent order.
+    private suspend fun fetchResolvedChapterList(
+        manga: SManga,
+        context: eu.kanade.tachiyomi.source.model.RefreshContext?,
+    ): List<SChapter> {
+        val selectors = config.selectors.chapters
+        val detailsUrl = buildAbsoluteUrl(manga.url)
+        val detailsDoc = client.newCall(GET(detailsUrl, headers)).awaitSuccess().asJsoup()
+
+        // Where the chapter list starts: the linked index page, or the details page itself.
+        var url: String? = if (!selectors.indexLinkSelector.isNullOrBlank()) {
+            detailsDoc.selectFirst(selectors.indexLinkSelector)?.absUrl("href")?.ifBlank { null }
+        } else {
+            detailsUrl
+        }
+
+        // Skip walking the whole back-catalog when nothing is new: if the first page introduces no
+        // chapter the library doesn't already have (and this isn't a forced refresh), return the
+        // existing list as-is. The result replaces the stored list, so we must return the full set
+        // — hence we only short-circuit on the "no new chapters" case.
+        val knownUrls = context?.takeIf { !it.forceRefresh }
+            ?.existingChapters?.mapNotNull { it.url.ifBlank { null } }?.toSet().orEmpty()
+
+        val all = mutableListOf<SChapter>()
+        if (url == null) {
+            // Index link configured but missing on the page: fall back to the details doc.
+            all += parseChapterElements(detailsDoc, selectors)
+        } else {
+            val visited = mutableSetOf<String>()
+            var guard = 0
+            var firstDoc: Document? = if (url == detailsUrl) detailsDoc else null
+            while (url != null && guard++ < MAX_CHAPTER_PAGES && visited.add(url)) {
+                val doc = firstDoc ?: client.newCall(GET(url, headers)).awaitSuccess().asJsoup()
+                firstDoc = null
+                val pageChapters = parseChapterElements(doc, selectors)
+                all += pageChapters
+
+                // First page, all already known => no updates; stop and keep the existing list.
+                if (knownUrls.isNotEmpty() && all.size == pageChapters.size &&
+                    pageChapters.isNotEmpty() && pageChapters.none { it.url !in knownUrls }
+                ) {
+                    return context!!.existingChapters
+                }
+
+                val next = if (selectors.nextPage.isNullOrBlank()) {
+                    null
+                } else {
+                    doc.selectFirst(selectors.nextPage)?.absUrl("href")?.ifBlank { null }
+                }
+                url = if (next == null || next == url) null else next
+            }
+        }
+        return if (config.reverseChapters) all.reversed() else all
     }
 
     override suspend fun getPageList(chapter: SChapter): List<Page> {
@@ -427,36 +659,52 @@ class CustomNovelSource(
     // ======================== Popular ========================
 
     override fun popularMangaRequest(page: Int): Request {
-        return GET(config.popularUrl.buildUrl(baseUrl, page), headers)
+        // Page 1 = the verbatim first-page URL; later pages = the {page} template.
+        val template = if (page <= 1) config.popularUrl else (config.popularPagedUrl ?: config.popularUrl)
+        return GET(template.buildUrl(baseUrl, page), headers)
     }
 
     override fun popularMangaParse(response: Response): MangasPage {
         val document = response.asJsoup()
-        return parseMangaList(document, config.selectors.popular)
+        val pageable = config.popularPagedUrl != null || config.popularUrl.contains("{page}")
+        return parseMangaList(document, config.selectors.popular, pageable)
     }
 
     // ======================== Latest ========================
 
     override fun latestUpdatesRequest(page: Int): Request {
-        return GET(
-            (config.latestUrl ?: config.popularUrl).buildUrl(baseUrl, page),
-            headers,
-        )
+        val page1 = config.latestUrl ?: config.popularUrl
+        val template = if (page <= 1) page1 else (config.latestPagedUrl ?: config.popularPagedUrl ?: page1)
+        return GET(template.buildUrl(baseUrl, page), headers)
     }
 
     override fun latestUpdatesParse(response: Response): MangasPage {
-        return popularMangaParse(response)
+        val document = response.asJsoup()
+        val pageable = config.latestPagedUrl != null || config.popularPagedUrl != null ||
+            (config.latestUrl ?: config.popularUrl).contains("{page}")
+        return parseMangaList(document, config.selectors.latest ?: config.selectors.popular, pageable)
     }
 
     // ======================== Search ========================
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        return GET(config.searchUrl.buildSearchUrl(baseUrl, query, page), headers)
+        val template = if (page <= 1) config.searchUrl else (config.searchPagedUrl ?: config.searchUrl)
+        val built = template.buildSearchUrl(baseUrl, query, page)
+        if (config.postSearch) {
+            // POST search: send the query string as a form body so the endpoint URL stays clean.
+            // "https://site/search?s=foo&page=2" -> POST https://site/search  body: s=foo&page=2
+            val url = built.substringBefore('?')
+            val body = built.substringAfter('?', "")
+                .toRequestBody("application/x-www-form-urlencoded".toMediaTypeOrNull())
+            return POST(url, headers, body)
+        }
+        return GET(built, headers)
     }
 
     override fun searchMangaParse(response: Response): MangasPage {
         val document = response.asJsoup()
-        return parseMangaList(document, config.selectors.search ?: config.selectors.popular)
+        val pageable = config.searchPagedUrl != null || config.searchUrl.contains("{page}")
+        return parseMangaList(document, config.selectors.search ?: config.selectors.popular, pageable)
     }
 
     // ======================== Details ========================
@@ -469,9 +717,9 @@ class CustomNovelSource(
             title = document.selectText(selectors.title) ?: ""
             author = document.selectText(selectors.author)
             artist = document.selectText(selectors.artist)
-            description = document.selectText(selectors.description)
-            genre = document.selectText(selectors.genre)
-            thumbnail_url = document.selectAttr(selectors.cover, "src", "data-src", "data-lazy-src")
+            description = document.selectFormattedText(selectors.description)
+            genre = document.selectJoinedText(selectors.genre)
+            thumbnail_url = document.selectImageUrl(selectors.cover)
             status = parseStatus(document.selectText(selectors.status))
         }
     }
@@ -513,9 +761,16 @@ class CustomNovelSource(
     }
 
     private fun parseChapterList(document: Document, selectors: ChapterSelectors): List<SChapter> {
+        val chapters = parseChapterElements(document, selectors)
+        return if (config.reverseChapters) chapters.reversed() else chapters
+    }
+
+    // Parses a single chapter-list page without applying reversal (callers reverse once).
+    private fun parseChapterElements(document: Document, selectors: ChapterSelectors): List<SChapter> {
+        if (selectors.list.isBlank()) return emptyList()
         return document.select(selectors.list).mapNotNull { element ->
             try {
-                val link = element.selectFirst(selectors.link ?: "a") ?: element.selectFirst("a")
+                val link = resolveLink(element, selectors.link)
                 val url = link?.attr("abs:href")?.removePrefix(baseUrl) ?: return@mapNotNull null
 
                 SChapter.create().apply {
@@ -528,8 +783,6 @@ class CustomNovelSource(
             } catch (e: Exception) {
                 null
             }
-        }.let { chapters ->
-            if (config.reverseChapters) chapters.reversed() else chapters
         }
     }
 
@@ -573,33 +826,37 @@ class CustomNovelSource(
         // This allows hybrid setups where browsing is delegated but content uses custom selectors
 
         val pageUrl = buildAbsoluteUrl(page.url)
-        val response = client.newCall(GET(pageUrl, headers)).awaitSuccess()
-        val document = response.asJsoup()
-
         val selectors = config.selectors.content
 
         // Guard against empty selector (Jsoup throws on empty string)
         if (selectors.primary.isBlank()) return ""
 
-        // Try primary selector
-        var element = document.selectFirst(selectors.primary)
+        return fetchContentHtml(pageUrl, selectors) ?: ""
+    }
 
-        // Try fallback selectors
+    private suspend fun fetchContentHtml(url: String, selectors: ContentSelectors): String? {
+        val document = client.newCall(GET(url, headers)).awaitSuccess().asJsoup()
+
+        var element = document.selectFirst(selectors.primary)
         if (element == null && selectors.fallbacks != null) {
             for (fallback in selectors.fallbacks!!) {
+                if (fallback.isBlank()) continue
                 element = document.selectFirst(fallback)
                 if (element != null) break
             }
         }
+        if (element == null) return null
 
-        if (element == null) return ""
-
-        // Remove unwanted elements
+        // User-defined removals first.
         selectors.removeSelectors?.forEach { selector ->
-            element!!.select(selector).remove()
+            if (selector.isNotBlank()) element!!.select(selector).remove()
         }
 
-        // Fix relative URLs
+        if (selectors.removeBoilerplate) {
+            cleanContentElement(element)
+        }
+
+        // Fix relative media URLs.
         element.select("img, video, audio, source").forEach { media ->
             listOf("src", "data-src", "data-lazy-src").forEach { attr ->
                 if (media.hasAttr(attr)) {
@@ -611,6 +868,35 @@ class CustomNovelSource(
         return element.html()
     }
 
+    /**
+     * Strips common boilerplate from a content element: scripts/styles, ad and share widgets,
+     * WordPress cruft, next/prev chapter navigation links and empty leftover nodes.
+     * Mirrors the cleanup an extension parser would normally hardcode.
+     */
+    private fun cleanContentElement(element: Element) {
+        element.select(BOILERPLATE_SELECTOR).remove()
+
+        // Remove next/prev/chapter-navigation hyperlinks that bleed into the text. Match on the
+        // link text and on reliable nav signals (rel / class) rather than substring-matching the
+        // href, which over-removed legitimate in-text links whose URL merely contained "next".
+        element.select("a").forEach { a ->
+            val text = a.text().trim().lowercase()
+            val rel = a.attr("rel").lowercase()
+            val cls = a.className().lowercase()
+            val isNav = NAV_LINK_WORDS.any { text == it || text.startsWith("$it ") || text.endsWith(" $it") } ||
+                rel == "next" || rel == "prev" || rel == "previous" ||
+                cls.contains("next") || cls.contains("prev")
+            if (isNav && a.text().length < 40) a.remove()
+        }
+
+        // Drop empty wrappers left behind.
+        element.select("p, div, span").forEach { el ->
+            if (el.text().isBlank() && el.select("img, video, audio, br").isEmpty()) {
+                el.remove()
+            }
+        }
+    }
+
     override fun imageUrlParse(response: Response) = ""
 
     override fun getFilterList(): FilterList {
@@ -620,31 +906,68 @@ class CustomNovelSource(
 
     // ======================== Helper Functions ========================
 
-    private fun parseMangaList(document: Document, selectors: MangaListSelectors): MangasPage {
+    private fun parseMangaList(
+        document: Document,
+        selectors: MangaListSelectors,
+        pageable: Boolean = true,
+    ): MangasPage {
+        // Jsoup throws "String must not be empty" on a blank selector; surface a clearer error.
+        if (selectors.list.isBlank()) {
+            throw IllegalStateException("List selector is empty. Capture the popular list item selector first.")
+        }
         val mangas = document.select(selectors.list).mapNotNull { element ->
             try {
                 SManga.create().apply {
-                    val link = element.selectFirst(selectors.link ?: "a[href]")
-                        ?: element.selectFirst("a")
+                    val link = resolveLink(element, selectors.link)
                     url = link?.attr("abs:href")?.removePrefix(baseUrl) ?: return@mapNotNull null
                     title = element.selectText(selectors.title)
                         ?: link?.attr("title")?.ifBlank { null }
                         ?: link?.text()?.trim()
                         ?: return@mapNotNull null
-                    thumbnail_url = element.selectAttr(selectors.cover, "src", "data-src", "data-lazy-src")
+                    thumbnail_url = element.selectImageUrl(selectors.cover)
                 }
             } catch (e: Exception) {
                 null
             }
         }
 
-        val hasNextPage = if (selectors.nextPage != null) {
-            document.selectFirst(selectors.nextPage!!) != null
-        } else {
-            mangas.isNotEmpty()
+        val hasNextPage = when {
+            selectors.nextPage != null -> document.selectFirst(selectors.nextPage!!) != null
+            // No {page} in the URL template = single page; avoid re-requesting the same page forever.
+            !pageable -> false
+            else -> mangas.isNotEmpty()
         }
 
         return MangasPage(mangas, hasNextPage)
+    }
+
+    // Resolves the link element for a list/chapter item. Handles the common case where the item
+    // selector matches the <a> itself (e.g. a chapter list of bare links), which selectFirst("a")
+    // would miss because it only searches descendants.
+    private fun resolveLink(element: Element, linkSelector: String?): Element? {
+        if (!linkSelector.isNullOrBlank()) {
+            val bySelector = element.selectFirst(linkSelector)
+                ?: if (runCatching { element.`is`(linkSelector) }.getOrDefault(false)) element else null
+            // The picked element may not be the <a> itself (user tapped a <span> inside the link, or
+            // an <li> wrapping it). Always resolve down to a real href.
+            bySelector?.let { return it.ensureHref() }
+        }
+        return element.ensureHref()
+    }
+
+    // Returns the nearest element carrying an href: self, a descendant <a[href]>, or an ancestor
+    // <a[href]> (chapter rows often wrap the link text in a <span> inside the <a>).
+    private fun Element.ensureHref(): Element? {
+        if (tagName() == "a" && hasAttr("href")) return this
+        if (hasAttr("href")) return this
+        selectFirst("a[href]")?.let { return it }
+        var p = parent()
+        var guard = 0
+        while (p != null && guard++ < 6) {
+            if (p.tagName() == "a" && p.hasAttr("href")) return p
+            p = p.parent()
+        }
+        return null
     }
 
     private fun Document.selectText(selector: String?): String? {
@@ -652,40 +975,57 @@ class CustomNovelSource(
         return selectFirst(selector)?.text()?.trim()?.ifBlank { null }
     }
 
+    // Joins the text of EVERY element matching [selector] (deduped, comma-separated). Used for genre
+    // so a selector group like "a.tag1, a.tag2" (or a multi-match ".genre a") merges into one string.
+    private fun Document.selectJoinedText(selector: String?): String? {
+        if (selector.isNullOrBlank()) return null
+        return select(selector)
+            .mapNotNull { it.text().trim().ifBlank { null } }
+            .distinct()
+            .joinToString(", ")
+            .ifBlank { null }
+    }
+
     private fun Element.selectText(selector: String?): String? {
         if (selector.isNullOrBlank()) return null
         return selectFirst(selector)?.text()?.trim()?.ifBlank { null }
     }
 
-    private fun Element.selectAttr(selector: String?, vararg attrs: String): String? {
+    private fun Element.selectImageUrl(selector: String?): String? {
         if (selector.isNullOrBlank()) return null
         val element = selectFirst(selector) ?: return null
-        for (attr in attrs) {
-            val value = element.attr(attr).ifBlank { null } ?: element.attr("abs:$attr").ifBlank { null }
-            if (value != null) return value
-        }
-        return null
+        return resolveImageUrl(element)
     }
 
-    private fun parseStatus(status: String?): Int {
-        if (status == null) return SManga.UNKNOWN
-        return when {
-            status.contains("ongoing", ignoreCase = true) -> SManga.ONGOING
-            status.contains("completed", ignoreCase = true) -> SManga.COMPLETED
-            status.contains("hiatus", ignoreCase = true) -> SManga.ON_HIATUS
-            status.contains("cancelled", ignoreCase = true) -> SManga.CANCELLED
-            else -> SManga.UNKNOWN
-        }
+    private fun Element.selectFormattedText(selector: String?): String? {
+        if (selector.isNullOrBlank()) return null
+        val element = selectFirst(selector) ?: return null
+        return htmlToFormattedText(element.html()).ifBlank { null }
     }
+
+    private fun parseStatus(status: String?): Int =
+        parseCustomSourceStatus(status, config.statusMapping)
 
     private fun parseDate(dateStr: String?): Long {
         if (dateStr.isNullOrBlank()) return 0L
-        // Basic date parsing - can be extended
-        return try {
-            java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(dateStr)?.time ?: 0L
-        } catch (e: Exception) {
-            0L
+        val raw = dateStr.trim()
+
+        // Config-specified format wins, then a list of language-neutral numeric formats. No relative
+        // ("2 days ago") or month-name parsing: those are language-specific. Sites with worded dates
+        // should set config.dateFormat with their own locale-appropriate pattern.
+        val formats = buildList {
+            config.dateFormat?.let { add(it) }
+            addAll(DATE_FORMATS)
         }
+        for (pattern in formats) {
+            try {
+                val parsed = java.text.SimpleDateFormat(pattern, java.util.Locale.ROOT)
+                    .parse(raw)?.time
+                if (parsed != null) return parsed
+            } catch (_: Exception) {
+            }
+        }
+        return 0L
     }
 
     private fun extractNovelId(document: Document, url: String): String? {
@@ -707,45 +1047,11 @@ class CustomNovelSource(
         return null
     }
 
-    private fun String.buildUrl(baseUrl: String, page: Int): String {
-        var url = this.replace("{baseUrl}", baseUrl)
+    private fun String.buildUrl(baseUrl: String, page: Int): String =
+        buildPagedUrlTemplate(this, baseUrl, page)
 
-        // Handle {page} - only include if page > 1 or URL requires it
-        if (url.contains("{page}")) {
-            if (page == 1 && !url.contains("page={page}") && !url.contains("pg={page}")) {
-                // For URLs like "https://site.com/{page}" on page 1, remove the placeholder entirely
-                url = url.replace("/{page}", "")
-                    .replace("?page={page}", "")
-                    .replace("&page={page}", "")
-                    .replace("{page}", "")
-            } else {
-                url = url.replace("{page}", page.toString())
-            }
-        }
-
-        return url.trimEnd('/', '?', '&')
-    }
-
-    private fun String.buildSearchUrl(baseUrl: String, query: String, page: Int): String {
-        var url = this.replace("{baseUrl}", baseUrl)
-
-        // Handle query parameter - detect if using s, q, query, keyword, or search
-        val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
-        url = url.replace("{query}", encodedQuery)
-
-        // Handle {page} same as buildUrl
-        if (url.contains("{page}")) {
-            if (page == 1 && !url.contains("page={page}") && !url.contains("pg={page}")) {
-                url = url.replace("&page={page}", "")
-                    .replace("?page={page}", "")
-                    .replace("{page}", "")
-            } else {
-                url = url.replace("{page}", page.toString())
-            }
-        }
-
-        return url.trimEnd('/', '?', '&')
-    }
+    private fun String.buildSearchUrl(baseUrl: String, query: String, page: Int): String =
+        buildPagedSearchUrlTemplate(this, baseUrl, query, page)
 
     private fun String.buildAjaxUrl(baseUrl: String, novelId: String): String {
         return this.replace("{baseUrl}", baseUrl)
@@ -876,6 +1182,34 @@ class CustomNovelSource(
     }
 
     companion object {
+        private const val MAX_CHAPTER_PAGES = 30
+
+        private val NAV_LINK_WORDS = listOf(
+            "next", "previous", "prev", "next chapter", "previous chapter",
+            "table of contents", "toc", "index", "back",
+        )
+
+        private const val BOILERPLATE_SELECTOR =
+            "script, style, noscript, ins, iframe, " +
+                ".adsbygoogle, ins.adsbygoogle, [class*=ads], [id*=ads], " +
+                ".sharedaddy, .sharepost, .share, .social, .sociable, " +
+                ".wpcnt, .wp-next-post-navi, .wp-block-buttons, " +
+                ".ezoic-ad, .ezoic-adpicker-ad, .code-block, " +
+                ".navigation, .nav-links, .chapter-nav, .pagination"
+
+        // Language-neutral numeric formats only (no month names). Worded/relative dates need a
+        // user-supplied config.dateFormat.
+        private val DATE_FORMATS = listOf(
+            "yyyy-MM-dd",
+            "yyyy/MM/dd",
+            "MM/dd/yyyy",
+            "dd/MM/yyyy",
+            "dd.MM.yyyy",
+            "yyyy.MM.dd",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss",
+        )
+
         private fun generateId(name: String, baseUrl: String): Long {
             return (name + baseUrl).hashCode().toLong() and 0x7FFFFFFF
         }
@@ -914,6 +1248,11 @@ data class CustomSourceConfig(
     val popularUrl: String,
     val latestUrl: String? = null,
     val searchUrl: String,
+    // Page-2+ templates (with {page}). When set, page 1 uses the plain *Url above (verbatim, so it
+    // keeps or omits the page param exactly as the site's first page does) and later pages use these.
+    val popularPagedUrl: String? = null,
+    val latestPagedUrl: String? = null,
+    val searchPagedUrl: String? = null,
     val headers: Map<String, String> = emptyMap(),
     val selectors: SourceSelectors,
     val chapterAjax: String? = null,
@@ -925,11 +1264,23 @@ data class CustomSourceConfig(
     val postSearch: Boolean = false,
     val basedOnSourceId: Long? = null,
     val isNovel: Boolean = true,
+    // Query used when testing this source. Set from the search probe word in the wizard.
+    val testSearchQuery: String? = null,
+    // Date format used to parse chapter dates, e.g. "yyyy-MM-dd". Required for worded/relative
+    // dates (no built-in language-specific parsing); use the site's own locale pattern.
+    val dateFormat: String? = null,
+    // Optional status-text mapping: site word (substring, case-insensitive) -> ongoing / completed
+    // / hiatus / cancelled. Lets non-English sites map their own status labels.
+    val statusMapping: Map<String, String>? = null,
+    // Optional novel URL used by the wizard's reading test to open a known novel directly
+    // (so the reading section can be tested without a working popular/latest/search listing).
+    val sampleNovelUrl: String? = null,
 )
 
 @Serializable
 data class SourceSelectors(
     val popular: MangaListSelectors,
+    val latest: MangaListSelectors? = null,
     val search: MangaListSelectors? = null,
     val details: DetailSelectors,
     val chapters: ChapterSelectors,
@@ -962,6 +1313,22 @@ data class ChapterSelectors(
     val link: String? = null,
     val name: String? = null,
     val date: String? = null,
+    // Optional selector for the "next page" link when the chapter list spans multiple pages.
+    val nextPage: String? = null,
+    // Optional selector, on the DETAILS page, pointing to a separate chapter-list/index page.
+    // When set, chapters are read from the linked page instead of the details page.
+    val indexLinkSelector: String? = null,
+    // ---- Generated chapter list (mode B): build chapter URLs from a numeric pattern instead of
+    // scraping the list. Used for sites with sequential URLs like /novel/chapter-{n}. ----
+    // Chapter URL template with {n} for the chapter number, e.g. "/novel/abc/chapter-{n}".
+    val urlPattern: String? = null,
+    // Selector (on the details page) for an element whose text holds the total chapter count.
+    val countSelector: String? = null,
+    // Explicit numeric range; lastNumber falls back to the parsed countSelector value.
+    val firstNumber: Int? = null,
+    val lastNumber: Int? = null,
+    // Chapter name template with {n}, e.g. "Chapter {n}". Defaults to "Chapter {n}".
+    val nameTemplate: String? = null,
 )
 
 @Serializable
@@ -969,6 +1336,9 @@ data class ContentSelectors(
     val primary: String,
     val fallbacks: List<String>? = null,
     val removeSelectors: List<String>? = null,
+    // When true (default), strip common boilerplate (scripts, ads, share widgets,
+    // next/prev chapter links, empty nodes) in addition to removeSelectors.
+    val removeBoilerplate: Boolean = true,
 )
 
 // Templates removed — use extension repos for pre-built novel source themes
