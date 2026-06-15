@@ -378,6 +378,11 @@ class Downloader(
             // Mark only this download as failed and continue the queue.
             download.setError(e)
             download.status = Download.State.ERROR
+
+            // If nothing else is pending, stop so the queue doesn't sit "running" with only errors.
+            if (areAllDownloadsFinished()) {
+                stop()
+            }
         }
     }
 
@@ -485,6 +490,7 @@ class Downloader(
      */
     private suspend fun downloadChapter(download: Download) {
         val mangaDir = provider.getMangaDir(download.mangaTitle, download.source).getOrElse { e ->
+            download.setError(e)
             download.status = Download.State.ERROR
             notifier.onError(e.message, download.chapterName, download.mangaTitle, download.mangaId)
             return
@@ -492,9 +498,10 @@ class Downloader(
 
         val availSpace = DiskUtil.getAvailableStorageSpace(mangaDir)
         if (availSpace != -1L && availSpace < MIN_DISK_SPACE) {
+            download.error = context.stringResource(MR.strings.download_insufficient_space)
             download.status = Download.State.ERROR
             notifier.onError(
-                context.stringResource(MR.strings.download_insufficient_space),
+                download.error,
                 download.chapterName,
                 download.mangaTitle,
                 download.mangaId,
@@ -570,7 +577,21 @@ class Downloader(
             // Do after download completes
 
             if (!isDownloadSuccessful(download, tmpDir)) {
+                val pageError = download.pages
+                    ?.mapNotNull { (it.status as? Page.State.Error)?.error }
+                    ?.firstOrNull()
+                if (pageError != null) {
+                    download.setError(pageError)
+                } else {
+                    val failed = download.pages?.count { it.status !is Page.State.Ready } ?: 0
+                    download.error = context.stringResource(
+                        MR.strings.download_incomplete_error,
+                        failed,
+                        download.pages?.size ?: 0,
+                    )
+                }
                 download.status = Download.State.ERROR
+                notifier.onError(download.error, download.chapterName, download.mangaTitle, download.mangaId)
                 return
             }
 
@@ -621,6 +642,7 @@ class Downloader(
             if (error is CancellationException) throw error
             // If the page list threw, it will resume here
             logcat(LogPriority.ERROR, error)
+            download.setError(error)
             download.status = Download.State.ERROR
             notifier.onError(error.message, download.chapterName, download.mangaTitle, download.mangaId)
         }
@@ -1017,7 +1039,7 @@ class Downloader(
         addAllToQueue(downloads)
 
         if (wasRunning) {
-            start()
+            DownloadJob.start(context)
         }
     }
 

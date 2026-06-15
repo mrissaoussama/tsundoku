@@ -22,10 +22,8 @@ import eu.kanade.presentation.more.MoreScreen
 import eu.kanade.presentation.util.Tab
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.download.DownloadManager
-import eu.kanade.tachiyomi.source.isNovelSource
 import eu.kanade.tachiyomi.ui.category.CategoryScreen
 import eu.kanade.tachiyomi.ui.download.DownloadQueueScreen
-import eu.kanade.tachiyomi.ui.download.novel.NovelDownloadQueueScreen
 import eu.kanade.tachiyomi.ui.setting.SettingsScreen
 import eu.kanade.tachiyomi.ui.stats.StatsScreen
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,7 +31,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.i18n.MR
 import tachiyomi.presentation.core.i18n.stringResource
@@ -64,16 +61,13 @@ data object MoreTab : Tab {
         val navigator = LocalNavigator.currentOrThrow
         val screenModel = rememberScreenModel { MoreScreenModel() }
         val downloadQueueState by screenModel.downloadQueueState.collectAsState()
-        val novelDownloadCount by screenModel.novelDownloadCount.collectAsState()
         MoreScreen(
             downloadQueueStateProvider = { downloadQueueState },
-            novelDownloadCount = novelDownloadCount,
             downloadedOnly = screenModel.downloadedOnly,
             onDownloadedOnlyChange = { screenModel.downloadedOnly = it },
             incognitoMode = screenModel.incognitoMode,
             onIncognitoModeChange = { screenModel.incognitoMode = it },
             onClickDownloadQueue = { navigator.push(DownloadQueueScreen()) },
-            onClickNovelDownloadQueue = { navigator.push(NovelDownloadQueueScreen) },
             onClickCategories = { navigator.push(CategoryScreen()) },
             onClickStats = { navigator.push(StatsScreen()) },
             onClickDataAndStorage = { navigator.push(SettingsScreen(SettingsScreen.Destination.DataAndStorage)) },
@@ -94,9 +88,6 @@ private class MoreScreenModel(
     private var _downloadQueueState: MutableStateFlow<DownloadQueueState> = MutableStateFlow(DownloadQueueState.Stopped)
     val downloadQueueState: StateFlow<DownloadQueueState> = _downloadQueueState.asStateFlow()
 
-    private var _novelDownloadCount = MutableStateFlow(0)
-    val novelDownloadCount: StateFlow<Int> = _novelDownloadCount.asStateFlow()
-
     init {
         // Handle running/paused status change and queue progress updating
         screenModelScope.launchIO {
@@ -111,15 +102,6 @@ private class MoreScreenModel(
                         !isDownloading -> DownloadQueueState.Paused(downloadQueueSize)
                         else -> DownloadQueueState.Downloading(downloadQueueSize)
                     }
-                }
-        }
-
-        // Track novel downloads count
-        screenModelScope.launchIO {
-            downloadManager.queueState
-                .map { downloads -> downloads.count { it.source.isNovelSource() } }
-                .collectLatest { count ->
-                    _novelDownloadCount.value = count
                 }
         }
     }

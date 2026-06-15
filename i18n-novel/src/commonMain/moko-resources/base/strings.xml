@@ -464,6 +464,9 @@
     <string name="novel_downloads_move_top">Move to top</string>
     <string name="novel_downloads_move_bottom">Move to bottom</string>
     <string name="novel_downloads_chapter_format">Chapter: %s</string>
+    <string name="novel_downloads_failed_chapters">%d failed</string>
+    <string name="novel_downloads_copy_error">Copy error details</string>
+    <string name="novel_downloads_more_errors">+%d more</string>
 
     <!-- JS Plugins Tab -->
     <string name="js_plugin_manage_repos">Manage Repositories</string>

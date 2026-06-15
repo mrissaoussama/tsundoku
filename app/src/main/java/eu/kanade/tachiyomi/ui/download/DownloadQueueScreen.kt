@@ -4,7 +4,6 @@ import android.view.LayoutInflater
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +23,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material3.Card
@@ -809,26 +809,51 @@ private fun NovelDownloadCard(
                 )
             }
 
-            val errorDetails: String? = remember(item.subItems) {
-                item.subItems.firstOrNull { it.status == Download.State.ERROR }
-                    ?.error
-                    ?.takeIf { it.isNotBlank() }
-            }
-            if (errorDetails != null) {
+            if (item.hasError) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = errorDetails,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.clickable {
-                        context.copyToClipboard(
-                            label = errorLabel,
-                            content = errorDetails,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(
+                            TDMR.strings.novel_downloads_failed_chapters,
+                            item.erroredDownloads.size,
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    IconButton(
+                        onClick = { context.copyToClipboard(errorLabel, item.fullErrorReport) },
+                        modifier = Modifier.height(28.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ContentCopy,
+                            contentDescription = stringResource(TDMR.strings.novel_downloads_copy_error),
+                            tint = MaterialTheme.colorScheme.error,
                         )
-                    },
-                )
+                    }
+                }
+                item.errorDetails.take(5).forEach { (chapter, reason) ->
+                    Text(
+                        text = "$chapter: $reason",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (item.errorDetails.size > 5) {
+                    Text(
+                        text = stringResource(
+                            TDMR.strings.novel_downloads_more_errors,
+                            item.errorDetails.size - 5,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         }
     }

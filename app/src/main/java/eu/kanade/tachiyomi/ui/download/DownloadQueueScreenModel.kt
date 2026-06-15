@@ -10,6 +10,7 @@ import eu.kanade.tachiyomi.databinding.DownloadListBinding
 import eu.kanade.tachiyomi.source.isNovelSource
 import eu.kanade.tachiyomi.source.model.Page
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +20,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -43,15 +46,27 @@ data class NovelDownloadItem(
     val totalChapters: Int get() = initialTotal
     val currentDownload: Download? get() = subItems.find { it.status == Download.State.DOWNLOADING }
 
+    // Chapter-based progress. Per-chapter page progress is meaningless for novels (a chapter is a
+    // single text page that flips 0->100 instantly), so the bar tracks completed chapters only.
     val overallProgress: Float get() {
         if (totalChapters == 0) return 0f
-        val downloadedWeight = downloadedChapters.toFloat()
-        val currentProgress = currentDownload?.progress?.div(100f) ?: 0f
-        return (downloadedWeight + currentProgress) / totalChapters
+        return downloadedChapters.toFloat() / totalChapters
     }
 
     val isActive: Boolean get() = currentDownload != null
-    val hasError: Boolean get() = subItems.any { it.status == Download.State.ERROR }
+    val erroredDownloads: List<Download> get() = subItems.filter { it.status == Download.State.ERROR }
+    val hasError: Boolean get() = erroredDownloads.isNotEmpty()
+
+    /** Per-chapter failure reason (first line of the stored error). */
+    val errorDetails: List<Pair<String, String>> get() = erroredDownloads.map { dl ->
+        val reason = dl.error?.lineSequence()?.firstOrNull()?.takeIf { it.isNotBlank() } ?: "Unknown error"
+        dl.chapterName to reason
+    }
+
+    /** Full multi-line error report for copying. */
+    val fullErrorReport: String get() = erroredDownloads.joinToString("\n\n") { dl ->
+        "${dl.chapterName}\n${dl.error ?: "Unknown error"}"
+    }
 
     val statusText: String get() = when {
         hasError -> "Error"
@@ -62,6 +77,7 @@ data class NovelDownloadItem(
     }
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class DownloadQueueScreenModel(
     private val downloadManager: DownloadManager = Injekt.get(),
     private val libraryPreferences: LibraryPreferences = Injekt.get(),
@@ -164,29 +180,42 @@ class DownloadQueueScreenModel(
     }
 
     init {
+        // Manga groups: structural changes only. Per-row status/progress is driven by the
+        // RecyclerView via getDownloadStatusFlow()/getDownloadProgressFlow().
         screenModelScope.launch {
             downloadManager.queueState
                 .map { downloads ->
-                    val (novels, mangas) = downloads.partition { it.source.isNovelSource() }
-
-                    val mangaItems = mangas.groupBy { it.source.id }
-                        .map { (sourceId, downloads) ->
-                            val source = downloads.first().source
-                            DownloadHeaderItem(sourceId, source.name, downloads.size).apply {
-                                addSubItems(0, downloads.map { DownloadItem(it, this) })
+                    downloads.filterNot { it.source.isNovelSource() }
+                        .groupBy { it.source.id }
+                        .map { (sourceId, group) ->
+                            val source = group.first().source
+                            DownloadHeaderItem(sourceId, source.name, group.size).apply {
+                                addSubItems(0, group.map { DownloadItem(it, this) })
                             }
                         }
+                }
+                .flowOn(Dispatchers.Default)
+                .collect { mangaItems -> _state.update { mangaItems } }
+        }
 
-                    val novelItems = novels.groupBy { it.mangaId }
+        // Novel groups: this is a Compose list, so it must also re-emit on per-download status
+        // changes (e.g. -> ERROR, -> DOWNLOADED); queueState alone only changes on add/remove.
+        screenModelScope.launch {
+            downloadManager.queueState
+                .map { downloads -> downloads.filter { it.source.isNovelSource() } }
+                .flatMapLatest { novels ->
+                    if (novels.isEmpty()) flowOf(emptyList()) else combine(novels.map { it.statusFlow }) { novels }
+                }
+                .map { novels ->
+                    // Clean up initialTotals for manga no longer in queue
+                    val currentMangaIds = novels.map { it.mangaId }.toSet()
+                    initialTotals.keys.removeAll { it !in currentMangaIds }
+
+                    novels.groupBy { it.mangaId }
                         .map { (mangaId, downloads) ->
-                            val mangaTitle = downloads.first().mangaTitle
-                            val sourceName = downloads.first().source.name
-
                             // Track initial total - use max of current count and stored count
                             val currentCount = downloads.size
                             val storedTotal = initialTotals[mangaId] ?: 0
-
-                            // If current count is greater, this is a new batch or first time seeing this
                             val initialTotal = if (currentCount > storedTotal) {
                                 initialTotals[mangaId] = currentCount
                                 currentCount
@@ -196,24 +225,15 @@ class DownloadQueueScreenModel(
 
                             NovelDownloadItem(
                                 mangaId = mangaId,
-                                mangaTitle = mangaTitle,
-                                sourceName = sourceName,
+                                mangaTitle = downloads.first().mangaTitle,
+                                sourceName = downloads.first().source.name,
                                 subItems = downloads,
                                 initialTotal = initialTotal,
                             )
                         }
-
-                    // Clean up initialTotals for manga no longer in queue
-                    val currentMangaIds = novels.map { it.mangaId }.toSet()
-                    initialTotals.keys.removeAll { it !in currentMangaIds }
-
-                    Pair(mangaItems, novelItems)
                 }
                 .flowOn(Dispatchers.Default)
-                .collect { (mangaItems, novelItems) ->
-                    _state.update { mangaItems }
-                    _novelState.update { novelItems }
-                }
+                .collect { novelItems -> _novelState.update { novelItems } }
         }
     }
 
