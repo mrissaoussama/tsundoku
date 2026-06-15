@@ -58,6 +58,7 @@ fun EditMangaDialog(
     onSaveTags: (List<String>) -> Unit,
     onSaveAltTitles: (List<String>) -> Unit,
     onSaveAuthor: (String) -> Unit,
+    onSaveArtist: (String) -> Unit,
     onSaveStatus: (Long) -> Unit,
     onSwapMainTitle: ((newMainTitle: String, updatedAltTitles: List<String>) -> Unit)? = null,
 ) {
@@ -67,6 +68,7 @@ fun EditMangaDialog(
     var tags by remember { mutableStateOf(manga.genre.orEmpty()) }
     var altTitles by remember { mutableStateOf(manga.alternativeTitles) }
     var author by remember { mutableStateOf(manga.author.orEmpty()) }
+    var artist by remember { mutableStateOf(manga.artist.orEmpty()) }
     var status by remember { mutableStateOf(manga.status) }
 
     val tabTitles = persistentListOf(
@@ -82,6 +84,7 @@ fun EditMangaDialog(
             onSaveTags(tags)
             onSaveAltTitles(altTitles)
             onSaveAuthor(author)
+            onSaveArtist(artist)
             onSaveStatus(status)
             onDismissRequest()
         },
@@ -117,6 +120,11 @@ fun EditMangaDialog(
                         label = stringResource(MR.strings.author),
                         value = author,
                         onValueChange = { author = it },
+                    )
+                    EditTextField(
+                        label = stringResource(MR.strings.artist),
+                        value = artist,
+                        onValueChange = { artist = it },
                     )
                     EditStatusField(
                         status = status,

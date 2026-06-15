@@ -1416,6 +1416,12 @@ class MangaScreenModel(
         }
     }
 
+    fun updateArtist(artist: String) {
+        screenModelScope.launchIO {
+            updateManga.awaitUpdateArtist(mangaId, artist)
+        }
+    }
+
     /**
      * Update the Status of the manga.
      */
