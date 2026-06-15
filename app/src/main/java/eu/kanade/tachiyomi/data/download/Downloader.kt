@@ -131,8 +131,10 @@ class Downloader(
     var isPaused: Boolean = false
 
     init {
+        // restore() does blocking DB lookups per queued download; keep it off the main thread or a
+        // large restored queue stalls app startup (splash freeze / ANR).
         launchNow {
-            val chapters = async { store.restore() }
+            val chapters = async(Dispatchers.IO) { store.restore() }
             addAllToQueue(chapters.await())
         }
     }
