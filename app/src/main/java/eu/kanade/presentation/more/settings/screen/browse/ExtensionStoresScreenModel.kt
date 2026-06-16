@@ -130,6 +130,10 @@ class ExtensionStoresScreenModel(
     fun deleteRepo(baseUrl: String) {
         screenModelScope.launchIO {
             removeExtensionStore(baseUrl)
+            // Drop the deleted store from the disabled set so re-adding it doesn't resurrect as disabled.
+            sourcePreferences.disabledExtensionRepos.set(
+                sourcePreferences.disabledExtensionRepos.get() - baseUrl,
+            )
             extensionManager.findAvailableExtensions()
         }
     }
