@@ -33,6 +33,7 @@ import eu.kanade.tachiyomi.source.custom.CustomSourceManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.plus
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.protobuf.ProtoBuf
 import logcat.LogPriority
@@ -90,8 +91,10 @@ class AppModule(val app: Application) : InjektModule {
                         sqlDriverRef = WeakReference(driver)
                         // Self-heal columns/tables skipped by the merge migration renumbering
                         // (memo, extension_store) before any generated query runs against them.
-                        runCatching { DatabaseMaintenance(driver).reconcileSchema() }
-                            .onFailure { logcat(LogPriority.ERROR, it) { "Schema reconcile failed" } }
+                        // runBlocking so the async ALTER/CREATE actually complete first.
+                        runCatching {
+                            runBlocking { DatabaseMaintenance(driver).reconcileSchema() }
+                        }.onFailure { logcat(LogPriority.ERROR, it) { "Schema reconcile failed" } }
                     }
             }
         }
