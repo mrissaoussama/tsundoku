@@ -41,7 +41,7 @@ class ExtensionStoresScreenModel(
     init {
         screenModelScope.launchIO {
             combine(
-                getExtensionStores.subscribe(),
+                getExtensionStores.subscribe(isNovel = false),
                 sourcePreferences.disabledExtensionRepos.changes(),
             ) { stores, disabled -> stores to disabled }
                 .collectLatest { (stores, disabled) ->
@@ -86,7 +86,7 @@ class ExtensionStoresScreenModel(
                     },
                 )
             }
-            addExtensionStore(baseUrl)
+            addExtensionStore(baseUrl, isNovel = false)
                 .onSuccess {
                     extensionManager.findAvailableExtensions()
                     dismissDialog()

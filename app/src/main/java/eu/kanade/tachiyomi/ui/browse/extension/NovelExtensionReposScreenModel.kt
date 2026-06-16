@@ -43,7 +43,7 @@ class NovelExtensionReposScreenModel(
         screenModelScope.launchIO {
             combine(
                 jsPluginManager.repositories,
-                getExtensionStores.subscribe(),
+                getExtensionStores.subscribe(isNovel = true),
                 sourcePreferences.disabledExtensionRepos.changes(),
             ) { jsRepos, kotlinRepos, disabledKotlinRepos ->
                 NovelRepoScreenState.Success(
@@ -74,7 +74,7 @@ class NovelExtensionReposScreenModel(
      */
     fun createKotlinRepo(indexUrl: String) {
         screenModelScope.launchIO {
-            addExtensionStore(indexUrl).fold(
+            addExtensionStore(indexUrl, isNovel = true).fold(
                 onSuccess = {
                     extensionManager.findAvailableExtensions()
                     dismissDialog()
