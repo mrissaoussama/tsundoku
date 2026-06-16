@@ -6,13 +6,13 @@ import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.BuildConfig
 import eu.kanade.tachiyomi.data.backup.BackupFileValidator
 import eu.kanade.tachiyomi.data.backup.create.creators.CategoriesBackupCreator
-import eu.kanade.tachiyomi.data.backup.create.creators.ExtensionRepoBackupCreator
+import eu.kanade.tachiyomi.data.backup.create.creators.ExtensionStoresBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.MangaBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.PreferenceBackupCreator
 import eu.kanade.tachiyomi.data.backup.create.creators.SourcesBackupCreator
 import eu.kanade.tachiyomi.data.backup.models.Backup
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
-import eu.kanade.tachiyomi.data.backup.models.BackupExtensionRepos
+import eu.kanade.tachiyomi.data.backup.models.BackupExtensionStore
 import eu.kanade.tachiyomi.data.backup.models.BackupManga
 import eu.kanade.tachiyomi.data.backup.models.BackupPreference
 import eu.kanade.tachiyomi.data.backup.models.BackupSource
@@ -53,7 +53,7 @@ class BackupCreator(
     private val categoriesBackupCreator: CategoriesBackupCreator = CategoriesBackupCreator(),
     private val mangaBackupCreator: MangaBackupCreator = MangaBackupCreator(),
     private val preferenceBackupCreator: PreferenceBackupCreator = PreferenceBackupCreator(),
-    private val extensionRepoBackupCreator: ExtensionRepoBackupCreator = ExtensionRepoBackupCreator(),
+    private val extensionStoresBackupCreator: ExtensionStoresBackupCreator = ExtensionStoresBackupCreator(),
     private val sourcesBackupCreator: SourcesBackupCreator = SourcesBackupCreator(),
 ) {
 
@@ -120,7 +120,7 @@ class BackupCreator(
 
             val backupCategories = backupCategories(options)
             val backupAppPrefs = backupAppPreferences(options)
-            val backupExtensionRepos = backupExtensionRepos(options)
+            val backupExtensionStores = backupExtensionStores(options)
             val backupSourcePrefs = backupSourcePreferences(options)
 
             val outputStream = file.openOutputStream()
@@ -182,9 +182,9 @@ class BackupCreator(
                     val bytes = parser.encodeToByteArray(BackupSourcePreferences.serializer(), sp)
                     writeProtoField(gzipOut.outputStream(), 105, bytes)
                 }
-                // Field 106: backupExtensionRepo (repeated)
-                backupExtensionRepos.forEach { er ->
-                    val bytes = parser.encodeToByteArray(BackupExtensionRepos.serializer(), er)
+                // Field 106: backupExtensionStores (repeated)
+                backupExtensionStores.forEach { er ->
+                    val bytes = parser.encodeToByteArray(BackupExtensionStore.serializer(), er)
                     writeProtoField(gzipOut.outputStream(), 106, bytes)
                 }
 
@@ -245,10 +245,10 @@ class BackupCreator(
         return preferenceBackupCreator.createApp(includePrivatePreferences = options.privateSettings)
     }
 
-    private suspend fun backupExtensionRepos(options: BackupOptions): List<BackupExtensionRepos> {
-        if (!options.extensionRepoSettings) return emptyList()
+    private suspend fun backupExtensionStores(options: BackupOptions): List<BackupExtensionStore> {
+        if (!options.extensionStores) return emptyList()
 
-        return extensionRepoBackupCreator()
+        return extensionStoresBackupCreator()
     }
 
     private fun backupSourcePreferences(options: BackupOptions): List<BackupSourcePreferences> {
