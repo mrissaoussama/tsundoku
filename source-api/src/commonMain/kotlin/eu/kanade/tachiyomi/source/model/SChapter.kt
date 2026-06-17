@@ -55,6 +55,7 @@ interface SChapter : Serializable {
         chapter_number = other.chapter_number
         scanlator = other.scanlator
         locked = other.locked
+        memo = other.memo
     }
 
     companion object {
