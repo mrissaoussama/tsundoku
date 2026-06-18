@@ -277,7 +277,8 @@ FROM mangas
 WHERE favorite = 1;
 
 -- Single-scan containment lookup for one manga's title, used by the "similar novels"
--- dialog. Replaces the O(N^2) self-join in findDuplicatesContains for that path.
+-- dialog. Replaces an O(N^2) self-join over all favorites: only one manga's matches
+-- are ever needed here.
 findContainsForTitle:
 SELECT M._id
 FROM mangas M
@@ -294,28 +295,6 @@ AND (
 createNormalizedTitleIndex:
 CREATE INDEX IF NOT EXISTS mangas_normalized_title_index
 ON mangas(lower(trim(title))) WHERE favorite = 1;
-
--- Find all duplicate groups with contains match (one title contains another)
--- Optimized: use substr index and smaller comparisons to avoid full table scans
-findDuplicatesContains:
-SELECT
-    a._id AS id_a,
-    a.title AS title_a,
-    b._id AS id_b,
-    b.title AS title_b
-FROM mangas a
-JOIN mangas b
-    ON a._id < b._id
-   AND a.favorite = 1
-   AND b.favorite = 1
-   -- Filter by first character to reduce comparison set
-   AND substr(lower(trim(a.title)), 1, 1) = substr(lower(trim(b.title)), 1, 1)
-   -- Only check containment if lengths differ significantly
-   AND (length(trim(a.title)) < length(trim(b.title)) * 0.8 OR length(trim(b.title)) < length(trim(a.title)) * 0.8)
-   AND (lower(trim(b.title)) LIKE '%' || lower(trim(a.title)) || '%'
-        OR lower(trim(a.title)) LIKE '%' || lower(trim(b.title)) || '%')
-ORDER BY a.title
-;
 
 -- Find duplicates by URL within the same source/extension
 findDuplicatesByUrl:
