@@ -55,6 +55,7 @@ class LibraryExportJob(private val context: Context, workerParams: WorkerParamet
 
         return try {
             val total = mangaRepository.getFavoritesCount().toInt()
+            var lastNotifyAt = 0L
             LibraryExporter.exportToCsv(
                 context = context,
                 uri = Uri.parse(uriString),
@@ -62,10 +63,16 @@ class LibraryExportJob(private val context: Context, workerParams: WorkerParamet
                 loadPage = { limit, offset -> mangaRepository.getFavoritesPaged(limit, offset) },
                 options = options,
                 onProgress = { progress ->
-                    notificationBuilder
-                        .setContentText("${progress.current}/${progress.total}")
-                        .setProgress(progress.total, progress.current, false)
-                    context.notify(Notifications.ID_LIBRARY_EXPORT_PROGRESS, notificationBuilder.build())
+                    // onProgress fires per-manga; throttle notification updates to avoid spamming
+                    // the system NotificationManager (jank + rate-limit) on large libraries.
+                    val now = System.currentTimeMillis()
+                    if (now - lastNotifyAt >= PROGRESS_NOTIFY_INTERVAL_MS || progress.current >= progress.total) {
+                        lastNotifyAt = now
+                        notificationBuilder
+                            .setContentText("${progress.current}/${progress.total}")
+                            .setProgress(progress.total, progress.current, false)
+                        context.notify(Notifications.ID_LIBRARY_EXPORT_PROGRESS, notificationBuilder.build())
+                    }
                 },
                 onExportComplete = {
                     notificationBuilder
@@ -107,6 +114,7 @@ class LibraryExportJob(private val context: Context, workerParams: WorkerParamet
 
     companion object {
         private const val TAG = "LibraryExportJob"
+        private const val PROGRESS_NOTIFY_INTERVAL_MS = 500L
         private const val KEY_OUTPUT_URI = "output_uri"
         private const val KEY_INCLUDE_TITLE = "include_title"
         private const val KEY_INCLUDE_AUTHOR = "include_author"
