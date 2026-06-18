@@ -24,6 +24,7 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import androidx.core.net.toUri
 
 class LibraryExportJob(private val context: Context, workerParams: WorkerParameters) :
     CoroutineWorker(context, workerParams) {
@@ -58,13 +59,11 @@ class LibraryExportJob(private val context: Context, workerParams: WorkerParamet
             var lastNotifyAt = 0L
             LibraryExporter.exportToCsv(
                 context = context,
-                uri = Uri.parse(uriString),
+                uri = uriString.toUri(),
                 total = total,
                 loadPage = { limit, offset -> mangaRepository.getFavoritesPaged(limit, offset) },
                 options = options,
                 onProgress = { progress ->
-                    // onProgress fires per-manga; throttle notification updates to avoid spamming
-                    // the system NotificationManager (jank + rate-limit) on large libraries.
                     val now = System.currentTimeMillis()
                     if (now - lastNotifyAt >= PROGRESS_NOTIFY_INTERVAL_MS || progress.current >= progress.total) {
                         lastNotifyAt = now
