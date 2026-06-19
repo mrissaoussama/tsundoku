@@ -810,10 +810,20 @@ class TranslationService(
         null
     }
 
+    /**
+     * Stable ordered snapshot of the queue. Iterating CHM.values is weakly consistent and never
+     * throws; copying into a growable list first avoids the toArray sizing race that
+     * `sortedWith` (via toTypedArray) hits under concurrent put/remove (NoSuchElementException).
+     */
+    private fun sortedQueueSnapshot(): List<TranslationTask> {
+        val tasks = ArrayList<TranslationTask>(queueMap.size + 1)
+        for (task in queueMap.values) tasks.add(task)
+        tasks.sortWith(compareByDescending<TranslationTask> { it.priority }.thenBy { it.id })
+        return tasks
+    }
+
     private fun publishQueueState() {
-        val snapshot = queueMap.values.sortedWith(
-            compareByDescending<TranslationTask> { it.priority }.thenBy { it.id },
-        )
+        val snapshot = sortedQueueSnapshot()
         _progressState.update { current ->
             current.copy(totalChapters = snapshot.size + current.completedChapters)
         }
@@ -828,9 +838,7 @@ class TranslationService(
             saveMutex.withLock {
                 // Clear before reading so a mutation that races the read schedules a fresh save
                 saveRequested.set(false)
-                val snapshot = queueMap.values.sortedWith(
-                    compareByDescending<TranslationTask> { it.priority }.thenBy { it.id },
-                )
+                val snapshot = sortedQueueSnapshot()
                 val inFlight = currentTask
                 val toSave = if (inFlight != null && snapshot.none { it.chapterId == inFlight.chapterId }) {
                     listOf(inFlight) + snapshot
