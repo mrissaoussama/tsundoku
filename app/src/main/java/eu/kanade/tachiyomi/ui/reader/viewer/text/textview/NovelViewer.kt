@@ -1245,9 +1245,10 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
     }
 
     override fun destroy() {
-        getScrollProgress { progress ->
-            saveProgress(progress)
-        }
+        // Save the live per-chapter progress, not a recomputed whole-document ratio.
+        // lastSavedProgress is 0 until restore/scroll, and a teardown before that (orientation
+        // lock recreates the activity) must not persist 0 and wipe the saved progress.
+        if (lastSavedProgress > 0f) saveProgress(lastSavedProgress)
 
         ttsController.destroy()
         scope.cancel() // cancels loadJob and all other child coroutines
@@ -1833,14 +1834,6 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
 
     fun scrollToTop() {
         scrollView.scrollTo(0, 0)
-    }
-
-    fun getScrollProgress(callback: (Float) -> Unit) {
-        val scrollY = scrollView.scrollY
-        val child = scrollView.getChildAt(0)
-        val totalHeight = if (child != null) child.height - scrollView.height else 0
-        val progress = if (totalHeight > 0) scrollY.toFloat() / totalHeight else 0f
-        callback(progress)
     }
 
     fun getProgressPercent(): Int {

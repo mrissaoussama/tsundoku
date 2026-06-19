@@ -691,14 +691,20 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                 webView.postDelayed({
                     val js = """
                         (function() {
-                            var scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-                            if (scrollHeight > 0) {
-                                window.scrollTo(0, scrollHeight * $progress);
-                                console.log('Restored scroll to ' + Math.round($progress * 100) + '% (' + Math.round(scrollHeight * $progress) + 'px)');
+                            function scrollable() {
+                                var docHeight = Math.max(
+                                    document.documentElement.scrollHeight,
+                                    document.body ? document.body.scrollHeight : 0
+                                );
+                                var viewport = window.innerHeight || document.documentElement.clientHeight;
+                                return docHeight - viewport;
+                            }
+                            var range = scrollable();
+                            if (range > 0) {
+                                window.scrollTo(0, range * $progress);
                             } else {
                                 setTimeout(function() {
-                                    var newScrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-                                    window.scrollTo(0, newScrollHeight * $progress);
+                                    window.scrollTo(0, scrollable() * $progress);
                                 }, 200);
                             }
                         })();
@@ -716,7 +722,11 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         ThemeUtils.getThemeColors(activity, preferences, theme)
 
     override fun destroy() {
-        saveProgress()
+        // Only persist if real progress exists. lastSavedProgress starts at 0 and stays 0
+        // until onPageFinished restores or the user scrolls. Saving 0 here on an early
+        // teardown (orientation lock recreates the activity before restore runs) would
+        // wipe the chapter's saved progress.
+        if (lastSavedProgress > 0f) saveProgress()
 
         ttsController.destroy()
         imageCache.clear()
@@ -783,7 +793,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
             """
             (function() {
                 function checkIfShortChapter() {
-                    return document.documentElement.scrollHeight - document.documentElement.clientHeight <= 0;
+                    var docHeight = Math.max(
+                        document.documentElement.scrollHeight,
+                        document.body ? document.body.scrollHeight : 0
+                    );
+                    var viewport = window.innerHeight || document.documentElement.clientHeight;
+                    return docHeight - viewport <= 0;
                 }
                 var called = false;
                 function tryMarkShort() {
