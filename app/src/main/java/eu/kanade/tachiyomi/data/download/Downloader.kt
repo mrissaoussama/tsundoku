@@ -227,10 +227,8 @@ class Downloader(
      */
     fun pauseNovelGroup(mangaId: Long) {
         _pausedNovelMangaIds.update { it + mangaId }
-        // Drop any in-flight download of this group back to QUEUE so it stops showing as active.
-        queueState.value
-            .filter { it.mangaId == mangaId && it.status == Download.State.DOWNLOADING }
-            .forEach { it.status = Download.State.QUEUE }
+        // activeDownloadsFlow will re-evaluate and cancel the in-flight job; status reset
+        // happens in launchDownloadJob's CancellationException handler to avoid a race.
     }
 
     /**
@@ -406,7 +404,14 @@ class Downloader(
                 stop()
             }
         } catch (e: Throwable) {
-            if (e is CancellationException) throw e
+            if (e is CancellationException) {
+                // Job cancelled (e.g. novel group paused) — reset to QUEUE so it isn't stranded
+                // in DOWNLOADING with no active job. Done here to avoid racing with the coroutine.
+                if (download.status == Download.State.DOWNLOADING) {
+                    download.status = Download.State.QUEUE
+                }
+                throw e
+            }
             logcat(LogPriority.ERROR, e)
 
             // Mark only this download as failed and continue the queue.
