@@ -130,6 +130,7 @@ class MangaScreenModel(
     private val updateChapter: UpdateChapter = Injekt.get(),
     private val removeChapters: RemoveChapters = Injekt.get(),
     private val updateManga: UpdateManga = Injekt.get(),
+    private val setCustomMangaInfo: tachiyomi.domain.manga.interactor.SetCustomMangaInfo = Injekt.get(),
     private val updateMangaNotes: tachiyomi.domain.manga.interactor.UpdateMangaNotes = Injekt.get(),
     private val syncChaptersWithSource: SyncChaptersWithSource = Injekt.get(),
     private val getCategories: GetCategories = Injekt.get(),
@@ -637,11 +638,13 @@ class MangaScreenModel(
      */
     fun updateTags(tags: List<String>) {
         screenModelScope.launchIO {
+            if (tags == successState?.manga?.genre.orEmpty()) return@launchIO
             val update = tachiyomi.domain.manga.model.MangaUpdate(
                 id = mangaId,
                 genre = tags,
             )
             updateManga.await(update)
+            setCustomMangaInfo.await(mangaId) { it.copy(genre = tags.ifEmpty { null }) }
             getLibraryManga.applyMangaDetailUpdate(mangaId) { it.copy(genre = tags) }
         }
     }
@@ -1302,6 +1305,7 @@ class MangaScreenModel(
         data class Migrate(val target: Manga, val current: Manga) : Dialog
         data class SetFetchInterval(val manga: Manga) : Dialog
         data class Edit(val manga: Manga) : Dialog
+        data object ClearCustomInfo : Dialog
         data class TranslateMangaDetails(val manga: Manga) : Dialog
         data class ExportEpub(val manga: Manga, val chapters: List<Chapter>) : Dialog
         data object SettingsSheet : Dialog
@@ -1408,6 +1412,23 @@ class MangaScreenModel(
         updateSuccessState { it.copy(dialog = Dialog.Edit(manga)) }
     }
 
+    fun showClearCustomInfoDialog() {
+        updateSuccessState { it.copy(dialog = Dialog.ClearCustomInfo) }
+    }
+
+    /**
+     * Drop all custom metadata overrides for this manga and re-fetch details so the source values
+     * repopulate the entry.
+     */
+    fun clearCustomInfo() {
+        screenModelScope.launchIO {
+            val cleared = setCustomMangaInfo.clear(mangaId)
+            if (cleared) {
+                fetchMangaFromSource(manualFetch = true)
+            }
+        }
+    }
+
     /**
      * Update the title of the manga.
      */
@@ -1418,35 +1439,44 @@ class MangaScreenModel(
     }
 
     /**
-     * Update the Author of the manga.
+     * Update the Author of the manga. Records the value as a custom override (blank reverts to
+     * source on next refresh) so a source refresh no longer wipes the manual edit.
      */
     fun updateAuthor(author: String) {
         screenModelScope.launchIO {
+            if (author == successState?.manga?.author.orEmpty()) return@launchIO
             updateManga.awaitUpdateAuthor(mangaId, author)
+            setCustomMangaInfo.await(mangaId) { it.copy(author = author.trim().ifBlank { null }) }
         }
     }
 
     fun updateArtist(artist: String) {
         screenModelScope.launchIO {
+            if (artist == successState?.manga?.artist.orEmpty()) return@launchIO
             updateManga.awaitUpdateArtist(mangaId, artist)
+            setCustomMangaInfo.await(mangaId) { it.copy(artist = artist.trim().ifBlank { null }) }
         }
     }
 
     /**
-     * Update the Status of the manga.
+     * Update the Status of the manga. Recorded as a custom override.
      */
     fun updateStatus(status: Long) {
         screenModelScope.launchIO {
+            if (status == successState?.manga?.status) return@launchIO
             updateManga.awaitUpdateStatus(mangaId, status)
+            setCustomMangaInfo.await(mangaId) { it.copy(status = status) }
         }
     }
 
     /**
-     * Update the description of the manga.
+     * Update the description of the manga. Recorded as a custom override (blank reverts to source).
      */
     fun updateDescription(description: String) {
         screenModelScope.launchIO {
+            if (description == successState?.manga?.description.orEmpty()) return@launchIO
             updateManga.awaitUpdateDescription(mangaId, description)
+            setCustomMangaInfo.await(mangaId) { it.copy(description = description.trim().ifBlank { null }) }
         }
     }
 

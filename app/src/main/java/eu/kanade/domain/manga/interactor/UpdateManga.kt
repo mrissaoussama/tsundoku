@@ -10,6 +10,7 @@ import logcat.LogPriority
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.interactor.FetchInterval
+import tachiyomi.domain.manga.interactor.GetCustomMangaInfo
 import tachiyomi.domain.manga.interactor.GetLibraryManga
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
@@ -27,6 +28,7 @@ class UpdateManga(
     private val mangaRepository: MangaRepository,
     private val fetchInterval: FetchInterval,
     private val getLibraryManga: GetLibraryManga = Injekt.get(),
+    private val getCustomMangaInfo: GetCustomMangaInfo = Injekt.get(),
 ) {
 
     private val sourceTrackerDispatcher: SourceTrackerDispatcher by lazy { Injekt.get() }
@@ -107,9 +109,15 @@ class UpdateManga(
 
         val thumbnailUrl = remoteManga.thumbnail_url?.takeIf { it.isNotEmpty() }
 
-        // Don't overwrite manually edited metadata unless the preference is enabled
-        val updateMetadata = libraryPreferences.updateMangaMetadata.get()
-        val status = remoteManga.status.toLong()
+        // Per-field user overrides win over the source value; absent fields fall through to the
+        // source (so source-set values still update and null fields get filled). Title and cover
+        // are deliberately not part of this overlay — they have their own handling above.
+        val custom = getCustomMangaInfo.await(localManga.id)
+        val author = custom?.author ?: remoteManga.author
+        val artist = custom?.artist ?: remoteManga.artist
+        val description = custom?.description ?: remoteManga.description
+        val genre = custom?.genre ?: remoteManga.getGenres()
+        val status = custom?.status ?: remoteManga.status.toLong()
 
         // Alternative titles are always merged additively (never removed), so they don't clash with
         // manual edits and aren't gated by updateMetadata.
@@ -134,13 +142,13 @@ class UpdateManga(
                 id = localManga.id,
                 title = title,
                 coverLastModified = coverLastModified,
-                author = remoteManga.author.takeIf { updateMetadata },
-                artist = remoteManga.artist.takeIf { updateMetadata },
-                description = remoteManga.description.takeIf { updateMetadata },
-                genre = remoteManga.getGenres().takeIf { updateMetadata },
+                author = author,
+                artist = artist,
+                description = description,
+                genre = genre,
                 alternativeTitles = mergedAltTitles,
                 thumbnailUrl = thumbnailUrl,
-                status = status.takeIf { updateMetadata },
+                status = status,
                 updateStrategy = remoteManga.update_strategy,
                 initialized = true,
             ),
@@ -154,7 +162,11 @@ class UpdateManga(
                     title = title ?: manga.title,
                     thumbnailUrl = thumbnailUrl ?: manga.thumbnailUrl,
                     coverLastModified = coverLastModified ?: manga.coverLastModified,
-                    status = if (updateMetadata) status else manga.status,
+                    author = author,
+                    artist = artist,
+                    description = description,
+                    genre = genre,
+                    status = status,
                     alternativeTitles = mergedAltTitles ?: manga.alternativeTitles,
                 )
             }
