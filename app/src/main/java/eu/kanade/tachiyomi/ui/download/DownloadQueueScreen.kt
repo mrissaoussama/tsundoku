@@ -750,7 +750,7 @@ private fun NovelDownloadCard(
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("Move to top") },
+                            text = { Text(stringResource(TDMR.strings.novel_downloads_move_top)) },
                             onClick = {
                                 onMoveToTop()
                                 showMenu = false
@@ -763,7 +763,7 @@ private fun NovelDownloadCard(
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("Move to bottom") },
+                            text = { Text(stringResource(TDMR.strings.novel_downloads_move_bottom)) },
                             onClick = {
                                 onMoveToBottom()
                                 showMenu = false
@@ -776,7 +776,7 @@ private fun NovelDownloadCard(
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("Cancel") },
+                            text = { Text(stringResource(MR.strings.action_cancel)) },
                             onClick = {
                                 onCancel()
                                 showMenu = false
