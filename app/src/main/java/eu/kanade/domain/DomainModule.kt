@@ -81,11 +81,11 @@ import tachiyomi.domain.history.repository.HistoryRepository
 import tachiyomi.domain.library.interactor.RefreshLibraryCache
 import tachiyomi.domain.manga.interactor.FetchInterval
 import tachiyomi.domain.manga.interactor.FindDuplicateNovels
+import tachiyomi.domain.manga.interactor.GetCustomMangaInfo
 import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
 import tachiyomi.domain.manga.interactor.GetFavorites
 import tachiyomi.domain.manga.interactor.GetFavoritesEntry
 import tachiyomi.domain.manga.interactor.GetLibraryManga
-import tachiyomi.domain.manga.interactor.GetCustomMangaInfo
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.interactor.GetMangaByUrlAndSourceId
 import tachiyomi.domain.manga.interactor.GetMangaWithChapters

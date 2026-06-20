@@ -7,7 +7,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /**
  * Per-field user overrides for a manga's source-fetched metadata. Stored inside the manga's
- * [Manga.memo] JSON under the [MEMO_KEY] key. A null field means "not overridden" — the source
+ * [Manga.memo] JSON under the [MEMO_KEY] key. A null field means "not overridden": the source
  * value flows through on refresh. Title and thumbnail are intentionally excluded: title keeps its
  * own update behaviour (and alternative titles), and the cover has its own custom-cover mechanism.
  */

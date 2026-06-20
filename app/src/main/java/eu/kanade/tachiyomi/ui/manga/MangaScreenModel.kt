@@ -1459,9 +1459,6 @@ class MangaScreenModel(
         }
     }
 
-    /**
-     * Update the title of the manga.
-     */
     fun updateTitle(title: String) {
         screenModelScope.launchIO {
             updateManga.awaitUpdateTitle(mangaId, title)

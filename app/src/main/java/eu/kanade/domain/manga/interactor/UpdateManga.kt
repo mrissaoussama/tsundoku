@@ -111,7 +111,7 @@ class UpdateManga(
 
         // Per-field user overrides win over the source value; absent fields fall through to the
         // source (so source-set values still update and null fields get filled). Title and cover
-        // are deliberately not part of this overlay — they have their own handling above.
+        // are deliberately not part of this overlay; they have their own handling above.
         val custom = getCustomMangaInfo.await(localManga.id)
         val author = custom?.author ?: remoteManga.author
         val artist = custom?.artist ?: remoteManga.artist
