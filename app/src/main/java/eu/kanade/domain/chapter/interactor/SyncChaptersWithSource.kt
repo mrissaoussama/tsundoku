@@ -67,8 +67,14 @@ class SyncChaptersWithSource(
         // Apply reversal if configured for this source
         val orderedChapters = if (shouldReverse) rawSourceChapters.reversed() else rawSourceChapters
 
+        // Dedupe on a normalized url key, not raw url: a source doing a delta refresh
+        // (getChapterList with RefreshContext) merges the stored chapters with a fresh fetch, and
+        // the two can spell the same chapter differently (leading/trailing slash, absolute vs
+        // relative). Raw-url distinct keeps both and the library count doubles on every refresh.
+        // First occurrence wins; existing/stored chapters come first in a delta merge, so the
+        // surviving url keeps matching what is already in the db.
         val sourceChapters = orderedChapters
-            .distinctBy { it.url }
+            .distinctBy { normalizeChapterUrlKey(it.url) }
             .mapIndexed { i, sChapter ->
                 Chapter.create()
                     .copyFromSChapter(sChapter)
@@ -232,5 +238,15 @@ class SyncChaptersWithSource(
         val excludedScanlators = getExcludedScanlators.await(manga.id).toHashSet()
 
         return updatedToAdd.filterNot { it.url in changedOrDuplicateReadUrls || it.scanlator in excludedScanlators }
+    }
+
+    private fun normalizeChapterUrlKey(url: String): String {
+        var u = url.trim()
+        val scheme = u.indexOf("://")
+        if (scheme >= 0) {
+            val pathStart = u.indexOf('/', scheme + 3)
+            u = if (pathStart >= 0) u.substring(pathStart) else ""
+        }
+        return u.trim('/')
     }
 }
