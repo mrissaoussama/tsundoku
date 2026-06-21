@@ -1002,6 +1002,10 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             }
         }
 
+        // A ResolvableSource may hand back a url with a trailing slash; trim it so the
+        // dedup lookup matches the trailing-slash-trimmed url that NetworkToLocalManga stores.
+        finalUrl = finalUrl.trimEnd('/')
+
         val existingManga = getMangaByUrlAndSourceId.await(finalUrl, source.id)
         if (existingManga != null && existingManga.favorite) {
             return false

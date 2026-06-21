@@ -61,12 +61,24 @@ fun normalizeSourcePath(source: Source, pathOrUrl: String): String {
     if (trimmed.isBlank()) {
         return trimmed
     }
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+
+    // Canonicalize identity: drop trailing slashes so the same entry isn't stored
+    // twice when a source emits "/abc/" and another (or the same one via a different
+    // add path) emits "/abc". Fragments are intentionally NOT stripped here: some
+    // plugins encode identity in the fragment (hashbang/SPA routes), and stripping
+    // automatically would collapse distinct novels. The Advanced > Normalize URLs
+    // action handles fragments separately with a preview.
+    val canonical = trimmed.trimEnd('/')
+    if (canonical.isBlank()) {
         return trimmed
     }
+
+    if (canonical.startsWith("http://") || canonical.startsWith("https://")) {
+        return canonical
+    }
     return when (source) {
-        is JsSource, is HttpSource -> if (trimmed.startsWith("/")) trimmed else "/$trimmed"
-        else -> trimmed
+        is JsSource, is HttpSource -> if (canonical.startsWith("/")) canonical else "/$canonical"
+        else -> canonical
     }
 }
 

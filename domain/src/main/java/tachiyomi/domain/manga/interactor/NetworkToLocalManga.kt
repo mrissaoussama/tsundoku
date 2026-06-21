@@ -12,6 +12,17 @@ class NetworkToLocalManga(
     }
 
     suspend operator fun invoke(manga: List<Manga>): List<Manga> {
-        return mangaRepository.insertNetworkManga(manga)
+        return mangaRepository.insertNetworkManga(manga.map { it.canonicalizeUrl() })
+    }
+
+    /**
+     * Drop trailing slashes so the same entry isn't stored twice when one source/add
+     * path emits "/abc/" and another emits "/abc". Single choke point for all add
+     * paths (browse, search, deeplink, migration, mass import). Fragments are left
+     * intact: some plugins encode identity in the fragment (hashbang/SPA routes).
+     */
+    private fun Manga.canonicalizeUrl(): Manga {
+        val trimmed = url.trimEnd('/')
+        return if (trimmed.isNotEmpty() && trimmed != url) copy(url = trimmed) else this
     }
 }
