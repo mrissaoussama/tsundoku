@@ -1434,7 +1434,15 @@ class JSLibraryProvider(
                         return '';
                     }
                 },
-                json: async function() { return JSON.parse(r.text || '{}'); },
+                json: async function() {
+                    var t = r.text || '';
+                    if (!t) return {};
+                    try {
+                        return JSON.parse(t);
+                    } catch (e) {
+                        throw new Error('fetch json() parse failed (status=' + (r.status || 0) + ', url=' + (r.url || url) + '): ' + String(t).slice(0, 200));
+                    }
+                },
                 arrayBuffer: async function() {
                     if (isBinary) {
                         var b64 = r.text || '';
