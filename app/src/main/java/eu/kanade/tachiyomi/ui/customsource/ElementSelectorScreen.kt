@@ -49,7 +49,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -72,7 +71,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -126,6 +124,8 @@ enum class SelectorWizardStep(
     val descriptionRes: StringResource,
     val detailedHelpRes: StringResource,
     val testSection: SourceTestSection? = null,
+    // Whether this step shows the (i) help button. Only steps with non-obvious, niche guidance do.
+    val detailed: Boolean = true,
 ) {
     POPULAR_LIST(
         TDMR.strings.selector_step_novel_card_title,
@@ -143,6 +143,7 @@ enum class SelectorWizardStep(
         TDMR.strings.selector_step_new_novels_desc,
         TDMR.strings.selector_step_new_novels_detail,
         SourceTestSection.LATEST,
+        detailed = false,
     ),
     LATEST_PAGINATION(
         TDMR.strings.selector_step_pagination_title,
@@ -164,11 +165,13 @@ enum class SelectorWizardStep(
         TDMR.strings.selector_step_novel_details_title,
         TDMR.strings.selector_step_novel_details_desc,
         TDMR.strings.selector_step_novel_details_detail,
+        detailed = false,
     ),
     CHAPTER_INDEX_LINK(
         TDMR.strings.selector_step_chapter_index_title,
         TDMR.strings.selector_step_chapter_index_desc,
         TDMR.strings.selector_step_chapter_index_detail,
+        detailed = false,
     ),
     CHAPTER_RANGE(
         TDMR.strings.selector_step_chapter_range_title,
@@ -179,27 +182,32 @@ enum class SelectorWizardStep(
         TDMR.strings.selector_step_chapter_list_title,
         TDMR.strings.selector_step_chapter_list_desc,
         TDMR.strings.selector_step_chapter_list_detail,
+        detailed = false,
     ),
     CHAPTER_LIST_PAGINATION(
         TDMR.strings.selector_step_chapter_pagination_title,
         TDMR.strings.selector_step_chapter_pagination_desc,
         TDMR.strings.selector_step_chapter_pagination_detail,
+        detailed = false,
     ),
     CHAPTER_DATE(
         TDMR.strings.selector_step_chapter_date_title,
         TDMR.strings.selector_step_chapter_date_desc,
         TDMR.strings.selector_step_chapter_date_detail,
+        detailed = false,
     ),
     CHAPTER_CONTENT(
         TDMR.strings.selector_step_chapter_content_title,
         TDMR.strings.selector_step_chapter_content_desc,
         TDMR.strings.selector_step_chapter_content_detail,
         SourceTestSection.READING,
+        detailed = false,
     ),
     REVIEW(
         TDMR.strings.selector_review_title,
         TDMR.strings.selector_review_desc,
         TDMR.strings.selector_step_complete_detail,
+        detailed = false,
     ),
     ;
 
@@ -635,39 +643,6 @@ fun ElementSelectorScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-
-                StepIndicatorBar(
-                    steps = steps,
-                    currentStep = currentStep,
-                    onStepClick = { screenModel.currentStepState.value = it },
-                )
-            }
-        },
-        floatingActionButton = {
-            if (!isReview) {
-                ExtendedFloatingActionButton(
-                    onClick = { if (selectionModeEnabled) disableSelectionMode() else enableSelectionMode() },
-                    containerColor = if (selectionModeEnabled) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.secondaryContainer
-                    },
-                    icon = {
-                        Icon(
-                            if (selectionModeEnabled) Icons.Filled.TouchApp else Icons.Filled.Edit,
-                            contentDescription = stringResource(TDMR.strings.selector_select_element),
-                        )
-                    },
-                    text = {
-                        Text(
-                            if (selectionModeEnabled) {
-                                stringResource(TDMR.strings.selector_selection_on)
-                            } else {
-                                stringResource(TDMR.strings.selector_select_element)
-                            },
-                        )
-                    },
-                )
             }
         },
     ) { padding ->
@@ -900,6 +875,10 @@ fun ElementSelectorScreen(
                     commitAllSelections()
                     showSourceNameDialog = true
                 },
+                selectionModeEnabled = selectionModeEnabled,
+                onToggleSelection = {
+                    if (selectionModeEnabled) disableSelectionMode() else enableSelectionMode()
+                },
             )
         }
     }
@@ -997,39 +976,6 @@ fun ElementSelectorScreen(
 }
 
 @Composable
-private fun StepIndicatorBar(
-    steps: List<SelectorWizardStep>,
-    currentStep: SelectorWizardStep,
-    onStepClick: (SelectorWizardStep) -> Unit,
-) {
-    val currentIndex = steps.indexOf(currentStep)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        steps.forEachIndexed { index, step ->
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(
-                        when {
-                            index < currentIndex -> MaterialTheme.colorScheme.primary
-                            step == currentStep -> MaterialTheme.colorScheme.tertiary
-                            else -> MaterialTheme.colorScheme.outlineVariant
-                        },
-                    )
-                    .clickable { onStepClick(step) },
-            )
-        }
-    }
-}
-
-@Composable
 private fun StepInstructionCard(
     step: SelectorWizardStep,
     selectedCount: Int,
@@ -1052,26 +998,30 @@ private fun StepInstructionCard(
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = if (compact) 4.dp else 8.dp)) {
             var showHelp by remember { mutableStateOf(false) }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (!compact) {
-                    Text(
-                        text = stringResource(step.descriptionRes),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.weight(1f),
-                    )
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
-                IconButton(onClick = { showHelp = true }, modifier = Modifier.size(28.dp)) {
-                    Icon(
-                        imageVector = Icons.Outlined.Info,
-                        contentDescription = stringResource(TDMR.strings.selector_step_help),
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
+            if (!compact || step.detailed) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (!compact) {
+                        Text(
+                            text = stringResource(step.descriptionRes),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                    if (step.detailed) {
+                        IconButton(onClick = { showHelp = true }, modifier = Modifier.size(28.dp)) {
+                            Icon(
+                                imageVector = Icons.Outlined.Info,
+                                contentDescription = stringResource(TDMR.strings.selector_step_help),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
                 }
             }
             if (showHelp) {
@@ -1428,16 +1378,58 @@ private fun StepNavigationBar(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onComplete: () -> Unit,
+    selectionModeEnabled: Boolean = false,
+    onToggleSelection: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        OutlinedButton(onClick = onPrevious, enabled = !isFirstStep) {
-            Text(stringResource(TDMR.strings.custom_selector_previous))
+        IconButton(onClick = onPrevious, enabled = !isFirstStep, modifier = Modifier.size(40.dp)) {
+            Icon(
+                Icons.AutoMirrored.Outlined.ArrowBack,
+                stringResource(TDMR.strings.custom_selector_previous),
+            )
+        }
+
+        // Select-element toggle lives between prev/next so it is reachable without the FAB. Hidden on
+        // the final review step where there is nothing to pick.
+        if (!isLastStep && onToggleSelection != null) {
+            FilledTonalButton(
+                onClick = onToggleSelection,
+                modifier = Modifier.weight(1f),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                colors = if (selectionModeEnabled) {
+                    ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    )
+                } else {
+                    ButtonDefaults.filledTonalButtonColors()
+                },
+            ) {
+                Icon(
+                    if (selectionModeEnabled) Icons.Filled.TouchApp else Icons.Filled.Edit,
+                    null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (selectionModeEnabled) {
+                        stringResource(TDMR.strings.selector_selection_on)
+                    } else {
+                        stringResource(TDMR.strings.selector_select_element)
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        } else {
+            Spacer(Modifier.weight(1f))
         }
 
         if (isLastStep) {
@@ -1803,7 +1795,8 @@ private fun canProceedToNextStep(
     config: SelectorConfig,
 ): Boolean {
     return when (step) {
-        SelectorWizardStep.POPULAR_LIST -> selectedElements.size >= 2 // Cover + Title
+        // One tap (title) is enough; a second optional tap captures the cover for thumbnails.
+        SelectorWizardStep.POPULAR_LIST -> selectedElements.isNotEmpty()
         // Optional: by default latest reuses the popular card layout, so no taps are required —
         // only the latest page URL (captured on Next) is needed.
         SelectorWizardStep.LATEST_LIST -> true
@@ -1915,16 +1908,21 @@ private fun saveSelectionsForStep(
 ) {
     when (step) {
         SelectorWizardStep.POPULAR_LIST -> {
-            // First tap = cover image, second = title/link. List = repeating item selector (DOM-
-            // detected when available); cover/title stored RELATIVE to it so the source resolves
-            // them per item.
+            // One tap = title/link only (cover skipped). Two taps = cover first, then title. List =
+            // repeating item selector (DOM-detected when available); cover/title stored RELATIVE to
+            // it so the source resolves them per item.
             config.trendingNovels.clear()
             config.trendingNovels.addAll(selectedElements.map { it.selector })
             if (selectedElements.isNotEmpty()) {
                 val listSel = detectedListSelector?.ifBlank { null } ?: deriveListSelector(selectedElements)
                 config.trendingSelector = listSel
-                selectedElements.getOrNull(0)?.let { config.novelCoverSelector = relativize(it.selector, listSel) }
-                selectedElements.getOrNull(1)?.let { config.novelTitleSelector = relativize(it.selector, listSel) }
+                if (selectedElements.size == 1) {
+                    config.novelCoverSelector = ""
+                    config.novelTitleSelector = relativize(selectedElements[0].selector, listSel)
+                } else {
+                    config.novelCoverSelector = relativize(selectedElements[0].selector, listSel)
+                    config.novelTitleSelector = relativize(selectedElements[1].selector, listSel)
+                }
             }
         }
         SelectorWizardStep.LATEST_LIST -> {

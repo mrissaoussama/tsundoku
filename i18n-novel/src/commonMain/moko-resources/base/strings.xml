@@ -706,8 +706,8 @@
     <string name="selector_step_trending_desc">Navigate to the trending/popular novels section</string>
     <string name="selector_step_trending_detail">Find the section showing popular or trending novels on the homepage</string>
     <string name="selector_step_novel_card_title">Popular list</string>
-    <string name="selector_step_novel_card_desc">On the popular/trending page, tap a novel\'s COVER, then its TITLE link (in that order).</string>
-    <string name="selector_step_novel_card_detail">These two selectors drive how novels show in the popular, latest and search lists. Tap the title text inside the link; you can switch to its parent &lt;a&gt; in the next dialog.</string>
+    <string name="selector_step_novel_card_desc">On the popular/trending page, tap a novel\'s TITLE link. To also grab thumbnails, tap the COVER first, then the title.</string>
+    <string name="selector_step_novel_card_detail">If the title tap only catches the inner text, switch to its parent &lt;a&gt; in the next dialog so links resolve. The cover is optional: skip it and the lists just show no thumbnails.</string>
     <string name="selector_step_trending_novels_title">Trending Novels</string>
     <string name="selector_step_trending_novels_desc">Select 3 novel items: Click on TITLE element of each novel</string>
     <string name="selector_step_trending_novels_detail">Click on the title text of 3 different trending novels.</string>
@@ -718,8 +718,8 @@
     <string name="selector_step_new_novels_desc">Navigate to the latest/updates page, then continue. Only tap cover+title if its layout differs from popular.</string>
     <string name="selector_step_new_novels_detail">Latest reuses the popular card selectors by default — you just need to land on the latest page so its URL is captured.</string>
     <string name="selector_step_search_title">Search (optional)</string>
-    <string name="selector_step_search_desc">Tap \"Set up search\", type any word, then search for it on the site — the address is captured automatically.</string>
-    <string name="selector_step_search_detail">Use a word you know has results. The captured address becomes the search template; the test then parses the results currently shown.</string>
+    <string name="selector_step_search_desc">Tap \"Set up search\", type a word, then run it on the site. The address is captured automatically. Many sites match case-sensitively, so type the word exactly.</string>
+    <string name="selector_step_search_detail">Your word is swapped for {query} in the captured address to build the search template. Pick a word that returns results, and mind capitalization since some sites treat \"Sword\" and \"sword\" differently.</string>
     <string name="selector_step_search_url_title">Search URL Pattern</string>
     <string name="selector_step_search_url_desc">Identify where the search keyword appears in the URL</string>
     <string name="selector_step_search_url_detail">Look for your search term in the URL. Common patterns: ?s=keyword, ?q=keyword, /search/keyword</string>
@@ -743,7 +743,7 @@
     <string name="selector_step_chapter_pagination_detail">For chapter lists that span multiple pages.</string>
     <string name="selector_step_chapter_range_title">Chapter range</string>
     <string name="selector_step_chapter_range_desc">Tap the FIRST chapter, then the LAST chapter. Optionally tap an element showing the total chapter count.</string>
-    <string name="selector_step_chapter_range_detail">The chapter URLs are read as a numbered pattern (e.g. /chapter-12); the whole list is generated from the range, with no page scraping.</string>
+    <string name="selector_step_chapter_range_detail">Chapter URLs are read as a numbered pattern (e.g. /chapter-12) and the whole list is generated from the range. Tap the true first and last chapters even if they sit on different pages of the list (navigate there first); order and gaps between them don\'t matter, only the two numbers.</string>
     <string name="selector_step_chapter_date_title">Chapter date (optional)</string>
     <string name="selector_step_chapter_date_desc">Tap a chapter\'s upload date, or continue to skip.</string>
     <string name="selector_step_chapter_date_detail">Captures the per-chapter date selector. Skip if the list shows no dates.</string>
