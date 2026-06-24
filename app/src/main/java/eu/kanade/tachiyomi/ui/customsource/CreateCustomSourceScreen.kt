@@ -63,10 +63,7 @@ private fun FeatureToggle(
     }
 }
 
-/**
- * Pre-wizard setup page: enter the site URL and choose which sections/pagination the source has,
- * so the WebView wizard only walks the user through the steps that apply.
- */
+/** Pre-wizard page: enter the site URL and choose sections/pagination so the wizard shows only needed steps. */
 class WizardSetupScreen(
     private val initialUrl: String = "",
 ) : Screen {
@@ -182,8 +179,7 @@ class WizardSetupScreen(
                         features.chapterListPagination,
                     ) { features = features.copy(chapterListPagination = it) }
                 }
-                // Content pagination (a single chapter split across pages) is rarely useful for
-                // novels — set it in the manual editor when actually needed.
+                // Content pagination (one chapter split across pages) is set in the manual editor.
 
                 if (!features.hasPopular && !features.hasLatest) {
                     Text(
@@ -210,9 +206,7 @@ class WizardSetupScreen(
     }
 }
 
-/**
- * Voyager screen wrapper for the Element Selector
- */
+/** Voyager wrapper for the element selector wizard. */
 class ElementSelectorVoyagerScreen(
     private val initialUrl: String,
     private val initialSourceName: String = "",
@@ -226,7 +220,6 @@ class ElementSelectorVoyagerScreen(
         val screenModel = rememberScreenModel { ElementSelectorScreenModel(initialUrl, initialSourceName) }
         val state by screenModel.state.collectAsState()
 
-        // Handle success
         LaunchedEffect(state.savedSuccessfully) {
             if (state.savedSuccessfully) {
                 Toast.makeText(
@@ -238,7 +231,6 @@ class ElementSelectorVoyagerScreen(
             }
         }
 
-        // Handle error
         LaunchedEffect(state.error) {
             state.error?.let { error ->
                 Toast.makeText(

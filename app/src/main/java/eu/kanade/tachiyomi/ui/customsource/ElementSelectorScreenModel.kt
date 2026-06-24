@@ -74,9 +74,8 @@ class ElementSelectorScreenModel(
         val cardCover = selectorConfig.novelCoverSelector.ifBlank { null }
         val generate = features.chapterGenerateFromPattern
 
-        // Page 1 = the verbatim URL the user browsed. Page 2+ template = page1/page2 diff (handles
-        // ?page= vs /page/ alike). Each is gated by its section + pagination toggle so the saved
-        // config matches the boxes the user actually ticked (and round-trips to the editor).
+        // Page 1 = verbatim browsed URL; page 2+ = page1/page2 diff. Each gated by its section +
+        // pagination toggle so the saved config matches the ticked boxes and round-trips.
         val popularUrl = if (features.hasPopular) {
             selectorConfig.popularUrl.trim().ifBlank { baseUrl }.trimEnd('/')
         } else {
@@ -206,10 +205,7 @@ class ElementSelectorScreenModel(
         )
     }
 
-    /**
-     * Diffs two URLs that differ only by page number, returning the page-2 URL with the differing
-     * digits replaced by {page}. Works regardless of param vs path form. Null if they don't differ.
-     */
+    /** Diffs two URLs into the page-2 URL with the differing digits replaced by {page}. */
     private fun derivePagedFromPair(p1: String, p2: String): String? {
         if (p2.isBlank() || p1 == p2) return null
         val maxLen = minOf(p1.length, p2.length)
@@ -224,10 +220,8 @@ class ElementSelectorScreenModel(
     }
 
     /**
-     * Diffs the chapter-list page 1/2 URLs into a numbered template and generalizes the
-     * novel-specific path to {novelUrl}, so one pattern works for every novel (not just the sampled
-     * one). e.g. ("/series/abc/", "/series/abc/?page=2") -> "{novelUrl}/?page={page}". Null if the
-     * two URLs don't differ by a number.
+     * Diffs the chapter-list page 1/2 URLs into a numbered template, generalizing the novel path to
+     * {novelUrl}. e.g. ("/series/abc/", "/series/abc/?page=2") -> "{novelUrl}/?page={page}".
      */
     private fun deriveChapterListPagePattern(
         page1: String,

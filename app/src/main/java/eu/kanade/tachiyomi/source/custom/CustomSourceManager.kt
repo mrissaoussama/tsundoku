@@ -61,19 +61,11 @@ class CustomSourceManager(
      */
     fun createSource(config: CustomSourceConfig): Result<CustomNovelSource> {
         return try {
-            // Validate config
             val normalizedConfig = config.withStableId()
             validateConfig(normalizedConfig)
-
-            // Create source
             val source = CustomNovelSource(normalizedConfig)
-
-            // Save to disk
             saveSourceConfig(normalizedConfig)
-
-            // Add to list
             _customSources.update { it + source }
-
             Result.success(source)
         } catch (e: Exception) {
             Result.failure(e)
@@ -87,11 +79,7 @@ class CustomSourceManager(
         return try {
             val normalizedConfig = newConfig.withStableId(oldId)
             validateConfig(normalizedConfig)
-
-            // Remove old source
             deleteSource(oldId)
-
-            // Create new source
             createSource(normalizedConfig)
         } catch (e: Exception) {
             Result.failure(e)
@@ -107,7 +95,7 @@ class CustomSourceManager(
         // Remove from list
         _customSources.update { it.filter { s -> s.id != sourceId } }
 
-        // Delete both the stable id file and the legacy name-based file.
+        // Delete both the stable-id file and the legacy name-based file.
         val filesToDelete = customSourceStorageFileCandidates(customSourcesDir, source.id, source.name)
         return filesToDelete.any { it.delete() }
     }
@@ -141,15 +129,10 @@ class CustomSourceManager(
 
     private fun friendlyParseError(e: Throwable): String = customSourceFriendlyParseError(e)
 
-    /**
-     * A documented, hand-editable skeleton config. Placeholder selectors show the expected shape.
-     */
+    /** Hand-editable skeleton config; placeholder selectors show the expected shape. */
     fun blankTemplateJson(): String = json.encodeToString(customSourceBlankTemplate())
 
-    /**
-     * Create a blank config with the given name and base URL.
-     * Templates have been removed — use extension repos for pre-built themes.
-     */
+    /** Blank config with the given name and base URL. */
     fun createBlankConfig(name: String, baseUrl: String): CustomSourceConfig {
         return CustomSourceConfig(
             name = name,
@@ -166,9 +149,8 @@ class CustomSourceManager(
     }
 
     /**
-     * Validate a source configuration. Throws [IllegalArgumentException] with joined, field-level
-     * messages when invalid. Delegates the field rules to [customSourceValidationErrors] so they can
-     * be unit-tested without a [Context].
+     * Throws [IllegalArgumentException] with joined field-level messages when invalid. Rules live in
+     * [customSourceValidationErrors] so they can be unit-tested without a [Context].
      */
     fun validateConfig(config: CustomSourceConfig): List<String> {
         val errors = customSourceValidationErrors(config, _customSources.value.map { it.config })
@@ -179,10 +161,8 @@ class CustomSourceManager(
     }
 
     /**
-     * Test a source configuration by making actual requests. [section] scopes the test so the
-     * wizard can validate one part at a time (after each step) instead of only at the very end;
-     * [SourceTestSection.ALL] runs every endpoint. Always runs off the main thread so the WebView
-     * wizard never triggers NetworkOnMainThreadException.
+     * Test a config with real requests. [section] scopes the test to one part so the wizard can
+     * validate per-step; [SourceTestSection.ALL] runs every endpoint. Off-main-thread.
      */
     suspend fun testSource(
         config: CustomSourceConfig,
@@ -433,12 +413,9 @@ class CustomSourceManager(
 }
 
 /**
- * Pure, feature-aware validation of a custom source config. Returns the list of human-readable
- * errors (empty when valid). Unlike the old rules, this only requires what the config actually uses:
- *  - At least one listing URL (popular / latest / search) must be present.
- *  - A listing's list selector is only required when that listing's URL is set.
- *  - Chapters need either a list selector OR a generated URL pattern.
- * [existing] is the set of already-saved configs, used for duplicate name / base URL detection.
+ * Validates only what the config actually uses: one listing URL (popular/latest/search), each
+ * listing's list selector only when its URL is set, and chapters via a list selector OR a generated
+ * URL pattern. [existing] is checked for duplicate name / base URL.
  */
 internal fun customSourceValidationErrors(
     config: CustomSourceConfig,

@@ -142,7 +142,6 @@ class CustomSourcesScreen : Screen {
                         }
                     },
                     actions = {
-                        // Import button
                         IconButton(onClick = {
                             importJsonText = ""
                             importError = null
@@ -256,7 +255,6 @@ class CustomSourcesScreen : Screen {
             }
         }
 
-        // Create dialog
         if (showCreateDialog) {
             CreateSourceDialog(
                 onDismiss = { showCreateDialog = false },
@@ -289,7 +287,6 @@ class CustomSourcesScreen : Screen {
             )
         }
 
-        // Import dialog (paste / from file / copy template, with inline validation errors)
         if (showImportDialog) {
             ImportSourceDialog(
                 jsonText = importJsonText,
@@ -322,7 +319,6 @@ class CustomSourcesScreen : Screen {
             )
         }
 
-        // Delete confirmation
         sourceToDelete?.let { id ->
             AlertDialog(
                 onDismissRequest = { sourceToDelete = null },
@@ -567,7 +563,6 @@ private fun CreateSourceDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // WebView selector option
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -592,7 +587,6 @@ private fun CreateSourceDialog(
                     }
                 }
 
-                // Base on Extension option
                 Spacer(modifier = Modifier.height(4.dp))
                 Button(
                     onClick = { showExtensionPicker = true },
@@ -607,7 +601,6 @@ private fun CreateSourceDialog(
                     modifier = Modifier.padding(top = 4.dp),
                 )
 
-                // Hint about extension repos for pre-built themes
                 if (!useWebView) {
                     Text(
                         text = stringResource(TDMR.strings.custom_source_use_repos_hint),
@@ -646,7 +639,6 @@ private fun CreateSourceDialog(
         },
     )
 
-    // Extension picker dialog
     if (showExtensionPicker) {
         BaseSourcePickerDialog(
             selectedSourceId = null,
@@ -1037,7 +1029,6 @@ class CustomSourceEditorScreen(
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState()),
             ) {
-                // Basic Info Section
                 Text(
                     text = stringResource(TDMR.strings.custom_source_basic_info),
                     style = MaterialTheme.typography.titleMedium,
@@ -1114,7 +1105,6 @@ class CustomSourceEditorScreen(
                     }
                 }
 
-                // Source Options Section
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = stringResource(TDMR.strings.custom_source_options),
@@ -1123,7 +1113,6 @@ class CustomSourceEditorScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Reverse chapters option
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1148,7 +1137,6 @@ class CustomSourceEditorScreen(
                     }
                 }
 
-                // POST search option
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1173,7 +1161,6 @@ class CustomSourceEditorScreen(
                     }
                 }
 
-                // Novel source type option
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1277,7 +1264,6 @@ class CustomSourceEditorScreen(
                     }
                 }
 
-                // URLs Section (only for manual/selector-based sources)
                 if (selectedBasedOnSourceId == null && isNovel) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
@@ -1321,7 +1307,6 @@ class CustomSourceEditorScreen(
                         )
                     }
 
-                    // Selectors Section
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = stringResource(TDMR.strings.custom_source_css_selectors),
@@ -1330,7 +1315,6 @@ class CustomSourceEditorScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Popular/List selectors
                     Text(stringResource(TDMR.strings.custom_source_novel_list), fontWeight = FontWeight.Medium)
                     OutlinedTextField(
                         value = popularListSelector,
@@ -1424,7 +1408,6 @@ class CustomSourceEditorScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Details selectors
                     Text(stringResource(TDMR.strings.custom_source_novel_details), fontWeight = FontWeight.Medium)
                     OutlinedTextField(
                         value = detailsTitleSelector,
@@ -1523,7 +1506,6 @@ class CustomSourceEditorScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Chapter selectors
                     Text(stringResource(TDMR.strings.custom_source_chapters), fontWeight = FontWeight.Medium)
                     if (features.chapterGenerateFromPattern) {
                         // Generated chapter list (mode B): numeric URL pattern + range/count.
@@ -1674,7 +1656,6 @@ class CustomSourceEditorScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Content selector
                     Text(stringResource(TDMR.strings.custom_source_chapter_content), fontWeight = FontWeight.Medium)
                     OutlinedTextField(
                         value = contentPrimarySelector,
@@ -1757,7 +1738,6 @@ class CustomSourceEditorScreen(
                     )
                 } // end if (selectedBasedOnSourceId == null)
 
-                // Error message
                 errorMessage?.let {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -1767,7 +1747,6 @@ class CustomSourceEditorScreen(
                     )
                 }
 
-                // Save button
                 Spacer(modifier = Modifier.height(24.dp))
                 @Suppress("ktlint:standard:max-line-length")
                 Button(

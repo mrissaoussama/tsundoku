@@ -306,10 +306,8 @@ private fun sanitizeCustomSourceFilename(name: String): String {
     return name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
 }
 
-// {page} is substituted on every page including page 1, so a template like "list/{page}" yields
-// list/1, list/2, … (sites that number page 1 in the path work). When a site's first page has no
-// page segment at all, the caller passes the verbatim page-1 URL (no {page}) for page 1 and the
-// {page} template only for page 2+.
+// {page} is substituted on every page (page 1 included). For sites whose first page has no page
+// segment, the caller passes the verbatim page-1 URL and uses the {page} template only for page 2+.
 internal fun buildPagedUrlTemplate(template: String, baseUrl: String, page: Int): String {
     return template
         .replace("{baseUrl}", baseUrl)
@@ -326,9 +324,9 @@ internal fun buildPagedSearchUrlTemplate(template: String, baseUrl: String, quer
 }
 
 /**
- * Maps a site's status text to an [SManga] status constant. [mapping] (substring -> one of
- * ongoing/completed/hiatus/cancelled, case-insensitive) is consulted first so non-English sites
- * can define their own words; the built-in English keywords are the fallback.
+ * Maps a site's status text to an [SManga] status constant. [mapping] (substring -> ongoing/
+ * completed/hiatus/cancelled, case-insensitive) wins so non-English sites define their own words;
+ * built-in English keywords are the fallback.
  */
 internal fun parseCustomSourceStatus(status: String?, mapping: Map<String, String>? = null): Int {
     if (status.isNullOrBlank()) return SManga.UNKNOWN
@@ -355,18 +353,16 @@ internal fun parseCustomSourceStatus(status: String?, mapping: Map<String, Strin
     }
 }
 
-// Lazy-load / non-<img> cover sources, tried in order before the plain src. Covers a div with a
-// CSS background-image, <img srcset>, the usual data-* lazy attributes, <video poster> and og:image.
+// Cover-image attributes tried in order before plain src (lazy-load data-*, srcset, poster, og:image).
 private val IMAGE_URL_ATTRS = listOf(
     "data-src", "data-original", "data-lazy-src", "data-lazy", "data-cfsrc",
     "data-echo", "data-srcset", "srcset", "src", "poster", "content",
 )
 
 /**
- * Resolves a usable, absolute image URL from [element] (a cover image or its wrapper). Prefers the
- * absolute form (`abs:`) of each candidate attribute so relative covers like `/img/x.jpg` are not
- * returned bare, falls back to a `background-image:url(...)` style, and unwraps `srcset` to its
- * first URL. Returns null when nothing usable is present.
+ * Resolves an absolute image URL from [element]. Prefers each attribute's `abs:` form (so relative
+ * covers aren't returned bare), falls back to a `background-image:url(...)`, unwraps `srcset` to its
+ * first URL. Null when nothing usable.
  */
 internal fun resolveImageUrl(element: Element): String? {
     for (attr in IMAGE_URL_ATTRS) {
@@ -385,9 +381,8 @@ internal fun resolveImageUrl(element: Element): String? {
 }
 
 /**
- * Converts an element's inner HTML to plain text while preserving paragraph and line breaks:
- * `<br>` becomes a newline and `</p>`/`</div>` a blank line, so multi-paragraph novel synopses keep
- * their structure instead of collapsing to one space-joined line (what Jsoup `.text()` does).
+ * Inner HTML to plain text, preserving paragraph breaks (`<br>` -> newline, `</p>`/`</div>` -> blank
+ * line) so multi-paragraph synopses don't collapse to one line like Jsoup `.text()` does.
  */
 internal fun htmlToFormattedText(html: String): String {
     val withBreaks = html
@@ -403,20 +398,14 @@ internal fun htmlToFormattedText(html: String): String {
 /** Numeric chapter URL/name pair for a generated chapter list (mode B). */
 internal data class GeneratedChapterEntry(val url: String, val name: String, val number: Float)
 
-/**
- * Substitutes the `{novelUrl}` placeholder in a generated-chapter URL pattern with the current
- * novel's path, so one pattern works for every novel instead of being pinned to the novel it was
- * captured from. A pattern with no placeholder is returned unchanged (legacy behaviour).
- */
+/** Substitutes `{novelUrl}` in a generated-chapter pattern with the current novel's path. */
 internal fun applyNovelUrlToPattern(pattern: String, novelUrl: String): String =
     pattern.replace("{novelUrl}", novelUrl.trim().trimEnd('/'))
 
 /**
- * From two chapter URLs of the SAME novel, derive a portable numeric pattern plus the two chapter
- * numbers. The last digit run is treated as the chapter number (robust to a novel id earlier in the
- * path). When [novelUrl] is supplied and prefixes the pattern, that prefix is replaced with the
- * `{novelUrl}` placeholder so the pattern generalizes to other novels. Returns
- * (pattern, firstNumber, lastNumber) or null when no numeric difference is found.
+ * From two chapter URLs of the SAME novel, derive a portable numeric pattern + the two numbers. The
+ * last digit run is the chapter number (robust to a novel id earlier in the path); a [novelUrl]
+ * prefix is replaced with `{novelUrl}` to generalize. Returns (pattern, first, last) or null.
  */
 internal fun deriveGenericChapterPattern(
     chapterUrl1: String,
@@ -442,10 +431,7 @@ internal fun deriveGenericChapterPattern(
     return Triple(pattern, n1, n2)
 }
 
-/**
- * Builds the [start]..[end] generated chapter entries from a numeric URL [pattern]. URLs are kept
- * as the raw substituted template; callers normalize them against the base URL.
- */
+/** Builds [start]..[end] chapter entries from a numeric URL [pattern]; callers normalize the URLs. */
 internal fun generatedChapterEntries(
     pattern: String,
     start: Int,
@@ -464,15 +450,9 @@ internal fun generatedChapterEntries(
 }
 
 /**
- * Custom Novel Extension - User-defined novel source
- *
- * This class allows users to create custom novel sources by defining:
- * - CSS selectors for different page elements
- * - URL patterns for navigation
- * - Custom headers if needed
- *
- * The configuration is stored as JSON and can be edited through the app UI
- * or shared with other users.
+ * User-defined novel source driven by [CustomSourceConfig] (CSS selectors, URL patterns, headers).
+ * Config is JSON, editable in-app and shareable. When [CustomSourceConfig.basedOnSourceId] is set,
+ * delegates to an installed extension and only rebases its base URL.
  */
 class CustomNovelSource(
     val config: CustomSourceConfig,
@@ -610,10 +590,8 @@ class CustomNovelSource(
         return getChapterList(manga)
     }
 
-    // Mode B: build the chapter list from a numeric URL pattern instead of scraping it. start is the
-    // numbering base (constant for the site). The END is read PER NOVEL from countSelector on the
-    // details page so each novel loads its own length; lastNumber is only a fallback for the rare
-    // single-novel source with no count element. One fetch at most (only when a count must be read).
+    // Mode B: build the list from a numeric URL pattern. start = numbering base; end is read per
+    // novel from countSelector (lastNumber is the fallback). At most one fetch (to read the count).
     private suspend fun generateChapterList(manga: SManga): List<SChapter> {
         val sel = config.selectors.chapters
         val pattern = sel.urlPattern ?: return emptyList()
@@ -641,23 +619,19 @@ class CustomNovelSource(
         return if (config.reverseChapters) chapters else chapters.reversed()
     }
 
-    // Resolves the chapter list across these optional dimensions:
-    //  - indexLinkSelector: the chapter list lives on a separate page linked from the details page.
-    //  - pagedUrlPattern: numbered pages reached by URL (e.g. "{novelUrl}?page={page}"). Preferred
-    //    over the next-button because it can't be fooled by an ambiguous prev/next selector.
-    //  - nextPage: fallback — follow the "next page" link.
-    // Chapters are de-duplicated by URL across pages (sites often repeat a "Newest" block on every
-    // page), and reversal is applied once at the end so multi-page lists keep one consistent order.
+    // Resolves the chapter list across optional dimensions: indexLinkSelector (list on a separate
+    // linked page), pagedUrlPattern (numbered URL pages, preferred over the next-button since it
+    // can't be fooled by an ambiguous prev/next selector), and nextPage (follow the link, fallback).
+    // De-dupes by URL across pages and reverses once at the end.
     private suspend fun fetchResolvedChapterList(
         manga: SManga,
         context: eu.kanade.tachiyomi.source.model.RefreshContext?,
     ): List<SChapter> {
         val selectors = config.selectors.chapters
 
-        // Skip walking the whole back-catalog when nothing is new: if the first page introduces no
-        // chapter the library doesn't already have (and this isn't a forced refresh), return the
-        // existing list as-is. The result replaces the stored list, so we must return the full set
-        // — hence we only short-circuit on the "no new chapters" case.
+        // If the first page introduces no chapter the library lacks (and not a forced refresh),
+        // keep the existing list. We only short-circuit this "no new chapters" case since the
+        // result replaces the stored list and must otherwise be the full set.
         val knownUrls = context?.takeIf { !it.forceRefresh }
             ?.existingChapters?.mapNotNull { it.url.ifBlank { null } }?.toSet().orEmpty()
 
@@ -840,10 +814,8 @@ class CustomNovelSource(
         return if (config.reverseChapters) chapters.reversed() else chapters
     }
 
-    // Picks the real "next page" link when [selector] is ambiguous (e.g. a shared ".btn-page" class
-    // on both « Prev and Next »). selectFirst would grab Prev and bounce back to an already-visited
-    // page, capping the walk at 2 pages. Skip prev links and pages we've seen; prefer explicit
-    // next markers (rel=next, "next"/»/›/→ in text or class).
+    // Picks the real "next page" link when [selector] is ambiguous (shared prev/next class).
+    // Skips prev links and visited pages; prefers explicit next markers (rel=next, next/»/›/→).
     private fun resolveNextPageUrl(
         document: Document,
         selector: String,
@@ -972,11 +944,7 @@ class CustomNovelSource(
         return element.html()
     }
 
-    /**
-     * Strips common boilerplate from a content element: scripts/styles, ad and share widgets,
-     * WordPress cruft, next/prev chapter navigation links and empty leftover nodes.
-     * Mirrors the cleanup an extension parser would normally hardcode.
-     */
+    /** Strips boilerplate: scripts/styles, ad/share widgets, chapter-nav links, empty nodes. */
     private fun cleanContentElement(element: Element) {
         element.select(BOILERPLATE_SELECTOR).remove()
 
@@ -1276,8 +1244,7 @@ data class CustomSourceConfig(
     val popularUrl: String,
     val latestUrl: String? = null,
     val searchUrl: String,
-    // Page-2+ templates (with {page}). When set, page 1 uses the plain *Url above (verbatim, so it
-    // keeps or omits the page param exactly as the site's first page does) and later pages use these.
+    // Page-2+ templates (with {page}). When set, page 1 uses the plain *Url above verbatim.
     val popularPagedUrl: String? = null,
     val latestPagedUrl: String? = null,
     val searchPagedUrl: String? = null,
@@ -1287,16 +1254,13 @@ data class CustomSourceConfig(
     val postSearch: Boolean = false,
     val basedOnSourceId: Long? = null,
     val isNovel: Boolean = true,
-    // Query used when testing this source. Set from the search probe word in the wizard.
+    // Test query; set from the wizard's search probe word.
     val testSearchQuery: String? = null,
-    // Date format used to parse chapter dates, e.g. "yyyy-MM-dd". Required for worded/relative
-    // dates (no built-in language-specific parsing); use the site's own locale pattern.
+    // SimpleDateFormat pattern for chapter dates, e.g. "yyyy-MM-dd". Required for worded dates.
     val dateFormat: String? = null,
-    // Optional status-text mapping: site word (substring, case-insensitive) -> ongoing / completed
-    // / hiatus / cancelled. Lets non-English sites map their own status labels.
+    // Status-word mapping (substring, case-insensitive) -> ongoing/completed/hiatus/cancelled.
     val statusMapping: Map<String, String>? = null,
-    // Optional novel URL used by the wizard's reading test to open a known novel directly
-    // (so the reading section can be tested without a working popular/latest/search listing).
+    // Novel URL the wizard's reading test opens directly, so it works without a working listing.
     val sampleNovelUrl: String? = null,
 )
 
@@ -1336,25 +1300,21 @@ data class ChapterSelectors(
     val link: String? = null,
     val name: String? = null,
     val date: String? = null,
-    // Optional selector for the "next page" link when the chapter list spans multiple pages.
+    // "Next page" link selector when the chapter list spans multiple pages.
     val nextPage: String? = null,
-    // Optional selector, on the DETAILS page, pointing to a separate chapter-list/index page.
-    // When set, chapters are read from the linked page instead of the details page.
+    // Details-page selector for a separate chapter-list/index page; chapters read from there.
     val indexLinkSelector: String? = null,
-    // Optional numbered-pagination URL template for the chapter list, e.g. "{novelUrl}?page={page}".
-    // {novelUrl} is replaced with the current novel path. Preferred over nextPage (it can't be
-    // fooled by a shared prev/next selector); pages are walked until one adds no new chapters.
+    // Numbered-pagination URL template, e.g. "{novelUrl}?page={page}". Preferred over nextPage.
     val pagedUrlPattern: String? = null,
-    // ---- Generated chapter list (mode B): build chapter URLs from a numeric pattern instead of
-    // scraping the list. Used for sites with sequential URLs like /novel/chapter-{n}. ----
-    // Chapter URL template with {n} for the chapter number, e.g. "/novel/abc/chapter-{n}".
+    // ---- Mode B: generate chapter URLs from a numeric pattern (e.g. /novel/chapter-{n}). ----
+    // Chapter URL template with {n}.
     val urlPattern: String? = null,
-    // Selector (on the details page) for an element whose text holds the total chapter count.
+    // Details-page selector whose text holds the total chapter count.
     val countSelector: String? = null,
-    // Explicit numeric range; lastNumber falls back to the parsed countSelector value.
+    // Explicit range; lastNumber falls back to the parsed countSelector value.
     val firstNumber: Int? = null,
     val lastNumber: Int? = null,
-    // Chapter name template with {n}, e.g. "Chapter {n}". Defaults to "Chapter {n}".
+    // Name template with {n}. Defaults to "Chapter {n}".
     val nameTemplate: String? = null,
 )
 

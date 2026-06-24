@@ -92,39 +92,33 @@ import tachiyomi.i18n.novel.TDMR
 import tachiyomi.presentation.core.i18n.stringResource
 import tachiyomi.presentation.core.components.material.Scaffold as TachiyomiScaffold
 
-/**
- * Which sections a custom source exposes. Chosen up front (URL dialog) so the wizard only walks the
- * user through the steps they actually need.
- */
+/** Which sections a source exposes; chosen up front so the wizard only shows the needed steps. */
 data class SourceFeatures(
     val hasPopular: Boolean = true,
     val hasLatest: Boolean = true,
     val hasSearch: Boolean = true,
-    // Per-section pagination — each adds its own capture step only when enabled.
+    // Per-section pagination; each adds a capture step.
     val popularPagination: Boolean = false,
     val latestPagination: Boolean = false,
     val searchPagination: Boolean = false,
-    // The chapter list spans multiple pages (adds a chapter-list pagination step).
+    // Chapter list spans multiple pages.
     val chapterListPagination: Boolean = false,
-    // The chapter list lives on a separate page linked from the details page (adds a step to tap
-    // that "all chapters / table of contents" link).
+    // Chapter list lives on a separate linked page (adds a step to tap that link).
     val chapterListSeparatePage: Boolean = false,
-    // Chapters have sequential numeric URLs (e.g. /chapter-12); generate the list from a pattern
-    // instead of scraping it (adds a "first/last chapter + total count" step).
+    // Chapters have sequential numeric URLs; generate from a pattern instead of scraping.
     val chapterGenerateFromPattern: Boolean = false,
 ) : java.io.Serializable
 
 /**
- * Element Selector Wizard Steps. The active list is derived from [SourceFeatures]; reading steps
- * (details/chapters/content) are always included. Each step optionally maps to a [SourceTestSection]
- * so its parsing can be validated in place instead of only at the end.
+ * Wizard steps; the active list is derived from [SourceFeatures] (reading steps always included).
+ * Each step optionally maps to a [SourceTestSection] for in-place validation.
  */
 enum class SelectorWizardStep(
     val titleRes: StringResource,
     val descriptionRes: StringResource,
     val detailedHelpRes: StringResource,
     val testSection: SourceTestSection? = null,
-    // Whether this step shows the (i) help button. Only steps with non-obvious, niche guidance do.
+    // Shows the (i) help button. Only steps with non-obvious guidance.
     val detailed: Boolean = true,
 ) {
     POPULAR_LIST(
@@ -251,17 +245,15 @@ data class SelectorConfig(
     var newNovelsSelector: String = "",
     var searchUrl: String = "",
     var searchKeyword: String = "",
-    // Raw page-1 search URL (with the probe word) — paired with searchPage2Url to derive {page}.
+    // Raw page-1 search URL; paired with searchPage2Url to derive {page}.
     var searchSampleUrl: String = "",
-    // Listing pagination: the page-2 URL the user navigated to. Diffed against the page-1 URL to
-    // build a correct {page} template (handles ?page= vs /page/ vs trailing-number forms).
+    // Listing page-2 URLs, diffed against page 1 to build the {page} template.
     var popularPage2Url: String = "",
     var latestPage2Url: String = "",
     var searchPage2Url: String = "",
-    // Followed-link pagination selector (fallback when the URL pattern can't be derived).
+    // Followed-link pagination selector (fallback when no URL pattern).
     var chapterListPaginationSelector: String = "",
-    // Chapter-list page 1/2 URLs. Diffed (and the novel path generalized to {novelUrl}) into a
-    // numbered-pagination template, the robust alternative to chasing a next-page button.
+    // Chapter-list page 1/2 URLs, diffed into a {novelUrl}-generalized {page} template.
     var chapterListPage1Url: String = "",
     var chapterListPage2Url: String = "",
     // Details-page selector linking to a separate chapter-list page.
@@ -1850,9 +1842,8 @@ private fun canProceedToNextStep(
 }
 
 /**
- * The wizard captures document-unique selectors (e.g. `div.list > div.card > a.title`), but the
- * source parses title/cover/link relative to each list item. Strip the list-container prefix so the
- * selector resolves inside a card; fall back to the trailing segment when there's no shared prefix.
+ * Strips the list-container prefix off a document-unique selector so it resolves inside a card
+ * (the source parses title/cover/link relative to each item). Falls back to the trailing segment.
  */
 private fun relativize(full: String, listSel: String): String {
     if (full.isBlank()) return ""
@@ -1871,9 +1862,8 @@ private fun relativize(full: String, listSel: String): String {
 }
 
 /**
- * Diffs a page-1 and page-2 URL that differ only by page number, returning the page-2 URL with the
- * differing digits replaced by {page}. Mirrors ElementSelectorScreenModel.derivePagedFromPair so the
- * wizard can preview the same template that gets saved. Null if they don't differ by a number.
+ * Diffs page-1/page-2 URLs into the page-2 URL with the differing digits replaced by {page}. Mirrors
+ * ElementSelectorScreenModel.derivePagedFromPair (preview = saved template). Null if no numeric diff.
  */
 internal fun derivePageTemplate(p1: String, p2: String): String? {
     if (p1.isBlank() || p2.isBlank() || p1 == p2) return null
@@ -1888,9 +1878,8 @@ internal fun derivePageTemplate(p1: String, p2: String): String? {
 }
 
 /**
- * Reuses the page-token discovered between popular page1/page2 and applies it to [target] (the latest
- * page-1 URL), so the user can skip navigating latest to page 2 when the site paginates identically.
- * Handles the two dominant forms: a query param (`page=2`) and a path segment (`/page/2`).
+ * Applies the popular page1/page2 page-token to [target] (latest page-1 URL), so latest needn't be
+ * navigated to page 2. Handles query-param (`page=2`) and path-segment (`/page/2`) forms.
  */
 internal fun applyPagePattern(popularP1: String, popularP2: String, target: String): String? {
     if (popularP1.isBlank() || popularP2.isBlank() || popularP1 == popularP2 || target.isBlank()) return null
@@ -1915,9 +1904,8 @@ private fun stripPositional(selector: String): String =
     selector.replace(Regex(""":nth-of-type\(\d+\)"""), "").replace(Regex(""":nth-child\(\d+\)"""), "")
 
 /**
- * Derive the repeating list-item (card) selector from the tapped elements. Prefers the common path
- * prefix; if the unique selectors share none, falls back to a common closest container (li/div/a)
- * reported by the JS, generalized so it matches every card rather than one.
+ * Derives the repeating card selector from tapped elements: common path prefix, else a shared
+ * closest container (li/div/a) reported by the JS.
  */
 private fun deriveListSelector(elements: List<SelectedElement>): String {
     val prefix = findCommonSelector(elements)
@@ -1937,9 +1925,8 @@ private fun saveSelectionsForStep(
 ) {
     when (step) {
         SelectorWizardStep.POPULAR_LIST -> {
-            // One tap = title/link only (cover skipped). Two taps = cover first, then title. List =
-            // repeating item selector (DOM-detected when available); cover/title stored RELATIVE to
-            // it so the source resolves them per item.
+            // One tap = title only; two taps = cover then title. Cover/title stored relative to the
+            // repeating item selector so the source resolves them per item.
             if (selectedElements.isNotEmpty()) {
                 val listSel = detectedListSelector?.ifBlank { null } ?: deriveListSelector(selectedElements)
                 config.trendingSelector = listSel
@@ -1973,9 +1960,8 @@ private fun saveSelectionsForStep(
             selectedElements.firstOrNull()?.let { config.chapterIndexLinkSelector = it.selector }
         }
         SelectorWizardStep.NOVEL_DETAILS -> {
-            // Fixed order: title, description, cover, then ANY number of tag/genre elements. The
-            // tag picks are merged into one comma-separated selector group; the source joins their
-            // texts so several individual tag links become a single genre string.
+            // Fixed order: title, description, cover, then any number of tags merged into one
+            // comma-separated selector group (the source joins their texts into one genre string).
             selectedElements.getOrNull(0)?.let { config.novelPageTitleSelector = it.selector }
             selectedElements.getOrNull(1)?.let { config.novelDescriptionSelector = it.selector }
             selectedElements.getOrNull(2)?.let { config.novelCoverPageSelector = it.selector }
@@ -2565,9 +2551,8 @@ internal val ELEMENT_SELECTOR_JS = """
 """
 
 /**
- * Derive a {query} search URL template from a URL the user produced by searching for [userQuery].
- * Handles both raw and percent-encoded occurrences (including '+' for spaces), regardless of which
- * query parameter or path segment the site uses. Returns the template, or null if not found.
+ * Derives a {query} template from a URL produced by searching for [userQuery]. Handles raw and
+ * percent-encoded occurrences (incl. '+' for spaces), any param/path segment. Null if not found.
  */
 internal fun deriveSearchUrl(url: String, baseUrl: String, userQuery: String): String? {
     if (userQuery.isBlank()) return null
