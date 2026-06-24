@@ -485,10 +485,11 @@ class Downloader(
             logcat { "queueChapters: ${chaptersToQueue.size} chapters to queue after filtering" }
 
             if (chaptersToQueue.isNotEmpty()) {
+                val wasEmpty = queueState.value.isEmpty()
                 addAllToQueue(chaptersToQueue)
 
                 // Start downloader if needed
-                if (autoStart && !isRunning) {
+                if (autoStart && wasEmpty) {
                     val queuedDownloads = queueState.value.count { it.source !is UnmeteredSource }
                     val maxDownloadsFromSource = queueState.value
                         .filter { it.source !is UnmeteredSource }
