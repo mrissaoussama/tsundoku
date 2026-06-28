@@ -1884,9 +1884,6 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
     fun setProgressPercent(percent: Int) {
         val progress = percent.coerceIn(0, 100) / 100f
         setScrollProgress(progress)
-        // The scroll listener that drives infinite scroll can swallow a slider jump (grace
-        // period after chapter entry, or the chapter-changed early-return), so a drag to the
-        // end of the last loaded chapter would not load the next one. Re-check explicitly.
         maybeLoadNextChapterFromSlider()
     }
 
