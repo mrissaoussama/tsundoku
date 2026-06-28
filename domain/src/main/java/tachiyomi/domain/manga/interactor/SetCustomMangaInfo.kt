@@ -2,12 +2,24 @@ package tachiyomi.domain.manga.interactor
 
 import tachiyomi.domain.manga.model.CustomMangaInfo
 import tachiyomi.domain.manga.model.CustomMangaInfo.Companion.writeInto
+import tachiyomi.domain.manga.model.CustomMangaInfo.Companion.writeSourceInto
 import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.manga.repository.MangaRepository
 
 class SetCustomMangaInfo(
     private val mangaRepository: MangaRepository,
 ) {
+
+    /**
+     * Store [source] as the source snapshot for [mangaId] when none exists yet. Used to capture the
+     * pre-edit values the first time a manga is overridden, so the source can be shown/restored
+     * later without a network refresh. No-op when a snapshot is already present.
+     */
+    suspend fun snapshotSourceIfAbsent(mangaId: Long, source: CustomMangaInfo): Boolean {
+        val memo = mangaRepository.getMemo(mangaId)
+        if (CustomMangaInfo.fromSource(memo) != null) return false
+        return mangaRepository.update(MangaUpdate(id = mangaId, memo = source.writeSourceInto(memo)))
+    }
 
     /**
      * Read the current override for [mangaId], apply [transform], and persist the result back into

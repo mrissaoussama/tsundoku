@@ -649,6 +649,21 @@ class MangaScreenModel(
     ) {
         screenModelScope.launchIO {
             val manga = successState?.manga
+            // Capture the pre-edit values as the source snapshot the first time this manga is
+            // overridden (current values are still the source values), so the originals can be
+            // shown/restored later without a network refresh.
+            if (manga != null && tachiyomi.domain.manga.model.CustomMangaInfo.from(manga.memo) == null) {
+                setCustomMangaInfo.snapshotSourceIfAbsent(
+                    mangaId,
+                    tachiyomi.domain.manga.model.CustomMangaInfo(
+                        author = manga.author,
+                        artist = manga.artist,
+                        description = manga.description,
+                        genre = manga.genre,
+                        status = manga.status,
+                    ),
+                )
+            }
             val authorChanged = author != manga?.author.orEmpty()
             val artistChanged = artist != manga?.artist.orEmpty()
             val descriptionChanged = description != manga?.description.orEmpty()
