@@ -389,6 +389,25 @@ class ReaderPreferences(
         "novel_bottom_bar_items",
         DefaultBottomBarItems.serialize(),
     )
+
+    // Status bar overlay showing time, battery, chapter, and progress during reading
+    val novelStatusBarEnabled: Preference<Boolean> = preferenceStore.getBoolean("pref_novel_status_bar_enabled", false)
+    val novelStatusBarShowTime: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_novel_status_bar_show_time",
+        true,
+    )
+    val novelStatusBarShowBattery: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_novel_status_bar_show_battery",
+        true,
+    )
+    val novelStatusBarShowChapter: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_novel_status_bar_show_chapter",
+        true,
+    )
+    val novelStatusBarShowProgress: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_novel_status_bar_show_progress",
+        true,
+    )
     // endregion
 
     companion object {

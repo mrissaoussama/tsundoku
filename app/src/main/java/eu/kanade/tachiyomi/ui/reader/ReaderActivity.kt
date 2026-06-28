@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -56,6 +57,7 @@ import com.hippo.unifile.UniFile
 import eu.kanade.core.util.ifSourcesLoaded
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.reader.DisplayRefreshHost
+import eu.kanade.presentation.reader.NovelStatusBar
 import eu.kanade.presentation.reader.OrientationSelectDialog
 import eu.kanade.presentation.reader.ReaderContentOverlay
 import eu.kanade.presentation.reader.ReaderPageActionsDialog
@@ -70,6 +72,7 @@ import eu.kanade.presentation.reader.appbars.ReaderAppBars
 import eu.kanade.presentation.reader.appbars.bottomBarItemInfo
 import eu.kanade.presentation.reader.components.ChapterNavigatorType
 import eu.kanade.presentation.reader.settings.ReaderSettingsDialog
+import eu.kanade.presentation.util.formatChapterNumber
 import eu.kanade.tachiyomi.R
 import eu.kanade.tachiyomi.data.coil.TachiyomiImageDecoder
 import eu.kanade.tachiyomi.data.notification.NotificationReceiver
@@ -92,6 +95,7 @@ import eu.kanade.tachiyomi.ui.reader.setting.ReaderSettingsScreenModel
 import eu.kanade.tachiyomi.ui.reader.setting.ReadingMode
 import eu.kanade.tachiyomi.ui.reader.viewer.ReaderProgressIndicator
 import eu.kanade.tachiyomi.ui.reader.viewer.pager.R2LPagerViewer
+import eu.kanade.tachiyomi.ui.reader.viewer.text.shared.ThemeUtils
 import eu.kanade.tachiyomi.ui.reader.viewer.text.textview.NovelViewer
 import eu.kanade.tachiyomi.ui.reader.viewer.text.webview.NovelWebViewViewer
 import eu.kanade.tachiyomi.ui.webview.WebViewActivity
@@ -127,6 +131,7 @@ import uy.kohesive.injekt.api.get
 import java.io.ByteArrayOutputStream
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
+import androidx.compose.ui.graphics.Color as ComposeColor
 
 class ReaderActivity : BaseActivity() {
 
@@ -338,6 +343,17 @@ class ReaderActivity : BaseActivity() {
         val state by viewModel.state.collectAsState()
         val showPageNumber by readerPreferences.showPageNumber.collectAsState()
         val autoTranslateEnabled by readerPreferences.autoTranslate.collectAsState()
+        val novelStatusBarEnabled by readerPreferences.novelStatusBarEnabled.collectAsState()
+        val novelStatusBarShowTime by readerPreferences.novelStatusBarShowTime.collectAsState()
+        val novelStatusBarShowBattery by readerPreferences.novelStatusBarShowBattery.collectAsState()
+        val novelStatusBarShowChapter by readerPreferences.novelStatusBarShowChapter.collectAsState()
+        val novelStatusBarShowProgress by readerPreferences.novelStatusBarShowProgress.collectAsState()
+        val novelTtsControlsActive by readerPreferences.novelTtsControlsVisible.collectAsState()
+        val novelStatusBarChapterDisplay by readerPreferences.novelChapterTitleDisplay.collectAsState()
+        val novelTheme by readerPreferences.novelTheme.collectAsState()
+        val novelBgColorInt by readerPreferences.novelBackgroundColor.collectAsState()
+        val novelFontColorInt by readerPreferences.novelFontColor.collectAsState()
+        var statusBarCollapsed by remember { mutableStateOf(false) }
         val settingsScreenModel = remember {
             ReaderSettingsScreenModel(
                 readerState = viewModel.state,
@@ -361,6 +377,46 @@ class ReaderActivity : BaseActivity() {
             ContentOverlay(state = state)
 
             AppBars(state = state)
+
+            if (isNovelMode && !state.menuVisible && novelStatusBarEnabled) {
+                val chapter = state.novelVisibleChapter ?: state.currentChapter?.chapter
+                val chapterText: String? = chapter?.let { ch ->
+                    val numStr = if (ch.chapter_number >=
+                        0f
+                    ) {
+                        "Ch. ${formatChapterNumber(ch.chapter_number.toDouble())}"
+                    } else {
+                        null
+                    }
+                    val nameStr = ch.name.ifEmpty { null }
+                    when (novelStatusBarChapterDisplay) {
+                        1 -> numStr ?: nameStr
+                        2 -> if (numStr != null && nameStr != null) "$numStr: $nameStr" else numStr ?: nameStr
+                        else -> nameStr ?: numStr
+                    }
+                }
+                val (bgInt, textInt) = remember(novelTheme, novelBgColorInt, novelFontColorInt) {
+                    ThemeUtils.getThemeColors(this@ReaderActivity, readerPreferences, novelTheme)
+                }
+                val readerBgColor = ComposeColor(bgInt)
+                val readerTextColor = ComposeColor(textInt)
+                val extraPad = if (novelTtsControlsActive) 56.dp else 0.dp
+                NovelStatusBar(
+                    chapterText = chapterText,
+                    progressPercent = state.novelProgressPercent,
+                    showTime = novelStatusBarShowTime,
+                    showBattery = novelStatusBarShowBattery,
+                    showChapter = novelStatusBarShowChapter,
+                    showProgress = novelStatusBarShowProgress,
+                    backgroundColor = readerBgColor,
+                    textColor = readerTextColor,
+                    isCollapsed = statusBarCollapsed,
+                    onToggleCollapse = { statusBarCollapsed = !statusBarCollapsed },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = extraPad),
+                )
+            }
         }
 
         val onDismissRequest = viewModel::closeDialog

@@ -713,6 +713,32 @@ internal fun ColumnScope.NovelControlsTab(screenModel: ReaderSettingsScreenModel
             )
         }
     }
+
+    // Status Bar
+    HorizontalDivider()
+    val statusBarEnabled by screenModel.preferences.novelStatusBarEnabled.collectAsState()
+    CheckboxItem(
+        label = stringResource(TDMR.strings.pref_novel_status_bar),
+        pref = screenModel.preferences.novelStatusBarEnabled,
+    )
+    if (statusBarEnabled) {
+        CheckboxItem(
+            label = stringResource(TDMR.strings.pref_novel_status_bar_show_time),
+            pref = screenModel.preferences.novelStatusBarShowTime,
+        )
+        CheckboxItem(
+            label = stringResource(TDMR.strings.pref_novel_status_bar_show_battery),
+            pref = screenModel.preferences.novelStatusBarShowBattery,
+        )
+        CheckboxItem(
+            label = stringResource(TDMR.strings.pref_novel_status_bar_show_chapter),
+            pref = screenModel.preferences.novelStatusBarShowChapter,
+        )
+        CheckboxItem(
+            label = stringResource(TDMR.strings.pref_novel_status_bar_show_progress),
+            pref = screenModel.preferences.novelStatusBarShowProgress,
+        )
+    }
 }
 
 @Composable

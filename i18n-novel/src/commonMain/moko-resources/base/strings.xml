@@ -892,4 +892,10 @@
     <string name="novel_error_cat_source_unsupported">Source does not support this operation</string>
     <string name="novel_error_cat_out_of_memory">Out of memory — chapter may be too large</string>
     <string name="novel_error_cat_unknown">Error (%s)</string>
+
+    <string name="pref_novel_status_bar">Reading status bar</string>
+    <string name="pref_novel_status_bar_show_time">Show current time</string>
+    <string name="pref_novel_status_bar_show_battery">Show battery percentage</string>
+    <string name="pref_novel_status_bar_show_chapter">Show chapter title</string>
+    <string name="pref_novel_status_bar_show_progress">Show reading progress</string>
 </resources>
