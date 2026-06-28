@@ -21,6 +21,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
+import androidx.core.view.doOnPreDraw
 import androidx.core.view.isVisible
 import androidx.core.widget.NestedScrollView
 import eu.kanade.tachiyomi.source.model.Page
@@ -123,6 +124,10 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
     private var disableScrollbarForSession = false
 
     private var lastSavedProgress = 0f
+
+    // Set by restoreProgress, consumed by onChapterTextSet once the matching chapter's text is laid out.
+    private var pendingRestoreChapterId: Long? = null
+    private var pendingRestoreProgress = 0f
 
     // Cache the last resolved custom-font so content:// URIs are not re-copied on every style refresh.
     private var cachedFontUri: String? = null
@@ -1570,31 +1575,11 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         if (shouldRestore) {
             val progress = (savedProgress / 100f).coerceIn(0f, 1f)
             lastSavedProgress = progress
-            val targetChapterId = page.chapter.chapter.id
-
-            // Chapter content renders async, so on orientation change the early layout passes fire
-            // against the still-empty block and a one-shot restore lands at the top. Wait across
-            // layout passes until the target chapter's text is set and height is real; the attempt
-            // cap stops a never-rendering chapter from leaking the listener.
-            scrollView.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
-                private var attempts = 0
-                override fun onGlobalLayout() {
-                    attempts++
-                    val loaded = loadedChapters.firstOrNull { it.chapter.chapter.id == targetChapterId }
-                    val child = scrollView.getChildAt(0)
-                    val totalHeight = if (child != null) child.height - scrollView.height else 0
-                    val ready = loaded?.isTextSet == true && totalHeight > 0
-                    if (!ready && attempts < 60) return
-
-                    scrollView.viewTreeObserver.removeOnGlobalLayoutListener(this)
-                    isRestoringScroll = true
-                    setScrollProgress(progress)
-                    logcat(LogPriority.DEBUG) {
-                        "NovelViewer: Scroll restored to ${(progress * 100).toInt()}% after $attempts layout pass(es)"
-                    }
-                    isRestoringScroll = false
-                }
-            })
+            // Chapter content renders async (displayChapter -> setChapterContent -> onChapterTextSet).
+            // Defer the scroll to onChapterTextSet so it runs against the rendered height instead of
+            // the empty block seen during the recreate that a rotation triggers.
+            pendingRestoreChapterId = page.chapter.chapter.id
+            pendingRestoreProgress = progress
         } else {
             lastSavedProgress = 0f
             scrollView.post {
@@ -1701,6 +1686,20 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
 
     private fun onChapterTextSet(loaded: LoadedChapter) {
         loaded.isTextSet = true
+
+        if (loaded.chapter.chapter.id == pendingRestoreChapterId) {
+            pendingRestoreChapterId = null
+            val progress = pendingRestoreProgress
+            // doOnPreDraw fires once, after measure and layout, so setScrollProgress uses the final
+            // content height rather than the empty block height present when restoreProgress ran.
+            scrollView.doOnPreDraw {
+                isRestoringScroll = true
+                setScrollProgress(progress)
+                logcat(LogPriority.DEBUG) { "NovelViewer: Scroll restored to ${(progress * 100).toInt()}%" }
+                isRestoringScroll = false
+            }
+        }
+
         if (pendingTtsAutoStart) {
             pendingTtsAutoStart = false
             val loadedIdx = loadedChapters.indexOf(loaded)
