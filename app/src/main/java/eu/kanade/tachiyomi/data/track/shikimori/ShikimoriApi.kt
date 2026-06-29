@@ -101,6 +101,9 @@ class ShikimoriApi(
                     .awaitSuccess()
                     .parseAs<SMManga>()
             }
+            if (track is TrackSearch) {
+                track.synonyms = manga.altTitles()
+            }
 
             val url = "$API_URL/v2/user_rates".toUri().buildUpon()
                 .appendQueryParameter("user_id", userId)
