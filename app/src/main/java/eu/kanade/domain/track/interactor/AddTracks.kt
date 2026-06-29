@@ -52,7 +52,7 @@ class AddTracks(
                         val merged = (manga.alternativeTitles + synonyms)
                             .map { it.trim() }
                             .filter { it.isNotBlank() && !it.equals(manga.title, ignoreCase = true) }
-                            .distinctBy { it.lowercase() }
+                            .distinctBy { it.lowercase(java.util.Locale.ROOT) }
                         if (merged.size != manga.alternativeTitles.size) {
                             updateManga.awaitUpdateAlternativeTitles(mangaId, merged)
                         }

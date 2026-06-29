@@ -123,7 +123,7 @@ class UpdateManga(
             (localManga.alternativeTitles + remoteAltTitles)
                 .map { it.trim() }
                 .filter { it.isNotEmpty() && !it.equals(effectiveTitle, ignoreCase = true) }
-                .distinctBy { it.lowercase() }
+                .distinctBy { it.lowercase(java.util.Locale.ROOT) }
                 .takeIf { it != localManga.alternativeTitles }
         } else {
             null
