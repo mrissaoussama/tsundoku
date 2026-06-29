@@ -23,6 +23,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Improve performance on library export notifications [@mrissaoussama](https://github.com/mrissaoussama) [#285](https://github.com/tsundoku-otaku/tsundoku/pull/285)
 - Edit manga now has an artist field [@mrissaoussama](https://github.com/mrissaoussama) [#278](https://github.com/tsundoku-otaku/tsundoku/pull/278)
 - URL path resolution in JsSource [@mrissaoussama](https://github.com/mrissaoussama) [#274](https://github.com/tsundoku-otaku/tsundoku/pull/274)
+- ALt title import when tracking, case insensitive dupe check [@mrissaoussama](https://github.com/mrissaoussama) [#305](https://github.com/tsundoku-otaku/tsundoku/pull/305)
 - Mass import improvements and resume counting [@mrissaoussama](https://github.com/mrissaoussama) [#288](https://github.com/tsundoku-otaku/tsundoku/pull/288)
 - Append clipboard added in edit quotes [@Rojikku](https://github.com/Rojikku) [#301](https://github.com/tsundoku-otaku/tsundoku/pull/301)
 - Prevent duplicate custom sources [@mrissaoussama](https://github.com/mrissaoussama) [#294](https://github.com/tsundoku-otaku/tsundoku/pull/294)
