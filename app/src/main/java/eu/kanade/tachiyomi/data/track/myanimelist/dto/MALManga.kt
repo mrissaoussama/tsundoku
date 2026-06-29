@@ -26,8 +26,8 @@ data class MALManga(
 @Serializable
 data class MALAlternativeTitles(
     val synonyms: List<String> = emptyList(),
-    val en: String = "",
-    val ja: String = "",
+    val en: String? = null,
+    val ja: String? = null,
 )
 
 @Serializable

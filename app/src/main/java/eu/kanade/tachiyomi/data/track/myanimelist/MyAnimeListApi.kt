@@ -247,7 +247,7 @@ class MyAnimeListApi(
             remote_id = searchItem.id
             title = searchItem.title
             synonyms = searchItem.alternativeTitles
-                ?.let { it.synonyms + listOf(it.en, it.ja) }
+                ?.let { it.synonyms + listOf(it.en.orEmpty(), it.ja.orEmpty()) }
                 .orEmpty()
             summary = searchItem.synopsis
             total_chapters = searchItem.numChapters
