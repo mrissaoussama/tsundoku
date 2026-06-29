@@ -1,6 +1,7 @@
 package eu.kanade.domain.source.interactor
 
 import eu.kanade.domain.source.service.SourcePreferences
+import eu.kanade.tachiyomi.source.CatalogueSource
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -16,7 +17,7 @@ import tachiyomi.source.local.isLocalNovel
 class GetEnabledNovelSources(
     private val repository: SourceRepository,
     private val preferences: SourcePreferences,
-    @Suppress("unused") private val sourceManager: SourceManager,
+    private val sourceManager: SourceManager,
 ) {
 
     fun subscribe(): Flow<List<Source>> {
@@ -34,6 +35,7 @@ class GetEnabledNovelSources(
                 .filter { it.lang in enabledLanguages || it.isLocalNovel() }
                 .filterNot { it.id.toString() in disabledSources }
                 .filter { it.isNovelSource || it.isLocalNovel() }
+                .filter { it.isLocalNovel() || sourceManager.get(it.id) is CatalogueSource }
                 .sortedWith(
                     // Local novel source always appears first
                     compareBy<Source> { if (it.isLocalNovel()) 0 else 1 }
