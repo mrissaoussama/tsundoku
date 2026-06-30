@@ -244,15 +244,16 @@ private fun SourceValueRow(label: String, value: String) {
     }
 }
 
+@Composable
 private fun statusLabel(status: Long?): String? = when (status?.toInt()) {
     null -> null
-    SManga.ONGOING -> "Ongoing"
-    SManga.COMPLETED -> "Completed"
-    SManga.LICENSED -> "Licensed"
-    SManga.PUBLISHING_FINISHED -> "Publishing finished"
-    SManga.CANCELLED -> "Cancelled"
-    SManga.ON_HIATUS -> "On hiatus"
-    else -> "Unknown"
+    SManga.ONGOING -> stringResource(MR.strings.ongoing)
+    SManga.COMPLETED -> stringResource(MR.strings.completed)
+    SManga.LICENSED -> stringResource(MR.strings.licensed)
+    SManga.PUBLISHING_FINISHED -> stringResource(MR.strings.publishing_finished)
+    SManga.CANCELLED -> stringResource(MR.strings.cancelled)
+    SManga.ON_HIATUS -> stringResource(MR.strings.on_hiatus)
+    else -> stringResource(MR.strings.unknown)
 }
 
 @Composable
