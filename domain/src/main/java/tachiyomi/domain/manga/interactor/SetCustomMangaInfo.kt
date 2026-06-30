@@ -34,7 +34,7 @@ class SetCustomMangaInfo(
         val memo = mangaRepository.getMemo(mangaId)
         if (CustomMangaInfo.from(memo) == null) return false
         val source = CustomMangaInfo.fromSource(memo)
-        val newMemo = (null as CustomMangaInfo?).writeInto(memo)
+        val newMemo = (null as CustomMangaInfo?).writeInto((null as CustomMangaInfo?).writeSourceInto(memo))
         val update = if (source != null) {
             MangaUpdate(
                 id = mangaId,
