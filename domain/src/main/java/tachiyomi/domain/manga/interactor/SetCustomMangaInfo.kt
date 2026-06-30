@@ -10,20 +10,49 @@ class SetCustomMangaInfo(
     private val mangaRepository: MangaRepository,
 ) {
 
-    /** Store [source] as the snapshot for [mangaId] when none exists yet; no-op otherwise. */
-    suspend fun snapshotSourceIfAbsent(mangaId: Long, source: CustomMangaInfo): Boolean {
+    /**
+     * Atomically apply field-level overrides for [mangaId] in one DB write.
+     *
+     * On the very first edit (no existing override and no source snapshot yet), [sourceSnapshot]
+     * is captured as the revert baseline. Pass null for any field that should remain unchanged.
+     * A blank string clears the override for that field so the source value flows through on
+     * the next refresh.
+     */
+    suspend fun awaitWithFields(
+        mangaId: Long,
+        sourceSnapshot: CustomMangaInfo,
+        author: String? = null,
+        artist: String? = null,
+        description: String? = null,
+        status: Long? = null,
+        genre: List<String>? = null,
+    ): Boolean {
         val memo = mangaRepository.getMemo(mangaId)
-        if (CustomMangaInfo.fromSource(memo) != null) return false
-        return mangaRepository.update(MangaUpdate(id = mangaId, memo = source.writeSourceInto(memo)))
-    }
-
-    /** Read-modify-write the override for [mangaId]; other memo keys kept, an all-null result clears it. */
-    suspend fun await(mangaId: Long, transform: (CustomMangaInfo) -> CustomMangaInfo): Boolean {
-        val memo = mangaRepository.getMemo(mangaId)
-        val current = CustomMangaInfo.from(memo) ?: CustomMangaInfo()
-        val updated = transform(current).takeUnless { it.isEmpty() }
-        val newMemo = updated.writeInto(memo)
-        return mangaRepository.update(MangaUpdate(id = mangaId, memo = newMemo))
+        val baseMemo = if (CustomMangaInfo.from(memo) == null && CustomMangaInfo.fromSource(memo) == null) {
+            sourceSnapshot.writeSourceInto(memo)
+        } else {
+            memo
+        }
+        val current = CustomMangaInfo.from(baseMemo) ?: CustomMangaInfo()
+        val updated = current.copy(
+            author = if (author != null) author.trim().ifBlank { null } else current.author,
+            artist = if (artist != null) artist.trim().ifBlank { null } else current.artist,
+            description = if (description != null) description.trim().ifBlank { null } else current.description,
+            status = status ?: current.status,
+            genre = genre ?: current.genre,
+        ).takeUnless { it.isEmpty() }
+        val newMemo = updated.writeInto(baseMemo)
+        return mangaRepository.update(
+            MangaUpdate(
+                id = mangaId,
+                memo = newMemo,
+                author = author,
+                artist = artist,
+                description = description,
+                status = status,
+                genre = genre,
+            ),
+        )
     }
 
     /**

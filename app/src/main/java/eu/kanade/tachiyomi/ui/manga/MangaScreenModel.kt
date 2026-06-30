@@ -646,44 +646,29 @@ class MangaScreenModel(
     ) {
         screenModelScope.launchIO {
             val manga = successState?.manga ?: return@launchIO
-            // First override: current values are still the source values, so snapshot them for revert.
-            if (tachiyomi.domain.manga.model.CustomMangaInfo.from(manga.memo) == null) {
-                setCustomMangaInfo.snapshotSourceIfAbsent(
-                    mangaId,
-                    tachiyomi.domain.manga.model.CustomMangaInfo(
-                        author = manga.author,
-                        artist = manga.artist,
-                        description = manga.description,
-                        genre = manga.genre,
-                        status = manga.status,
-                    ),
-                )
-            }
             val authorChanged = author != manga.author.orEmpty()
             val artistChanged = artist != manga.artist.orEmpty()
             val descriptionChanged = description != manga.description.orEmpty()
             val statusChanged = status != manga.status
             val tagsChanged = tags != manga.genre.orEmpty()
 
-            if (authorChanged) updateManga.awaitUpdateAuthor(mangaId, author)
-            if (artistChanged) updateManga.awaitUpdateArtist(mangaId, artist)
-            if (descriptionChanged) updateManga.awaitUpdateDescription(mangaId, description)
-            if (statusChanged) updateManga.awaitUpdateStatus(mangaId, status)
-            if (tagsChanged) {
-                updateManga.await(tachiyomi.domain.manga.model.MangaUpdate(id = mangaId, genre = tags))
-            }
+            if (!authorChanged && !artistChanged && !descriptionChanged && !statusChanged && !tagsChanged) return@launchIO
 
-            if (authorChanged || artistChanged || descriptionChanged || statusChanged || tagsChanged) {
-                setCustomMangaInfo.await(mangaId) { current ->
-                    var info = current
-                    if (authorChanged) info = info.copy(author = author.trim().ifBlank { null })
-                    if (artistChanged) info = info.copy(artist = artist.trim().ifBlank { null })
-                    if (descriptionChanged) info = info.copy(description = description.trim().ifBlank { null })
-                    if (statusChanged) info = info.copy(status = status)
-                    if (tagsChanged) info = info.copy(genre = tags)
-                    info
-                }
-            }
+            setCustomMangaInfo.awaitWithFields(
+                mangaId = mangaId,
+                sourceSnapshot = tachiyomi.domain.manga.model.CustomMangaInfo(
+                    author = manga.author,
+                    artist = manga.artist,
+                    description = manga.description,
+                    genre = manga.genre,
+                    status = manga.status,
+                ),
+                author = if (authorChanged) author else null,
+                artist = if (artistChanged) artist else null,
+                description = if (descriptionChanged) description else null,
+                status = if (statusChanged) status else null,
+                genre = if (tagsChanged) tags else null,
+            )
 
             if (tagsChanged) getLibraryManga.applyMangaDetailUpdate(mangaId) { it.copy(genre = tags) }
         }
