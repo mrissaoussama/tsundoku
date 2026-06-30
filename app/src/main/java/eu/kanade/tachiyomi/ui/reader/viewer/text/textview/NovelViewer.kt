@@ -391,9 +391,11 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         if (total <= 0) return
         // Prefer the chapter id over the index: trimming read chapters shifts indices, so an id
         // lookup can't save progress against the wrong chapter if the index is momentarily stale.
-        val loaded = (ttsController.ttsPlaybackChapterId?.let { id ->
-            loadedChapters.firstOrNull { it.chapter.chapter.id == id }
-        } ?: loadedChapters.getOrNull(ttsController.ttsPlaybackChapterIndex)) ?: return
+        val loaded = (
+            ttsController.ttsPlaybackChapterId?.let { id ->
+                loadedChapters.firstOrNull { it.chapter.chapter.id == id }
+            } ?: loadedChapters.getOrNull(ttsController.ttsPlaybackChapterIndex)
+            ) ?: return
         val page = loaded.chapter.pages?.firstOrNull() ?: return
         val percent = (((chunkIndex + 1) * 100f) / total).roundToInt().coerceIn(0, 100)
         activity.saveNovelProgress(page, percent)
