@@ -1068,8 +1068,14 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         currentChapterIndex = (currentChapterIndex - removeCount).coerceAtLeast(0)
         ttsController.shiftPlaybackChapterIndex(removeCount)
         // Removed views were above the viewport; compensate so the read chapter stays put.
-        if (removedHeight > 0) scrollView.scrollBy(0, -removedHeight)
-        scrollView.post { isRestoringScroll = false }
+        // Post the scrollBy so it runs after the layout pass that follows removeView — a
+        // synchronous call here reads stale ScrollView content height and can be re-clamped
+        // by the deferred layout, causing a visible jump. isRestoringScroll stays true until
+        // after the scroll so the listener doesn't fire chapter detection mid-adjustment.
+        scrollView.post {
+            if (removedHeight > 0) scrollView.scrollBy(0, -removedHeight)
+            isRestoringScroll = false
+        }
         logcat(LogPriority.DEBUG) {
             "TTS: trimmed $removeCount read chapter(s), now ${loadedChapters.size} loaded, currentIndex=$currentChapterIndex"
         }
