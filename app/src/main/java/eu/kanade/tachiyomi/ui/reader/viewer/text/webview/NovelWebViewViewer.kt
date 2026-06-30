@@ -1772,6 +1772,11 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                 // Cache populated while we waited — recurse to take the cache path.
                 return appendNextChapterIfAvailable(silent = true)
             }
+            // Timed out: the prefetch is still running but we're proceeding with a
+            // cold fetch. Clear PreFetching now so the racing prefetch coroutine
+            // cannot later set handoffState = Cached for a chapter we're about to
+            // load here — that stale entry would confuse the *next* TTS handoff.
+            handoffState = TtsHandoffState.Idle
         }
 
         val anchor = loadedChapters.lastOrNull() ?: currentChapters?.currChapter ?: run {
