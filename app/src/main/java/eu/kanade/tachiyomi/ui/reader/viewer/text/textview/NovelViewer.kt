@@ -1899,6 +1899,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         if (!preferences.novelInfiniteScroll.get()) return
         if (ttsController.isTtsAutoPlay || isLoadingNext || isRestoringScroll) return
         scrollView.post {
+            if (ttsController.isTtsAutoPlay) return@post
             val onLastLoaded = currentChapterIndex == (loadedChapters.size - 1).coerceAtLeast(0)
             if (!onLastLoaded) return@post
             val autoLoadAt = preferences.novelAutoLoadNextChapterAt.get()
