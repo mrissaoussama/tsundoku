@@ -652,7 +652,11 @@ class MangaScreenModel(
             val statusChanged = status != manga.status
             val tagsChanged = tags != manga.genre.orEmpty()
 
-            if (!authorChanged && !artistChanged && !descriptionChanged && !statusChanged && !tagsChanged) return@launchIO
+            if (!authorChanged && !artistChanged && !descriptionChanged && !statusChanged &&
+                !tagsChanged
+            ) {
+                return@launchIO
+            }
 
             setCustomMangaInfo.awaitWithFields(
                 mangaId = mangaId,

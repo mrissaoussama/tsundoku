@@ -227,7 +227,12 @@ private fun SourceValuesSection(source: CustomMangaInfo, current: Manga) {
             )
         }
         if (expanded) {
-            changedRows.forEach { (label, value) -> SourceValueRow(label, value.takeUnless { it.isNullOrBlank() } ?: noneLabel) }
+            changedRows.forEach { (label, value) ->
+                SourceValueRow(
+                    label,
+                    value.takeUnless { it.isNullOrBlank() } ?: noneLabel,
+                )
+            }
         }
         HorizontalDivider()
     }
