@@ -155,6 +155,9 @@ data object LibraryTab : Tab {
                     scrollBehavior = scrollBehavior.takeIf { !state.showCategoryTabs },
                     onClickMassImport = screenModel::openMassImportDialog,
                     onClickFindDuplicates = { navigator.push(DuplicateDetectionScreen()) },
+                    onClickCategoryActions = {
+                        state.activeCategory?.let(screenModel::openCategoryActionsDialog)
+                    },
                 )
             },
             bottomBar = {
@@ -312,6 +315,32 @@ data object LibraryTab : Tab {
                             clearTags,
                         )
                         screenModel.clearSelection()
+                    },
+                )
+            }
+            is LibraryScreenModel.Dialog.CategoryAction -> {
+                DeleteLibraryMangaDialog(
+                    containsLocalManga = false,
+                    onDismissRequest = onDismissRequest,
+                    onConfirm = {
+                            deleteManga,
+                            deleteChapter,
+                            clearChaptersFromDb,
+                            deleteTranslations,
+                            clearCovers,
+                            clearDescriptions,
+                            clearTags,
+                        ->
+                        screenModel.removeCategoryMangas(
+                            categoryId = dialog.category.id,
+                            deleteFromLibrary = deleteManga,
+                            deleteChapters = deleteChapter,
+                            clearChaptersFromDb = clearChaptersFromDb,
+                            deleteTranslations = deleteTranslations,
+                            clearCovers = clearCovers,
+                            clearDescriptions = clearDescriptions,
+                            clearTags = clearTags,
+                        )
                     },
                 )
             }

@@ -102,19 +102,15 @@ class FindDuplicateNovels(
     }
 
     /**
-     * List every favorite grouped by normalized title, keeping single entries with no duplicates.
-     * Used by the listing mode so the screen can filter the whole library by category.
+     * Materialize the given manga ids and group them by normalized title, keeping single entries.
+     * The caller resolves the id set (e.g. category-filtered) so only the needed rows are loaded.
      */
-    suspend fun findAllGrouped(): Map<String, List<MangaWithChapterCount>> {
-        val favorites = mangaRepository.getFavoriteIdAndTitle()
-        if (favorites.isEmpty()) return emptyMap()
-
-        val mangaMap = getMangaWithCountsLight(favorites.map { it.first }).associateBy { it.manga.id }
+    suspend fun findGroupedByIds(ids: List<Long>): Map<String, List<MangaWithChapterCount>> {
+        if (ids.isEmpty()) return emptyMap()
 
         val grouped = LinkedHashMap<String, MutableList<MangaWithChapterCount>>()
-        favorites.forEach { (id, title) ->
-            val item = mangaMap[id] ?: return@forEach
-            val key = title.trim().lowercase().ifBlank { item.manga.id.toString() }
+        getMangaWithCountsLight(ids).forEach { item ->
+            val key = item.manga.title.trim().lowercase().ifBlank { item.manga.id.toString() }
             grouped.getOrPut(key) { mutableListOf() }.add(item)
         }
         return grouped.mapValues { (_, list) -> list.sortedByDescending { it.chapterCount } }

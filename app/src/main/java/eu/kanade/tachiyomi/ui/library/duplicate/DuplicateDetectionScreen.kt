@@ -144,9 +144,9 @@ class DuplicateDetectionScreen : Screen {
                         if (state.selection.isNotEmpty()) {
                             // Copy links
                             IconButton(onClick = {
-                                val urls = screenModel.getSelectedUrls()
-                                clipboardManager.setText(AnnotatedString(urls.joinToString("\n")))
                                 scope.launch {
+                                    val urls = screenModel.getSelectedUrls()
+                                    clipboardManager.setText(AnnotatedString(urls.joinToString("\n")))
                                     snackbarHostState.showSnackbar(
                                         context.ctxStringResource(MR.strings.duplicate_urls_copied, urls.size),
                                     )
@@ -357,6 +357,15 @@ class DuplicateDetectionScreen : Screen {
                         } else {
                             null
                         },
+                    )
+                }
+
+                if (state.listingMode && state.listingTruncated) {
+                    Text(
+                        text = stringResource(MR.strings.duplicate_listing_truncated),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                 }
 
