@@ -272,7 +272,11 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
      * Returns the table of contents (chapters) from the EPUB.
      * Tries EPUB 3 NAV first, then falls back to EPUB 2 NCX.
      */
-    fun getTableOfContents(): List<EpubChapter> {
+    private val cachedTableOfContents: List<EpubChapter> by lazy { computeTableOfContents() }
+
+    fun getTableOfContents(): List<EpubChapter> = cachedTableOfContents
+
+    private fun computeTableOfContents(): List<EpubChapter> {
         val ref = getPackageHref()
         val doc = getPackageDocument(ref)
         val opfBasePath = getParentDirectory(ref)
@@ -402,6 +406,10 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
             else -> resolveZipPath(packageBasePath, pathPart)
         }
 
+        // Slice by fragment only when several TOC entries share this file; a lone entry's anchor is a
+        // chapter-top marker and must yield the whole file.
+        val effectiveFragment = fragment?.takeIf { tocEntriesForPath(entryPath) > 1 }
+
         return getInputStream(entryPath)?.use { inputStream ->
             val document = Jsoup.parse(inputStream, null, "", Parser.xmlParser())
 
@@ -517,7 +525,7 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
             // Remove title to prevent bleeding into text viewers.
             document.getElementsByTag("title").remove()
 
-            val fragmentHtml = fragment?.let { extractFragmentHtml(document, it) }.orEmpty()
+            val fragmentHtml = effectiveFragment?.let { extractFragmentHtml(document, it) }.orEmpty()
             when {
                 fragmentHtml.isNotBlank() -> fragmentHtml
                 bodyOnly -> document.body().html().ifBlank { document.outerHtml() }
@@ -708,6 +716,93 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
                 .take(80)
             return if (extension != null) "$squashed.$extension" else squashed
         }
+
+        /** Counts TOC entries whose target file (href minus fragment) equals [entryPath]. */
+        fun tocEntryCountForPath(toc: List<EpubChapter>, entryPath: String): Int =
+            toc.count { urlDecode(it.href.substringBefore("#").trim()) == entryPath }
+
+        /** Returns the HTML anchored at [fragment], or null when it resolves to no slice-able element. */
+        fun extractFragmentHtml(document: Document, fragment: String): String? {
+            val candidates = buildList {
+                val primary = fragment.substringAfterLast("#").trim().removePrefix("#")
+                if (primary.isNotBlank()) {
+                    add(primary)
+                    val decoded = runCatching { URLDecoder.decode(primary, "UTF-8") }.getOrDefault("")
+                    if (decoded.isNotBlank() && decoded != primary) {
+                        add(decoded)
+                    }
+                }
+            }.distinct()
+
+            for (candidate in candidates) {
+                val elementById = document.getElementById(candidate)
+                if (elementById != null) {
+                    val materialized = materializeFragmentElement(elementById)
+                    if (materialized.isNotBlank()) return materialized
+                }
+
+                val escaped = candidate
+                    .replace("\\", "\\\\")
+                    .replace("\"", "\\\"")
+                val elementByName = document.selectFirst("*[id=\"$escaped\"], *[name=\"$escaped\"]")
+                if (elementByName != null) {
+                    val materialized = materializeFragmentElement(elementByName)
+                    if (materialized.isNotBlank()) return materialized
+                }
+            }
+
+            return null
+        }
+
+        private fun materializeFragmentElement(element: Element): String {
+            findHeadingElement(element)?.let { heading ->
+                return extractHeadingSectionHtml(heading)
+            }
+
+            if (isMeaningfulFragmentElement(element)) {
+                return element.outerHtml()
+            }
+
+            return ""
+        }
+
+        private fun findHeadingElement(element: Element): Element? {
+            return if (isHeadingTag(element.tagName())) {
+                element
+            } else {
+                element.parents().firstOrNull { isHeadingTag(it.tagName()) }
+            }
+        }
+
+        private fun extractHeadingSectionHtml(heading: Element): String {
+            val headingLevel = heading.tagName().removePrefix("h").toIntOrNull() ?: return heading.outerHtml()
+            val section = Element("div")
+
+            var node: Node? = heading
+            while (node != null) {
+                if (node !== heading && node is Element && isHeadingTag(node.tagName())) {
+                    val siblingHeadingLevel = node.tagName().removePrefix("h").toIntOrNull() ?: Int.MAX_VALUE
+                    if (siblingHeadingLevel <= headingLevel) break
+                }
+
+                section.appendChild(node.clone())
+                node = node.nextSibling()
+            }
+
+            return section.html().ifBlank { heading.outerHtml() }
+        }
+
+        private fun isMeaningfulFragmentElement(element: Element): Boolean {
+            val text = element.text().trim()
+            if (text.length >= 80) return true
+
+            return element.select("p, div, section, article, table, ul, ol, blockquote, pre, figure, img, svg")
+                .isNotEmpty()
+        }
+
+        private fun isHeadingTag(tagName: String): Boolean {
+            return tagName.length == 2 && tagName[0] == 'h' && tagName[1] in '1'..'6'
+        }
     }
 
     private fun inlineAssetAsDataUri(assetPath: String): String? {
@@ -735,84 +830,6 @@ class EpubReader(private val reader: ArchiveReader) : Closeable by reader {
         }
     }
 
-    private fun extractFragmentHtml(document: Document, fragment: String): String? {
-        val candidates = buildList {
-            val primary = fragment.substringAfterLast("#").trim().removePrefix("#")
-            if (primary.isNotBlank()) {
-                add(primary)
-                val decoded = runCatching { URLDecoder.decode(primary, "UTF-8") }.getOrDefault("")
-                if (decoded.isNotBlank() && decoded != primary) {
-                    add(decoded)
-                }
-            }
-        }.distinct()
-
-        for (candidate in candidates) {
-            val elementById = document.getElementById(candidate)
-            if (elementById != null) {
-                val materialized = materializeFragmentElement(elementById)
-                if (materialized.isNotBlank()) return materialized
-            }
-
-            val escaped = candidate
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-            val elementByName = document.selectFirst("*[id=\"$escaped\"], *[name=\"$escaped\"]")
-            if (elementByName != null) {
-                val materialized = materializeFragmentElement(elementByName)
-                if (materialized.isNotBlank()) return materialized
-            }
-        }
-
-        return null
-    }
-
-    private fun materializeFragmentElement(element: Element): String {
-        findHeadingElement(element)?.let { heading ->
-            return extractHeadingSectionHtml(heading)
-        }
-
-        if (isMeaningfulFragmentElement(element)) {
-            return element.outerHtml()
-        }
-
-        return ""
-    }
-
-    private fun findHeadingElement(element: Element): Element? {
-        return if (isHeadingTag(element.tagName())) {
-            element
-        } else {
-            element.parents().firstOrNull { isHeadingTag(it.tagName()) }
-        }
-    }
-
-    private fun extractHeadingSectionHtml(heading: Element): String {
-        val headingLevel = heading.tagName().removePrefix("h").toIntOrNull() ?: return heading.outerHtml()
-        val section = Element("div")
-
-        var node: Node? = heading
-        while (node != null) {
-            if (node !== heading && node is Element && isHeadingTag(node.tagName())) {
-                val siblingHeadingLevel = node.tagName().removePrefix("h").toIntOrNull() ?: Int.MAX_VALUE
-                if (siblingHeadingLevel <= headingLevel) break
-            }
-
-            section.appendChild(node.clone())
-            node = node.nextSibling()
-        }
-
-        return section.html().ifBlank { heading.outerHtml() }
-    }
-
-    private fun isMeaningfulFragmentElement(element: Element): Boolean {
-        val text = element.text().trim()
-        if (text.length >= 80) return true
-
-        return element.select("p, div, section, article, table, ul, ol, blockquote, pre, figure, img, svg").isNotEmpty()
-    }
-
-    private fun isHeadingTag(tagName: String): Boolean {
-        return tagName.length == 2 && tagName[0] == 'h' && tagName[1] in '1'..'6'
-    }
+    private fun tocEntriesForPath(entryPath: String): Int =
+        tocEntryCountForPath(getTableOfContents(), entryPath)
 }
