@@ -28,6 +28,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - URL path resolution in JsSource [@mrissaoussama](https://github.com/mrissaoussama) [#274](https://github.com/tsundoku-otaku/tsundoku/pull/274)
 - ALt title import when tracking, case insensitive dupe check [@mrissaoussama](https://github.com/mrissaoussama) [#305](https://github.com/tsundoku-otaku/tsundoku/pull/305)
 - Mass import improvements and resume counting [@mrissaoussama](https://github.com/mrissaoussama) [#288](https://github.com/tsundoku-otaku/tsundoku/pull/288)
+- EPUBC ToC Subsection Fix [@mrissaoussama](https://github.com/mrissaoussama) [#315](https://github.com/tsundoku-otaku/tsundoku/pull/315)
 - Append clipboard added in edit quotes [@Rojikku](https://github.com/Rojikku) [#301](https://github.com/tsundoku-otaku/tsundoku/pull/301)
 - Prevent duplicate custom sources [@mrissaoussama](https://github.com/mrissaoussama) [#294](https://github.com/tsundoku-otaku/tsundoku/pull/294)
 - Added novel extension repos entry into browse settings [@mrissaoussama](https://github.com/mrissaoussama) [#304](https://github.com/tsundoku-otaku/tsundoku/pull/304)
