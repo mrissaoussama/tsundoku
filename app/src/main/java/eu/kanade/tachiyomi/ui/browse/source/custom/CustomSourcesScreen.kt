@@ -71,6 +71,7 @@ import eu.kanade.tachiyomi.jsplugin.JsPluginManager
 import eu.kanade.tachiyomi.source.custom.CustomSourceConfig
 import eu.kanade.tachiyomi.source.custom.SourceTestResult
 import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.ui.webview.WebViewScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1091,6 +1092,14 @@ class CustomSourceEditorScreen(
                 )
             }
         }
+        fun openUrlTrailing(url: String): @Composable () -> Unit = {
+            IconButton(onClick = { navigator.push(WebViewScreen(firstPageUrl(url))) }) {
+                Icon(
+                    Icons.Outlined.Language,
+                    contentDescription = stringResource(TDMR.strings.custom_source_pick_from_site),
+                )
+            }
+        }
 
         Scaffold(
             topBar = {
@@ -1378,6 +1387,7 @@ class CustomSourceEditorScreen(
                             value = popularUrl,
                             onValueChange = { popularUrl = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_popular_url)) },
+                            trailingIcon = openUrlTrailing(popularUrl),
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text(stringResource(TDMR.strings.custom_source_popular_url_hint)) },
                         )
@@ -1388,6 +1398,7 @@ class CustomSourceEditorScreen(
                             value = latestUrl,
                             onValueChange = { latestUrl = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_latest_url)) },
+                            trailingIcon = openUrlTrailing(latestUrl),
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -1397,6 +1408,7 @@ class CustomSourceEditorScreen(
                             value = searchUrl,
                             onValueChange = { searchUrl = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_search_url)) },
+                            trailingIcon = openUrlTrailing(searchUrl),
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text(stringResource(TDMR.strings.custom_source_search_url_hint)) },
                         )
