@@ -313,10 +313,10 @@ class MangaScreenModel(
     fun fetchAllFromSource(manualFetch: Boolean = true, forceRefresh: Boolean = false) {
         screenModelScope.launch {
             updateSuccessState { it.copy(isRefreshingData = true) }
-            val fetchFromSourceTasks = listOf(
+            listOf(
                 async { fetchMangaFromSource(manualFetch) },
                 async { fetchChaptersFromSource(manualFetch, forceRefresh) },
-            )
+            ).awaitAll()
             updateSuccessState { it.copy(isRefreshingData = false) }
         }
     }
