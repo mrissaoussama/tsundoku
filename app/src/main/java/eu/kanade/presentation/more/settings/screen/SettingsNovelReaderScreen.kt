@@ -36,6 +36,7 @@ object SettingsNovelReaderScreen : SearchableSettings {
             readerPref.novelSourceCssPriority,
             readerPref.novelTtsSpeed,
             readerPref.novelTtsPitch,
+            readerPref.novelStatusBarOrder,
         )
     }
 

@@ -3,8 +3,10 @@ package eu.kanade.tachiyomi.ui.reader.setting
 import android.os.Build
 import androidx.compose.ui.graphics.BlendMode
 import dev.icerock.moko.resources.StringResource
+import eu.kanade.presentation.reader.DefaultStatusBarOrder
 import eu.kanade.presentation.reader.appbars.DefaultBottomBarItems
 import eu.kanade.presentation.reader.appbars.serialize
+import eu.kanade.presentation.reader.serializeStatusBarOrder
 import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.preference.getEnum
@@ -430,7 +432,7 @@ class ReaderPreferences(
 
     val novelStatusBarOrder: Preference<String> = preferenceStore.getString(
         "pref_novel_status_bar_order",
-        "time,chapter,progress,battery",
+        DefaultStatusBarOrder.serializeStatusBarOrder(),
     )
     // endregion
 
