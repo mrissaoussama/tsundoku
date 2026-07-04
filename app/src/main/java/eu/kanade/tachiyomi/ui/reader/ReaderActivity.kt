@@ -61,6 +61,7 @@ import com.hippo.unifile.UniFile
 import eu.kanade.core.util.ifSourcesLoaded
 import eu.kanade.domain.base.BasePreferences
 import eu.kanade.presentation.reader.DisplayRefreshHost
+import eu.kanade.presentation.reader.EstimatedStatusBarHeight
 import eu.kanade.presentation.reader.NovelStatusBar
 import eu.kanade.presentation.reader.OrientationSelectDialog
 import eu.kanade.presentation.reader.ReaderContentOverlay
@@ -363,8 +364,10 @@ class ReaderActivity : BaseActivity() {
         val novelBgColorInt by readerPreferences.novelBackgroundColor.collectAsState()
         val novelFontColorInt by readerPreferences.novelFontColor.collectAsState()
         var statusBarCollapsed by remember { mutableStateOf(false) }
-        var statusBarHeightPx by remember { mutableIntStateOf(0) }
         val density = LocalDensity.current
+        var statusBarHeightPx by remember {
+            mutableIntStateOf(with(density) { EstimatedStatusBarHeight.roundToPx() })
+        }
         val settingsScreenModel = remember {
             ReaderSettingsScreenModel(
                 readerState = viewModel.state,

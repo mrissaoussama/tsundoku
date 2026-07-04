@@ -57,6 +57,14 @@ import java.util.Date
 import java.util.Locale
 
 /**
+ * Rough upper-bound guess for the bar's rendered height (sized to the larger "medium"
+ * variant), used only to seed callers' state for the very first composition frame before
+ * [NovelStatusBar]'s onSizeChanged reports the real, size/font-scaling-aware height — this
+ * intentionally overestimates so that seed never under-reserves space for an overlay.
+ */
+val EstimatedStatusBarHeight = 40.dp
+
+/**
  * Full-width reading status bar that overlays the top or bottom of the novel reading view.
  *
  * Elements (time, chapter, progress, battery) are rendered left-to-right in [order], each
