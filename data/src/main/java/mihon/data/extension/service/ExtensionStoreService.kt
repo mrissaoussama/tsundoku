@@ -36,9 +36,10 @@ class ExtensionStoreService(
                             throw IllegalArgumentException("Provided legacy store url is not valid")
                         }
                         updatedIndexUrl = indexUrl.replace("/index.min.json", "/repo.json")
-                        network.client.newCall(GET(updatedIndexUrl)).awaitSuccess().body.source().use {
-                            json.decodeFromBufferedSource<NetworkLegacyExtensionRepo>(it)
-                        }
+                        network.client.newCall(GET(updatedIndexUrl)).awaitSuccess()
+                            .body.source().decompressIfGzipped().use {
+                                json.decodeFromBufferedSource<NetworkLegacyExtensionRepo>(it)
+                            }
                     }
                     // "{..."
                     0x7B.toByte() -> try {
@@ -79,7 +80,7 @@ class ExtensionStoreService(
             } else {
                 val storeBaseUrl = store.indexUrl.removeSuffix("/repo.json")
                 val response = network.client.newCall(GET("$storeBaseUrl/index.min.json")).awaitSuccess()
-                response.body.source().use { source ->
+                response.body.source().decompressIfGzipped().use { source ->
                     json.decodeFromBufferedSource<List<NetworkLegacyExtension>>(source)
                         .map { it.toAvailableExtension(store, storeBaseUrl) }
                 }
