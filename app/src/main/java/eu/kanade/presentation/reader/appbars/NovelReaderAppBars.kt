@@ -92,8 +92,8 @@ private const val PROGRESS_SLIDER_MODE_HORIZONTAL = "horizontal"
 private const val PROGRESS_SLIDER_MODE_VERTICAL_LEFT = "vertical_left"
 private const val PROGRESS_SLIDER_MODE_VERTICAL_RIGHT = "vertical_right"
 private const val VERTICAL_PROGRESS_SIZE_HALF = "half"
-private val VERTICAL_PROGRESS_CONTAINER_WIDTH = 40.dp
-private val VERTICAL_PROGRESS_EDGE_INSET = 6.dp
+private val VERTICAL_PROGRESS_CONTAINER_WIDTH = 6.dp
+private val VERTICAL_PROGRESS_EDGE_INSET = 3.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -772,8 +772,6 @@ private fun NovelVerticalProgressSlider(
             .padding(horizontal = 10.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(text = "$currentProgress%")
-
         Box(
             modifier = Modifier
                 .weight(1f)
