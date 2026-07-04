@@ -898,7 +898,9 @@ class CustomNovelSource(
 
     override suspend fun fetchPageText(page: Page): String {
         val bs = baseSource
-        if (bs != null && bs.isNovelSource()) {
+        // A custom content selector wins over delegation: a mirror on a different engine than the
+        // base ext (e.g. novelphoenix vs novelfire) needs its own content extraction.
+        if (bs != null && bs.isNovelSource() && config.selectors.content.primary.isBlank()) {
             // For content fetching, we need absolute URLs (not relative paths)
             // buildAbsoluteUrl() converts relative to absolute on custom base
             val absoluteUrl = buildAbsoluteUrl(page.url)
