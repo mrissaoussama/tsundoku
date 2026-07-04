@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.di
 
 import android.app.Application
 import android.content.Context
-import android.os.Build
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
@@ -134,15 +133,15 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { CoverCache(app) }
         addSingletonFactory { LibrarySettingsCache(app) }
 
-        addSingletonFactory { NetworkHelper(app, get(), get()) }
+        addSingletonFactory { NetworkHelper(app, get()) }
         addSingletonFactory { JavaScriptEngine(app) }
 
-        addSingletonFactory<SourceManager> { AndroidSourceManager(app, get(), get(), get()) }
-        addSingletonFactory { ExtensionManager(app, get()) }
+        addSingletonFactory<SourceManager> { AndroidSourceManager(app, get(), get()) }
+        addSingletonFactory { ExtensionManager(app) }
 
         addSingletonFactory { DownloadProvider(app) }
-        addSingletonFactory { DownloadManager(app, get()) }
-        addSingletonFactory { DownloadCache(app, get()) }
+        addSingletonFactory { DownloadManager(app) }
+        addSingletonFactory { DownloadCache(app) }
 
         addSingletonFactory { TrackerManager() }
         addSingletonFactory { DelayedTrackingStore(app) }
@@ -166,7 +165,7 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { LocalNovelSourceFileSystem(get()) }
         addSingletonFactory { LocalCoverManager(app, get()) }
         addSingletonFactory { LocalNovelCoverManager(app, get()) }
-        addSingletonFactory { StorageManager(app, get(), get()) }
+        addSingletonFactory { StorageManager(app, get()) }
 
         // Font management
         addSingletonFactory { eu.kanade.tachiyomi.data.font.FontManager(app, get(), get()) }

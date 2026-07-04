@@ -48,6 +48,11 @@ internal object ExtensionLoader {
     private const val EXTENSION_FEATURE = "tachiyomi.extension"
     private const val EXTENSION_FEATURE_NOVEL = "tachiyomi.novelextension"
     private val EXTENSION_FEATURES = setOf(EXTENSION_FEATURE, EXTENSION_FEATURE_NOVEL)
+
+    private const val METADATA_NAME = "tachiyomix.name"
+    private const val METADATA_EXTENSION_LIB = "tachiyomix.extensionLib"
+    private const val METADATA_CONTENT_WARNING = "tachiyomix.contentWarning"
+
     const val LIB_VERSION_MIN = 1.4
     const val LIB_VERSION_MAX = 1.6
 
@@ -121,33 +126,12 @@ internal object ExtensionLoader {
             pkgManager.getInstalledPackages(PACKAGE_FLAGS)
         }
 
-        android.util.Log.d("ExtensionLoader", "Found ${installedPkgs.size} installed packages")
-
-        // Log packages that might be extensions (for debugging)
-        val potentialExts = installedPkgs.filter { pkg ->
-            pkg.packageName.contains("extension", ignoreCase = true) ||
-                pkg.packageName.contains("tachiyomi", ignoreCase = true) ||
-                pkg.packageName.contains("mihon", ignoreCase = true)
-        }
-        android.util.Log.d(
-            "ExtensionLoader",
-            "${potentialExts.size} potential extension packages: ${potentialExts.map {
-                it.packageName
-            }}",
-        )
-
         val sharedExtPkgs = installedPkgs
             .asSequence()
             .filter { isPackageAnExtension(it) }
             .map { ExtensionInfo(packageInfo = it, isShared = true) }
 
         val sharedExtList = sharedExtPkgs.toList()
-        android.util.Log.d(
-            "ExtensionLoader",
-            "${sharedExtList.size} shared extensions found: ${sharedExtList.map {
-                it.packageInfo.packageName
-            }}",
-        )
 
         val privateExtPkgs = getPrivateExtensionDir(context)
             .listFiles()
@@ -168,7 +152,6 @@ internal object ExtensionLoader {
             ?: emptySequence()
 
         val privateExtList = privateExtPkgs.toList()
-        android.util.Log.d("ExtensionLoader", "${privateExtList.size} private extensions found")
 
         val extPkgs = (sharedExtList.asSequence() + privateExtList.asSequence())
             // Remove duplicates. Shared takes priority than private by default
@@ -180,8 +163,6 @@ internal object ExtensionLoader {
                 selectExtensionPackage(sharedPkg, privatePkg)
             }
             .toList()
-
-        android.util.Log.d("ExtensionLoader", "${extPkgs.size} total extensions to load")
 
         if (extPkgs.isEmpty()) return emptyList()
 
@@ -259,13 +240,15 @@ internal object ExtensionLoader {
         val appInfo = pkgInfo.applicationInfo!!
         val pkgName = pkgInfo.packageName
 
-        // Support both old "Tachiyomi: " and new "Tsundoku: " prefixes
-        val appLabel = pkgManager.getApplicationLabel(appInfo).toString()
-        val extName = when {
-            appLabel.startsWith("Tsundoku: ") -> appLabel.substringAfter("Tsundoku: ")
-            appLabel.startsWith("Tachiyomi: ") -> appLabel.substringAfter("Tachiyomi: ")
-            else -> appLabel
-        }
+        // Prefer tachiyomix.name metadata; fall back to app label with old "Tachiyomi: " or "Tsundoku: " prefixes
+        val extName = appInfo.metaData.getString(METADATA_NAME)
+            ?: pkgManager.getApplicationLabel(appInfo).toString().let { appLabel ->
+                when {
+                    appLabel.startsWith("Tsundoku: ") -> appLabel.substringAfter("Tsundoku: ")
+                    appLabel.startsWith("Tachiyomi: ") -> appLabel.substringAfter("Tachiyomi: ")
+                    else -> appLabel
+                }
+            }
         val versionName = pkgInfo.versionName
         val versionCode = PackageInfoCompat.getLongVersionCode(pkgInfo)
 
@@ -275,7 +258,8 @@ internal object ExtensionLoader {
         }
 
         // Validate lib version
-        val libVersion = versionName.substringBeforeLast('.').toDoubleOrNull()
+        val libVersion = appInfo.metaData.getDouble(METADATA_EXTENSION_LIB).takeUnless { it == 0.0 }
+            ?: versionName.substringBeforeLast('.').toDoubleOrNull()
         if (libVersion == null || (libVersion != LIB_VERSION_MIN && libVersion != LIB_VERSION_MAX)) {
             logcat(LogPriority.WARN) {
                 "Lib version is $libVersion, while only versions " +
@@ -313,7 +297,8 @@ internal object ExtensionLoader {
             return LoadResult.Untrusted(extension)
         }
 
-        val isNsfw = appInfo.metaData.getInt("$metaNs.nsfw") == 1
+        val isNsfw = appInfo.metaData.getInt(METADATA_CONTENT_WARNING) > 0 ||
+            appInfo.metaData.getInt("$metaNs.nsfw") == 1
         if (!loadNsfwSource && isNsfw) {
             logcat(LogPriority.WARN) { "NSFW extension $pkgName not allowed" }
             return LoadResult.Error
@@ -429,19 +414,7 @@ internal object ExtensionLoader {
      * @param pkgInfo The package info of the application.
      */
     private fun isPackageAnExtension(pkgInfo: PackageInfo): Boolean {
-        val hasFeature = pkgInfo.reqFeatures.orEmpty().any { it.name in EXTENSION_FEATURES }
-        if (pkgInfo.packageName.contains("extension", ignoreCase = true) ||
-            pkgInfo.packageName.contains("mihon", ignoreCase = true) ||
-            pkgInfo.packageName.contains("tsundoku", ignoreCase = true)
-        ) {
-            android.util.Log.d(
-                "ExtensionLoader",
-                "isPackageAnExtension: ${pkgInfo.packageName} - features: ${pkgInfo.reqFeatures?.map {
-                    it.name
-                }}, hasFeature=$hasFeature",
-            )
-        }
-        return hasFeature
+        return pkgInfo.reqFeatures.orEmpty().any { it.name in EXTENSION_FEATURES }
     }
 
     /**

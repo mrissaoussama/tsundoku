@@ -1,4 +1,4 @@
-﻿package tachiyomi.data.history
+package tachiyomi.data.history
 
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import app.cash.sqldelight.async.coroutines.awaitAsOne

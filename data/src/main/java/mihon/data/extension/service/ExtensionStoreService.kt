@@ -12,6 +12,7 @@ import logcat.LogPriority
 import mihon.data.extension.model.NetworkExtensionStore
 import mihon.data.extension.model.NetworkLegacyExtension
 import mihon.data.extension.model.NetworkLegacyExtensionRepo
+import mihon.data.extension.model.toAvailableExtensions
 import mihon.domain.extension.model.ExtensionStore
 import okio.BufferedSource
 import okio.buffer
@@ -25,10 +26,10 @@ class ExtensionStoreService(
     private val protoBuf: ProtoBuf,
 ) {
     suspend fun fetch(indexUrl: String): Result<ExtensionStore> {
-        var updatedIndexUrl = indexUrl
+        var updatedIndexUrl: String = indexUrl
         return try {
-            val store = network.client.newCall(GET(updatedIndexUrl)).awaitSuccess()
-                .body.source().decompressIfGzipped().use { source ->
+            val response = network.client.newCall(GET(updatedIndexUrl)).awaitSuccess()
+            val store = response.body.source().decompressIfGzipped().use { source ->
                 val networkStore = when (source.peek().readByte()) {
                     // "[..."
                     0x5B.toByte() -> run {
@@ -69,13 +70,28 @@ class ExtensionStoreService(
 
     suspend fun getExtensions(store: ExtensionStore): Result<List<Extension.Available>> {
         return try {
-            val extensions = if (!store.isLegacy) {
+            val extensions = if (store.extensionListUrl != null) {
+                val response = network.client.newCall(GET(store.extensionListUrl!!)).awaitSuccess()
+                response.body.source().decompressIfGzipped().use { source ->
+                    when (source.peek().readByte()) {
+                        // "{..."
+                        0x7B.toByte() -> json.decodeFromBufferedSource<NetworkExtensionStore.ExtensionList>(source)
+                        else -> protoBuf.decodeFromByteArray<NetworkExtensionStore.ExtensionList>(
+                            source.readByteArray(),
+                        )
+                    }
+                        .toAvailableExtensions(store)
+                }
+            } else if (!store.isLegacy) {
                 val response = network.client.newCall(GET(store.indexUrl)).awaitSuccess()
                 response.body.source().decompressIfGzipped().use { source ->
                     when (source.peek().readByte()) {
-                        0x7B.toByte() -> json.decodeFromBufferedSource<NetworkExtensionStore>(source.peek())
+                        // "{..."
+                        0x7B.toByte() -> json.decodeFromBufferedSource<NetworkExtensionStore>(source)
                         else -> protoBuf.decodeFromByteArray<NetworkExtensionStore>(source.readByteArray())
-                    }.toAvailableExtensions(store)
+                    }
+                        .extensionList!!
+                        .toAvailableExtensions(store)
                 }
             } else {
                 val storeBaseUrl = store.indexUrl.removeSuffix("/repo.json")

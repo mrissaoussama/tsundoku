@@ -13,7 +13,9 @@ class BackupExtensionStore(
     @ProtoNumber(4) var contactWebsite: String,
     @ProtoNumber(6) var contactDiscord: String?,
     @ProtoNumber(7) var isLegacy: Boolean?,
-    @ProtoNumber(8) var isNovel: Boolean = false,
+    @ProtoNumber(8) var extensionListUrl: String? = null,
+    // Fork fields use a reserved 8000+ ProtoNumber block so they never collide with new upstream fields.
+    @ProtoNumber(8000) var isNovel: Boolean = false,
 )
 
 val backupExtensionStoreMapper = { store: ExtensionStore ->
@@ -25,6 +27,7 @@ val backupExtensionStoreMapper = { store: ExtensionStore ->
         contactWebsite = store.contact.website,
         contactDiscord = store.contact.discord,
         isLegacy = store.isLegacy,
+        extensionListUrl = store.extensionListUrl,
         isNovel = store.isNovel,
     )
 }

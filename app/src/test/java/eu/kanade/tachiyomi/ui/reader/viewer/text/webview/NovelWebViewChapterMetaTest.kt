@@ -1,4 +1,4 @@
-﻿package eu.kanade.tachiyomi.ui.reader.viewer.text.webview
+package eu.kanade.tachiyomi.ui.reader.viewer.text.webview
 
 import eu.kanade.tachiyomi.ui.reader.viewer.text.webview.NovelWebViewChapterMeta.htmlAttributeEscape
 import eu.kanade.tachiyomi.ui.reader.viewer.text.webview.NovelWebViewChapterMeta.jsEscape

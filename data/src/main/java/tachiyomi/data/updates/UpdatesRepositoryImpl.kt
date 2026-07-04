@@ -1,4 +1,4 @@
-﻿package tachiyomi.data.updates
+package tachiyomi.data.updates
 
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import kotlinx.coroutines.flow.Flow

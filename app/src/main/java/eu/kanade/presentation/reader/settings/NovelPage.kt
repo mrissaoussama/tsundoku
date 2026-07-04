@@ -1,4 +1,4 @@
-﻿package eu.kanade.presentation.reader.settings
+package eu.kanade.presentation.reader.settings
 
 import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.background

@@ -3,18 +3,32 @@ package eu.kanade.tachiyomi.data.backup
 import java.io.ByteArrayOutputStream
 
 /**
-This is a temporary migration fix to keep compatibility with old backup files that use isNovel proto number 112 before it was moved to 8000
+This is a temporary migration fix to keep compatibility with old backup files.
+ - BackupManga stored isNovel as a varint at proto number 112 before it moved to 8000.
+ - BackupExtensionStore stored isNovel as a varint at proto number 8 before it moved to 8000
+   (proto number 8 now holds extensionListUrl, a length-delimited string from upstream).
+Both legacy values are varints where the current field is either absent or length-delimited, so a
+varint at the legacy field is unambiguously the old isNovel and is rewritten to 8000 before decoding.
  TODO: Remove this class after a few releases.
  */
 internal object BackupProtoMigration {
     private const val BACKUP_MANGA_FIELD = 1
-    private const val LEGACY_IS_NOVEL_FIELD = 112
+    private const val BACKUP_EXTENSION_STORE_FIELD = 106
+
+    private const val MANGA_LEGACY_IS_NOVEL_FIELD = 112
+    private const val EXTENSION_STORE_LEGACY_IS_NOVEL_FIELD = 8
     private const val IS_NOVEL_FIELD = 8000
 
     private const val WIRE_VARINT = 0
     private const val WIRE_I64 = 1
     private const val WIRE_LEN = 2
     private const val WIRE_I32 = 5
+
+    private fun legacyFieldFor(parentField: Int): Int? = when (parentField) {
+        BACKUP_MANGA_FIELD -> MANGA_LEGACY_IS_NOVEL_FIELD
+        BACKUP_EXTENSION_STORE_FIELD -> EXTENSION_STORE_LEGACY_IS_NOVEL_FIELD
+        else -> null
+    }
 
     fun migrateLegacyIsNovel(input: ByteArray): ByteArray {
         return try {
@@ -26,11 +40,12 @@ internal object BackupProtoMigration {
                 val tag = reader.readVarint()
                 val field = (tag ushr 3).toInt()
                 val wire = (tag and 0x7).toInt()
-                if (field == BACKUP_MANGA_FIELD && wire == WIRE_LEN) {
+                val legacyField = legacyFieldFor(field)
+                if (legacyField != null && wire == WIRE_LEN) {
                     val body = reader.readLengthDelimited()
-                    val migrated = migrateManga(body)
+                    val migrated = migrateSubMessage(body, legacyField)
                     if (migrated !== body) changed = true
-                    writeTag(out, BACKUP_MANGA_FIELD, WIRE_LEN)
+                    writeTag(out, field, WIRE_LEN)
                     writeVarint(out, migrated.size.toLong())
                     out.write(migrated)
                 } else {
@@ -50,10 +65,11 @@ internal object BackupProtoMigration {
             val tag = reader.readVarint()
             val field = (tag ushr 3).toInt()
             val wire = (tag and 0x7).toInt()
-            if (field == BACKUP_MANGA_FIELD && wire == WIRE_LEN) {
+            val legacyField = legacyFieldFor(field)
+            if (legacyField != null && wire == WIRE_LEN) {
                 val len = reader.readVarint().toInt()
                 val end = reader.pos + len
-                if (mangaHasLegacyIsNovel(buf, reader.pos, end)) return true
+                if (subMessageHasLegacyVarint(buf, reader.pos, end, legacyField)) return true
                 reader.pos = end
             } else {
                 skipPayload(reader, wire)
@@ -62,14 +78,14 @@ internal object BackupProtoMigration {
         return false
     }
 
-    private fun mangaHasLegacyIsNovel(buf: ByteArray, start: Int, end: Int): Boolean {
+    private fun subMessageHasLegacyVarint(buf: ByteArray, start: Int, end: Int, legacyField: Int): Boolean {
         val reader = Reader(buf)
         reader.pos = start
         while (reader.pos < end) {
             val tag = reader.readVarint()
             val field = (tag ushr 3).toInt()
             val wire = (tag and 0x7).toInt()
-            if (field == LEGACY_IS_NOVEL_FIELD && wire == WIRE_VARINT) return true
+            if (field == legacyField && wire == WIRE_VARINT) return true
             skipPayload(reader, wire)
         }
         return false
@@ -85,7 +101,7 @@ internal object BackupProtoMigration {
         }
     }
 
-    private fun migrateManga(body: ByteArray): ByteArray {
+    private fun migrateSubMessage(body: ByteArray, legacyField: Int): ByteArray {
         val reader = Reader(body)
         val out = ByteArrayOutputStream(body.size + 2)
         var changed = false
@@ -93,7 +109,7 @@ internal object BackupProtoMigration {
             val tag = reader.readVarint()
             val field = (tag ushr 3).toInt()
             val wire = (tag and 0x7).toInt()
-            if (field == LEGACY_IS_NOVEL_FIELD && wire == WIRE_VARINT) {
+            if (field == legacyField && wire == WIRE_VARINT) {
                 writeTag(out, IS_NOVEL_FIELD, WIRE_VARINT)
                 writeVarint(out, reader.readVarint())
                 changed = true
