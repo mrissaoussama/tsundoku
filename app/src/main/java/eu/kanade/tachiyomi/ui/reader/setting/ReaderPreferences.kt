@@ -3,8 +3,10 @@ package eu.kanade.tachiyomi.ui.reader.setting
 import android.os.Build
 import androidx.compose.ui.graphics.BlendMode
 import dev.icerock.moko.resources.StringResource
+import eu.kanade.presentation.reader.DefaultStatusBarOrder
 import eu.kanade.presentation.reader.appbars.DefaultBottomBarItems
 import eu.kanade.presentation.reader.appbars.serialize
+import eu.kanade.presentation.reader.serializeStatusBarOrder
 import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.preference.getEnum
@@ -400,13 +402,37 @@ class ReaderPreferences(
         "pref_novel_status_bar_show_battery",
         true,
     )
-    val novelStatusBarShowChapter: Preference<Boolean> = preferenceStore.getBoolean(
-        "pref_novel_status_bar_show_chapter",
+    val novelStatusBarShowChapterNumber: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_novel_status_bar_show_chapter_number",
+        true,
+    )
+    val novelStatusBarShowChapterTitle: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_novel_status_bar_show_chapter_title",
         true,
     )
     val novelStatusBarShowProgress: Preference<Boolean> = preferenceStore.getBoolean(
         "pref_novel_status_bar_show_progress",
         true,
+    )
+
+    val novelStatusBarPosition: Preference<String> = preferenceStore.getString(
+        "pref_novel_status_bar_position",
+        "bottom",
+    )
+
+    val novelStatusBarSize: Preference<String> = preferenceStore.getString(
+        "pref_novel_status_bar_size",
+        "small",
+    )
+
+    val novelStatusBarShowCharging: Preference<Boolean> = preferenceStore.getBoolean(
+        "pref_novel_status_bar_show_charging",
+        true,
+    )
+
+    val novelStatusBarOrder: Preference<String> = preferenceStore.getString(
+        "pref_novel_status_bar_order",
+        DefaultStatusBarOrder.serializeStatusBarOrder(),
     )
     // endregion
 
