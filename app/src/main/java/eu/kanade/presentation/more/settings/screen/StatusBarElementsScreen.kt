@@ -37,7 +37,6 @@ import eu.kanade.presentation.reader.serializeStatusBarOrder
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import tachiyomi.core.common.preference.Preference
 import tachiyomi.i18n.novel.TDMR
 import tachiyomi.presentation.core.i18n.stringResource
 import uy.kohesive.injekt.Injekt
@@ -53,16 +52,33 @@ class StatusBarElementsScreen : Screen {
         val navigator = LocalNavigator.currentOrThrow
         val preferences = remember { Injekt.get<ReaderPreferences>() }
 
-        fun enabledPref(item: StatusBarItem): Preference<Boolean> = when (item) {
-            StatusBarItem.TIME -> preferences.novelStatusBarShowTime
-            StatusBarItem.CHAPTER -> preferences.novelStatusBarShowChapterNumber
-            StatusBarItem.PROGRESS -> preferences.novelStatusBarShowProgress
-            StatusBarItem.BATTERY -> preferences.novelStatusBarShowBattery
+        // Chapter visibility is the OR of two independent flags (number/title, see
+        // ReaderActivity's showChapterSegment), so this row's switch reads and writes both
+        // together rather than aliasing to just one of them.
+        fun isItemEnabled(item: StatusBarItem): Boolean = when (item) {
+            StatusBarItem.TIME -> preferences.novelStatusBarShowTime.get()
+            StatusBarItem.CHAPTER ->
+                preferences.novelStatusBarShowChapterNumber.get() ||
+                    preferences.novelStatusBarShowChapterTitle.get()
+            StatusBarItem.PROGRESS -> preferences.novelStatusBarShowProgress.get()
+            StatusBarItem.BATTERY -> preferences.novelStatusBarShowBattery.get()
+        }
+
+        fun setItemEnabled(item: StatusBarItem, enabled: Boolean) {
+            when (item) {
+                StatusBarItem.TIME -> preferences.novelStatusBarShowTime.set(enabled)
+                StatusBarItem.CHAPTER -> {
+                    preferences.novelStatusBarShowChapterNumber.set(enabled)
+                    preferences.novelStatusBarShowChapterTitle.set(enabled)
+                }
+                StatusBarItem.PROGRESS -> preferences.novelStatusBarShowProgress.set(enabled)
+                StatusBarItem.BATTERY -> preferences.novelStatusBarShowBattery.set(enabled)
+            }
         }
 
         val rows = remember {
             preferences.novelStatusBarOrder.get().deserializeStatusBarOrder()
-                .map { ElementRow(it, enabledPref(it).get()) }
+                .map { ElementRow(it, isItemEnabled(it)) }
                 .toMutableStateList()
         }
 
@@ -91,7 +107,7 @@ class StatusBarElementsScreen : Screen {
                                 rows.clear()
                                 rows.addAll(DefaultStatusBarOrder.map { ElementRow(it, true) })
                                 persistOrder()
-                                DefaultStatusBarOrder.forEach { enabledPref(it).set(true) }
+                                DefaultStatusBarOrder.forEach { setItemEnabled(it, true) }
                             },
                         ) {
                             Icon(Icons.Outlined.RestartAlt, contentDescription = null)
@@ -129,7 +145,7 @@ class StatusBarElementsScreen : Screen {
                                         val idx = rows.indexOfFirst { it.item == row.item }
                                         if (idx != -1) {
                                             rows[idx] = row.copy(enabled = checked)
-                                            enabledPref(row.item).set(checked)
+                                            setItemEnabled(row.item, checked)
                                         }
                                     },
                                 )
