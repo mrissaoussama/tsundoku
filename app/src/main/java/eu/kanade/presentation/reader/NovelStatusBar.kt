@@ -162,7 +162,7 @@ fun NovelStatusBar(
                     .fillMaxWidth()
                     .padding(end = 22.dp)
                     .align(Alignment.Center),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 order.forEach { item ->
