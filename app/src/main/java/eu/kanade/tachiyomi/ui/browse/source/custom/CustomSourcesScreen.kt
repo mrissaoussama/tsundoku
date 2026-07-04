@@ -1761,9 +1761,13 @@ class CustomSourceEditorScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                } // browse/detail/chapter selectors only apply to a from-scratch (non-delegated) source
 
-                    Text(stringResource(TDMR.strings.custom_source_chapter_content), fontWeight = FontWeight.Medium)
+                // Content selectors + sample/advanced are shown even when delegating to a base
+                // extension, so a mirror on a different engine can override content extraction.
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(stringResource(TDMR.strings.custom_source_chapter_content), fontWeight = FontWeight.Medium)
                     OutlinedTextField(
                         value = contentPrimarySelector,
                         onValueChange = { contentPrimarySelector = it },
@@ -1843,8 +1847,6 @@ class CustomSourceEditorScreen(
                         singleLine = true,
                         supportingText = { Text(stringResource(TDMR.strings.custom_source_sample_novel_url_desc)) },
                     )
-                } // end if (selectedBasedOnSourceId == null)
-
                 errorMessage?.let {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(

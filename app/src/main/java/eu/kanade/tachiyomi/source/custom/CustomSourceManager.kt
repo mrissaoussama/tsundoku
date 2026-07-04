@@ -328,8 +328,14 @@ class CustomSourceManager(
         // Reading: details + chapters + content. Needs a sample novel; when this section is run on
         // its own, fetch one silently from whichever listing works instead of failing.
         if (all || section == SourceTestSection.READING) {
-            if (testManga == null) {
-                testManga = findSampleManga(source)?.also { testMangaSource = "auto" }
+            // The sample novel URL is the intended reading target; prefer it over a listing's first
+            // result, which can be a stray non-novel link (e.g. a genre page) from a loose selector.
+            val hasSample = !source.config.sampleNovelUrl.isNullOrBlank()
+            if (testManga == null || hasSample) {
+                findSampleManga(source)?.let {
+                    testManga = it
+                    testMangaSource = if (hasSample) "sample" else "auto"
+                }
             }
             if (testManga == null) {
                 results["reading"] = TestStepResult(
