@@ -6,7 +6,7 @@ import java.io.ByteArrayOutputStream
 This is a temporary migration fix to keep compatibility with old backup files.
  - BackupManga stored isNovel as a varint at proto number 112 before it moved to 8000.
  - BackupExtensionStore stored isNovel as a varint at proto number 8 before it moved to 8000
-   (proto number 8 now holds extensionListUrl, a length-delimited string from upstream).
+ (proto number 8 now holds extensionListUrl, a length-delimited string from upstream).
 Both legacy values are varints where the current field is either absent or length-delimited, so a
 varint at the legacy field is unambiguously the old isNovel and is rewritten to 8000 before decoding.
  TODO: Remove this class after a few releases.
