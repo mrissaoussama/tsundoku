@@ -4,7 +4,6 @@ import android.content.Context
 import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.Page
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.drop
@@ -47,8 +46,6 @@ class DownloadManager(
     private val getLibraryManga: GetLibraryManga = Injekt.get(),
 ) {
 
-    private val scope: CoroutineScope = Injekt.get()
-
     /**
      * Downloader whose only task is to download chapters.
      */
@@ -56,7 +53,7 @@ class DownloadManager(
 
     init {
         // Keep in-memory library download badges in sync when downloads complete or are deleted
-        scope.launchIO {
+        launchIO {
             statusFlow()
                 .filter { it.status == Download.State.DOWNLOADED }
                 .collect { download ->
