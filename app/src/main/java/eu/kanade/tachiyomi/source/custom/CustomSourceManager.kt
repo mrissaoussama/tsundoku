@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import eu.kanade.tachiyomi.util.source.getChapterUrlOrNull
+import eu.kanade.tachiyomi.util.source.getMangaUrlOrNull
 import logcat.LogPriority
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.util.system.logcat
@@ -326,8 +328,13 @@ class CustomSourceManager(
         // Reading: details + chapters + content. Needs a sample novel; when this section is run on
         // its own, fetch one silently from whichever listing works instead of failing.
         if (all || section == SourceTestSection.READING) {
-            if (testManga == null) {
-                testManga = findSampleManga(source)?.also { testMangaSource = "auto" }
+            // Prefer the sample novel over a listing's first result, which may be a stray non-novel link.
+            val hasSample = !source.config.sampleNovelUrl.isNullOrBlank()
+            if (testManga == null || hasSample) {
+                findSampleManga(source)?.let {
+                    testManga = it
+                    testMangaSource = if (hasSample) "sample" else "auto"
+                }
             }
             if (testManga == null) {
                 results["reading"] = TestStepResult(
@@ -375,13 +382,15 @@ class CustomSourceManager(
         testMangaSource: String?,
         results: MutableMap<String, TestStepResult>,
     ) {
+        val detailsUrl = source.getMangaUrlOrNull(testManga) ?: testManga.url
         try {
             val details = source.getMangaDetails(testManga)
             val success = details.title.isNotBlank()
             results["details"] = TestStepResult(
                 success = success,
-                message = if (success) "Got details for: ${details.title}" else "Failed to get title",
+                message = if (success) "Got details for: ${details.title}" else "Failed to get title for $detailsUrl",
                 data = mapOf(
+                    "URL" to detailsUrl,
                     "Title" to details.title,
                     "Author" to (details.author ?: "N/A"),
                     "Description" to (details.description?.take(150)?.let { "$it..." } ?: "None"),
@@ -395,7 +404,7 @@ class CustomSourceManager(
                 ),
             )
         } catch (e: Exception) {
-            results["details"] = TestStepResult(success = false, message = "Error: ${e.message}")
+            results["details"] = TestStepResult(success = false, message = "Error for $detailsUrl: ${e.message}")
         }
 
         try {
@@ -427,8 +436,9 @@ class CustomSourceManager(
             )
 
             if (chapters.isNotEmpty()) {
+                val chapterToTest = chapters.last()
+                val contentUrl = source.getChapterUrlOrNull(chapterToTest) ?: chapterToTest.url
                 try {
-                    val chapterToTest = chapters.last()
                     val pages = source.getPageList(chapterToTest)
                     if (pages.isNotEmpty()) {
                         val content = source.fetchPageText(pages.first())
@@ -443,18 +453,18 @@ class CustomSourceManager(
                             message = if (content.isNotBlank()) {
                                 "Content length: ${content.length} chars"
                             } else {
-                                "Empty content - check content selectors or base source compatibility"
+                                "Empty content for $contentUrl - check content selectors or base source compatibility"
                             },
-                            data = mapOf("Preview" to preview),
+                            data = mapOf("URL" to contentUrl, "Preview" to preview),
                         )
                     } else {
                         results["content"] = TestStepResult(
                             success = false,
-                            message = "No pages returned from getPageList",
+                            message = "No pages returned from getPageList for $contentUrl",
                         )
                     }
                 } catch (e: Exception) {
-                    results["content"] = TestStepResult(success = false, message = "Error: ${e.message}")
+                    results["content"] = TestStepResult(success = false, message = "Error for $contentUrl: ${e.message}")
                 }
             }
         } catch (e: Exception) {

@@ -618,7 +618,7 @@ class CustomNovelSource(
         val chapters = generatedChapterEntries(resolvedPattern, start, end, sel.nameTemplate).map { entry ->
             SChapter.create().apply {
                 // Normalize to a path relative to baseUrl (getPageList rebuilds the absolute URL).
-                url = buildAbsoluteUrl(entry.url).removePrefix(baseUrl.trimEnd('/')).ifBlank { entry.url }
+                url = toRelativeStoredUrl(entry.url).ifBlank { entry.url }
                 name = entry.name
                 chapter_number = entry.number
             }
@@ -727,6 +727,13 @@ class CustomNovelSource(
         return super.getPageList(chapter)
     }
 
+    // Route through buildAbsoluteUrl so an already-absolute stored url isn't glued onto baseUrl.
+    override fun mangaDetailsRequest(manga: SManga): Request = GET(buildAbsoluteUrl(manga.url), headers)
+
+    override fun chapterListRequest(manga: SManga): Request = GET(buildAbsoluteUrl(manga.url), headers)
+
+    override fun pageListRequest(chapter: SChapter): Request = GET(buildAbsoluteUrl(chapter.url), headers)
+
     // ======================== Popular ========================
 
     override fun popularMangaRequest(page: Int): Request {
@@ -810,7 +817,7 @@ class CustomNovelSource(
             ?: document.selectFirst("a[href*=chapter]")
 
         return SChapter.create().apply {
-            url = link?.attr("abs:href")?.removePrefix(baseUrl) ?: ""
+            url = toRelativeStoredUrl(link?.attr("abs:href"))
             name = document.selectText(selectors.name)
                 ?: link?.text()?.trim()
                 ?: "Chapter"
@@ -854,7 +861,7 @@ class CustomNovelSource(
         return document.select(selectors.list).mapNotNull { element ->
             try {
                 val link = resolveLink(element, selectors.link)
-                val url = link?.attr("abs:href")?.removePrefix(baseUrl) ?: return@mapNotNull null
+                val url = toRelativeStoredUrl(link?.attr("abs:href")).ifBlank { return@mapNotNull null }
 
                 SChapter.create().apply {
                     this.url = url
@@ -889,7 +896,8 @@ class CustomNovelSource(
 
     override suspend fun fetchPageText(page: Page): String {
         val bs = baseSource
-        if (bs != null && bs.isNovelSource()) {
+        // A custom content selector overrides delegation.
+        if (bs != null && bs.isNovelSource() && config.selectors.content.primary.isBlank()) {
             // For content fetching, we need absolute URLs (not relative paths)
             // buildAbsoluteUrl() converts relative to absolute on custom base
             val absoluteUrl = buildAbsoluteUrl(page.url)
@@ -1000,7 +1008,7 @@ class CustomNovelSource(
             try {
                 SManga.create().apply {
                     val link = resolveLink(element, selectors.link)
-                    url = link?.attr("abs:href")?.removePrefix(baseUrl) ?: return@mapNotNull null
+                    url = toRelativeStoredUrl(link?.attr("abs:href")).ifBlank { return@mapNotNull null }
                     title = element.selectText(selectors.title)
                         ?: link?.attr("title")?.ifBlank { null }
                         ?: link?.text()?.trim()
@@ -1197,6 +1205,27 @@ class CustomNovelSource(
 
         // Otherwise, it's a relative path - add slash between baseUrl and path
         return "$baseUrl/$trimmedUrl"
+    }
+
+    // Strip scheme+host only when it's baseUrl itself (mod www.), so a same-site url stays
+    // portable across baseUrl edits. A genuinely different host (real mirror/CDN) is kept
+    // absolute -- buildAbsoluteUrl() passes absolute urls through untouched -- instead of being
+    // silently glued onto baseUrl and pointed at the wrong site.
+    private fun toRelativeStoredUrl(href: String?): String {
+        val value = normalizeCustomUrl(href)?.trim().orEmpty()
+        if (value.isBlank()) return ""
+        value.toHttpUrlOrNull()?.let { http ->
+            val baseHost = baseUrl.toHttpUrlOrNull()?.host?.removePrefix("www.")
+            if (baseHost == null || !http.host.removePrefix("www.").equals(baseHost, ignoreCase = true)) {
+                return value
+            }
+            return buildString {
+                append(http.encodedPath)
+                http.encodedQuery?.let { append('?').append(it) }
+                http.encodedFragment?.let { append('#').append(it) }
+            }
+        }
+        return if (value.startsWith("/")) value else "/$value"
     }
 
     companion object {

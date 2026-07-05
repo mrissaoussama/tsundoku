@@ -71,6 +71,7 @@ import eu.kanade.tachiyomi.jsplugin.JsPluginManager
 import eu.kanade.tachiyomi.source.custom.CustomSourceConfig
 import eu.kanade.tachiyomi.source.custom.SourceTestResult
 import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.ui.webview.WebViewScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1078,13 +1079,21 @@ class CustomSourceEditorScreen(
         var pickerUrl by remember { mutableStateOf("") }
         var pickerLabel by remember { mutableStateOf("") }
         fun firstPageUrl(u: String): String =
-            u.replace("{page}", "1").replace("{query}", "a").ifBlank { baseUrl }
+            u.replace("{baseUrl}", baseUrl).replace("{page}", "1").replace("{query}", "a").ifBlank { baseUrl }
         fun pickTrailing(url: String, fieldLabel: String, set: (String) -> Unit): @Composable () -> Unit = {
             IconButton(onClick = {
                 pickerUrl = url.ifBlank { baseUrl }
                 pickerLabel = fieldLabel
                 pickerTarget = set
             }) {
+                Icon(
+                    Icons.Outlined.Language,
+                    contentDescription = stringResource(TDMR.strings.custom_source_pick_from_site),
+                )
+            }
+        }
+        fun openUrlTrailing(url: String): @Composable () -> Unit = {
+            IconButton(onClick = { navigator.push(WebViewScreen(firstPageUrl(url))) }) {
                 Icon(
                     Icons.Outlined.Language,
                     contentDescription = stringResource(TDMR.strings.custom_source_pick_from_site),
@@ -1378,6 +1387,7 @@ class CustomSourceEditorScreen(
                             value = popularUrl,
                             onValueChange = { popularUrl = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_popular_url)) },
+                            trailingIcon = openUrlTrailing(popularUrl),
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text(stringResource(TDMR.strings.custom_source_popular_url_hint)) },
                         )
@@ -1388,6 +1398,7 @@ class CustomSourceEditorScreen(
                             value = latestUrl,
                             onValueChange = { latestUrl = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_latest_url)) },
+                            trailingIcon = openUrlTrailing(latestUrl),
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -1397,6 +1408,7 @@ class CustomSourceEditorScreen(
                             value = searchUrl,
                             onValueChange = { searchUrl = it },
                             label = { Text(stringResource(TDMR.strings.custom_source_search_url)) },
+                            trailingIcon = openUrlTrailing(searchUrl),
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text(stringResource(TDMR.strings.custom_source_search_url_hint)) },
                         )
@@ -1749,9 +1761,14 @@ class CustomSourceEditorScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
-                    Text(stringResource(TDMR.strings.custom_source_chapter_content), fontWeight = FontWeight.Medium)
+                // Content + sample/advanced stay editable when delegating, so a mirror can override
+                // content. Still novel-only: manga sources delegate content entirely to the base source.
+                if (isNovel) {
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(stringResource(TDMR.strings.custom_source_chapter_content), fontWeight = FontWeight.Medium)
                     OutlinedTextField(
                         value = contentPrimarySelector,
                         onValueChange = { contentPrimarySelector = it },
@@ -1831,8 +1848,7 @@ class CustomSourceEditorScreen(
                         singleLine = true,
                         supportingText = { Text(stringResource(TDMR.strings.custom_source_sample_novel_url_desc)) },
                     )
-                } // end if (selectedBasedOnSourceId == null)
-
+                }
                 errorMessage?.let {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
