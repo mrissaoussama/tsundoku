@@ -66,7 +66,7 @@ fun Context.notificationBuilder(
     block: (NotificationCompat.Builder.() -> Unit)? = null,
 ): NotificationCompat.Builder {
     val builder = NotificationCompat.Builder(this, channelId)
-        .setColor(getColor(R.color.accent_blue))
+        .setColor(getColor(R.color.accent_color))
     if (block != null) {
         builder.block()
     }
