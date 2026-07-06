@@ -80,6 +80,9 @@
                     var chapterScrollY = scrollTop - boundary.startOffset;
                     var effectiveHeight = Math.max(boundary.height - window.innerHeight, 1);
                     currentChapterProgress = Math.min(chapterScrollY / effectiveHeight, 1.0);
+                    // Snap the same way the whole-doc branch does, so a fully-read chapter
+                    // reports 100% and gets marked read instead of stalling at ~0.98.
+                    if (currentChapterProgress >= 0.99) currentChapterProgress = 1.0;
                     break;
                 }
             }
