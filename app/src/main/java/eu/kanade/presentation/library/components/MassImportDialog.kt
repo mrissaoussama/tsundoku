@@ -108,7 +108,7 @@ fun MassImportDialog(
     var pendingUrls by remember { mutableStateOf(initialText) }
     var urlText by remember { mutableStateOf("") }
     // A picked file is streamed to disk and staged here instead of being loaded into the text
-    // field — a large URL file would otherwise build a multi-hundred-MB String and OOM.
+    // field - a large URL file would otherwise build a multi-hundred-MB String and OOM.
     var pickedFile by remember { mutableStateOf<File?>(null) }
     var pickedFileCount by remember { mutableIntStateOf(0) }
     var pickedFileLoadedFiles by remember { mutableIntStateOf(0) }
@@ -153,7 +153,7 @@ fun MassImportDialog(
             if (uris.isEmpty()) return@rememberLauncherForActivityResult
 
             // Stream picked files to a temp file instead of accumulating in memory + the text
-            // field — a large URL list would OOM before the import even starts.
+            // field - a large URL list would OOM before the import even starts.
             dialogScope.launch(Dispatchers.IO) {
                 val tmp = File(context.cacheDir, "mass_import_pick_${System.nanoTime()}.txt")
                 try {
@@ -190,7 +190,7 @@ fun MassImportDialog(
                     }
 
                     // Dialog disposed mid-read: the loop has no suspension points, so the scope's
-                    // cancellation surfaces here — treat the pick as abandoned (tmp deleted below).
+                    // cancellation surfaces here - treat the pick as abandoned (tmp deleted below).
                     ensureActive()
 
                     if (count > 0) {
@@ -414,15 +414,13 @@ fun MassImportDialog(
                                 onPause = { MassImportJob.pauseBatch(context, batch.id) },
                                 onResume = { MassImportJob.resumeBatch(context, batch.id) },
                                 onRetryFailed = {
-                                    MassImportJob.retryFailed(context, batch.id)
-                                    // Cancelled batches also re-queue the unprocessed remainder, not
-                                    // just the errors.
-                                    val remaining = if (batch.status == MassImportJob.BatchStatus.Cancelled) {
-                                        (batch.total - batch.progress).coerceAtLeast(0)
-                                    } else {
-                                        0
+                                    // Toast the actual re-queued count from retryFailed, not an
+                                    // estimate that double-counts URLs in both errors and tail.
+                                    MassImportJob.retryFailed(context, batch.id) { queued ->
+                                        dialogScope.launch(Dispatchers.Main) {
+                                            context.toast(String.format(toastRequeuedErrors, queued))
+                                        }
                                     }
-                                    context.toast(String.format(toastRequeuedErrors, batch.errored + remaining))
                                 },
                                 onCopyUrls = {
                                     if (batch.total > CLIPBOARD_COPY_LIMIT) {
@@ -494,7 +492,7 @@ fun MassImportDialog(
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
 
-                // categories already filtered by contentType from subscribeByContentType — just strip system categories
+                // categories already filtered by contentType from subscribeByContentType - just strip system categories
                 val userCategories = remember(categories) {
                     categories
                         .asSequence()
@@ -1229,7 +1227,7 @@ private fun BatchItem(
                     }
 
                     // Retry failed (terminal batches only). Gate on the count, not the in-memory
-                    // list — after a restart the persisted error log may have entries the live
+                    // list - after a restart the persisted error log may have entries the live
                     // list lost. A cancelled batch that never reached every URL also offers retry
                     // (it re-queues the errored URLs plus the unprocessed remainder).
                     val isTerminal = batch.status == MassImportJob.BatchStatus.Completed ||
