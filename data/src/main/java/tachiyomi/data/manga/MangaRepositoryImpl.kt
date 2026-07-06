@@ -2010,6 +2010,17 @@ class MangaRepositoryImpl(
         }
     }
 
+    override suspend fun refreshLibraryCacheForMangas(mangaIds: List<Long>) {
+        if (mangaIds.isEmpty()) return
+        // Single transaction, chunked under SQLite's 999 bound-variable limit; replaces the
+        // per-id N+1 that thrashed the DB on a large mass import.
+        database.transaction {
+            mangaIds.chunked(900).forEach { chunk ->
+                database.mangasQueries.recomputeAggregatesForMangas(chunk)
+            }
+        }
+    }
+
     /**
      * Canonical tag normalization: split each entry on `,` / `;` (sources may merge tags), trim,
      * title-case each word, drop blanks, dedupe case-insensitively keeping first occurrence. Shared

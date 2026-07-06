@@ -261,6 +261,12 @@ interface MangaRepository {
     suspend fun refreshLibraryCacheForManga(mangaId: Long)
 
     /**
+     * Refresh the library cache for many manga in a single DB transaction.
+     * Avoids the per-id transaction storm of calling [refreshLibraryCacheForManga] in a loop.
+     */
+    suspend fun refreshLibraryCacheForMangas(mangaIds: List<Long>)
+
+    /**
      * Invalidate the in-memory library cache.
      * Forces the next getLibraryManga() call to re-query the database.
      * Use this before forced refreshes to ensure fresh data.
