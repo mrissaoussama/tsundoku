@@ -36,16 +36,20 @@
     window.chapterBoundaries = window.chapterBoundaries || [];
     runtime.lastBoundaryUpdate = runtime.lastBoundaryUpdate || 0;
     runtime.knownDividerCount = runtime.knownDividerCount || 0;
+    runtime.knownDocHeight = runtime.knownDocHeight || 0;
 
     window.addEventListener('scroll', function () {
         if (infiniteScrollEnabled && typeof window.updateChapterBoundaries === 'function') {
-            // Only re-query when DOM actually changed; the count check is O(1)
-            // whereas querySelectorAll is O(n). Periodic fallback is skipped when
-            // the divider count is stable to avoid unnecessary DOM traversal at
-            // 60 fps.
+            // Re-query when the DOM changed: a new divider (count) OR a height drift from a
+            // reflow (image/font load) that leaves the divider count intact but moves every
+            // startOffset. Stale offsets made scrollTop miss all boundaries, so per-chapter
+            // progress fell back to the whole-document ratio (combined across chapters).
             var domDividerCount = document.querySelectorAll('.__CHAPTER_DIVIDER_CLASS__').length;
-            if (domDividerCount !== runtime.knownDividerCount) {
+            var domDocHeight = document.body ? document.body.scrollHeight : 0;
+            if (domDividerCount !== runtime.knownDividerCount ||
+                Math.abs(domDocHeight - runtime.knownDocHeight) > 2) {
                 runtime.knownDividerCount = domDividerCount;
+                runtime.knownDocHeight = domDocHeight;
                 window.updateChapterBoundaries();
             }
         }
@@ -72,20 +76,26 @@
         var currentChapterProgress = progress;
         var currentChapterIdx = 0;
         if (infiniteScrollEnabled && window.chapterBoundaries.length > 1) {
+            // Resolve the visible chapter as the last one whose start is at or above scrollTop,
+            // then compute progress within THAT chapter only. Always attributing to a chapter
+            // (never the whole-document ratio) keeps the reported percent per-chapter even when
+            // scrollTop sits past the last cached boundary after a reflow.
+            var idx = 0;
             for (var i = 0; i < window.chapterBoundaries.length; i++) {
-                var boundary = window.chapterBoundaries[i];
-                var chapterEnd = boundary.startOffset + boundary.height;
-                if (scrollTop >= boundary.startOffset && scrollTop < chapterEnd) {
-                    currentChapterIdx = i;
-                    var chapterScrollY = scrollTop - boundary.startOffset;
-                    var effectiveHeight = Math.max(boundary.height - window.innerHeight, 1);
-                    currentChapterProgress = Math.min(chapterScrollY / effectiveHeight, 1.0);
-                    // Snap the same way the whole-doc branch does, so a fully-read chapter
-                    // reports 100% and gets marked read instead of stalling at ~0.98.
-                    if (currentChapterProgress >= 0.99) currentChapterProgress = 1.0;
+                if (scrollTop >= window.chapterBoundaries[i].startOffset) {
+                    idx = i;
+                } else {
                     break;
                 }
             }
+            var boundary = window.chapterBoundaries[idx];
+            currentChapterIdx = idx;
+            var chapterScrollY = Math.max(scrollTop - boundary.startOffset, 0);
+            var effectiveHeight = Math.max(boundary.height - window.innerHeight, 1);
+            currentChapterProgress = Math.min(chapterScrollY / effectiveHeight, 1.0);
+            // Snap so a fully-read chapter reports 100% and gets marked read instead of ~0.98.
+            if (currentChapterProgress >= 0.99) currentChapterProgress = 1.0;
+
             // Throttle onChapterScrollUpdate to 50 ms — same cadence as onScrollUpdate.
             // Without the gate this fires at 60 fps and floods the Android JS bridge.
             var now = Date.now();

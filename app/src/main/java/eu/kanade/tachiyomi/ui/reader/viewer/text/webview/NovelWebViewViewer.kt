@@ -82,6 +82,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         const val REMEMBER_MENU_ITEM_ID = 0xBEEF // arbitrary unique ID
         const val ATTR_DATA_EDITABLE = "data-tsundoku-editable"
         const val ID_EDIT_MODE_STYLE = "edit-mode-style"
+        const val CHAPTER_ENTRY_GRACE_MS = 800L
 
         const val TTS_TEXT_EXTRACTION_JS = """
             (function() {
@@ -131,6 +132,11 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     private val imageCache = NovelWebViewImageCache(activity.cacheDir, scope)
 
     private var lastSavedProgress = 0f
+
+    // Chapter-transition guard mirroring the TextView viewer: after a switch, ignore re-detection
+    // and suppress progress updates for a grace window so scrolling back and forth across a loaded
+    // chapter boundary can't freeze the slider or overwrite a chapter with a mid-scroll value.
+    private var chapterEntryTime = 0L
 
     private var isInfiniteScrollNavigation = false
     private var isInfiniteScrollPrepend = false
@@ -1536,6 +1542,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         fun onScrollProgress(progress: Float) {
             activity.runOnUiThread {
                 lastSavedProgress = progress
+                // Don't persist mid-transition: a just-switched chapter owns its own write via the
+                // forward 100% mark; a save fired now would clobber it with a stale value (parity
+                // with NovelViewer suppressing saves during grace).
+                if (System.currentTimeMillis() - chapterEntryTime < CHAPTER_ENTRY_GRACE_MS) return@runOnUiThread
                 if (NovelProgress.progressToPercent(progress) == lastPersistedPercent) return@runOnUiThread
                 saveProgress()
             }
@@ -1545,6 +1555,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         fun onScrollUpdate(progress: Float) {
             activity.runOnUiThread {
                 lastSavedProgress = progress
+                if (System.currentTimeMillis() - chapterEntryTime < CHAPTER_ENTRY_GRACE_MS) return@runOnUiThread
                 activity.onNovelProgressChanged(progress)
             }
         }
@@ -1552,11 +1563,17 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         @JavascriptInterface
         fun onChapterScrollUpdate(chapterIndex: Int, progress: Float) {
             activity.runOnUiThread {
+                val now = System.currentTimeMillis()
+                // Ignore chapter re-detection during the grace window after a switch, so boundary
+                // jitter (scroll oscillating across a divider) can't keep renewing the window and
+                // freeze progress. Mirrors NovelViewer suppressing detection during its grace.
+                if (now - chapterEntryTime < CHAPTER_ENTRY_GRACE_MS) return@runOnUiThread
                 if (chapterIndex != currentChapterIndex && chapterIndex >= 0 && chapterIndex < loadedChapters.size) {
                     val oldIndex = currentChapterIndex
                     currentChapterIndex = chapterIndex
+                    chapterEntryTime = now
                     logcat(LogPriority.DEBUG) {
-                        "NovelWebViewViewer: onChapterScrollUpdate chapterIndex=$chapterIndex progress=$progress ts=${System.currentTimeMillis()} ttsPlaybackChapterIndex=${ttsController.ttsPlaybackChapterIndex} (changed from $oldIndex)"
+                        "NovelWebViewViewer: onChapterScrollUpdate chapterIndex=$chapterIndex progress=$progress ts=$now ttsPlaybackChapterIndex=${ttsController.ttsPlaybackChapterIndex} (changed from $oldIndex)"
                     }
 
                     // Moving forward: the outgoing chapter (and any skipped by a fast scroll) is
@@ -1579,9 +1596,15 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                         activity.onPageSelected(page)
                     }
 
-                    lastSavedProgress = progress
+                    // Seed the new chapter with a directional baseline (TextView parity): forward
+                    // starts at 0, going back into an already-read chapter starts at 100 so a stray
+                    // boundary re-cross doesn't persist a mid-scroll value against it. Do NOT push
+                    // this to the slider — like NovelViewer, the slider is only updated by the
+                    // (grace-gated) live scroll callback, so it resumes the real position instead of
+                    // sticking at the baseline.
+                    val initialProgress = if (chapterIndex > oldIndex) 0f else 1f
+                    lastSavedProgress = initialProgress
                     lastPersistedPercent = -1
-                    activity.onNovelProgressChanged(progress)
 
                     updateChapterMetaJs()
                 }
