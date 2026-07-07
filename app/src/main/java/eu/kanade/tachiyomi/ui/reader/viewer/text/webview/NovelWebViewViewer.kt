@@ -1571,6 +1571,11 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                 // freeze progress. Mirrors NovelViewer suppressing detection during its grace.
                 if (now - chapterEntryTime < CHAPTER_ENTRY_GRACE_MS) return@runOnUiThread
                 if (chapterIndex != currentChapterIndex && chapterIndex >= 0 && chapterIndex < loadedChapters.size) {
+                    // Keep currentPage in lockstep with the index. If the target chapter has no page
+                    // yet (still loading), skip the switch: advancing the index without advancing
+                    // currentPage makes the next onScrollProgress persist the new chapter's progress
+                    // against the old chapter's page.
+                    val newPage = loadedChapters.getOrNull(chapterIndex)?.pages?.firstOrNull() ?: return@runOnUiThread
                     val oldIndex = currentChapterIndex
                     currentChapterIndex = chapterIndex
                     chapterEntryTime = now
@@ -1593,10 +1598,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
                     activity.viewModel.setNovelVisibleChapter(loadedChapters.getOrNull(chapterIndex)?.chapter)
 
-                    loadedChapters.getOrNull(chapterIndex)?.pages?.firstOrNull()?.let { page ->
-                        currentPage = page
-                        activity.onPageSelected(page)
-                    }
+                    currentPage = newPage
+                    activity.onPageSelected(newPage)
 
                     // Seed the new chapter with a directional baseline (TextView parity): forward
                     // starts at 0, going back into an already-read chapter starts at 100 so a stray
