@@ -92,6 +92,7 @@ import tachiyomi.presentation.core.i18n.stringResource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.File
+import java.io.IOException
 
 // Clipboard crosses a binder transaction (~1MB cap); past this count a huge list would throw
 // TransactionTooLargeException, so the user is pointed at export-to-file instead.
@@ -106,18 +107,25 @@ private fun writeTempUrlsFile(context: Context, text: String): File {
 }
 
 // Concatenate staged url files (+ optional typed text) into one temp file, streamed reader ->
-// writer so a large join never loads a file into memory. Consumes the inputs.
+// writer so a large join never loads a file into memory. Consumes the inputs on success; on a read
+// failure it throws without deleting anything so the caller can surface the error and let the user
+// retry instead of silently dropping the urls that failed to read.
 private fun joinUrlFiles(context: Context, files: List<File>, extraText: String?): File {
     val out = File(context.cacheDir, "mass_import_join_${System.nanoTime()}.txt")
+    val failed = ArrayList<File>()
     out.bufferedWriter().use { writer ->
         files.forEach { f ->
-            runCatching { f.bufferedReader().use { it.copyTo(writer) } }
+            if (runCatching { f.bufferedReader().use { it.copyTo(writer) } }.isFailure) failed.add(f)
             writer.write("\n")
         }
         if (!extraText.isNullOrBlank()) {
             writer.write(extraText)
             writer.write("\n")
         }
+    }
+    if (failed.isNotEmpty()) {
+        out.delete()
+        throw IOException("Failed to read ${failed.size} staged import file(s): ${failed.joinToString { it.name }}")
     }
     files.forEach { runCatching { it.delete() } }
     return out
@@ -821,6 +829,12 @@ fun MassImportDialog(
                         urlText = ""
                         pendingUrls = ""
 
+                        fun restoreStagedFiles(files: List<File>) {
+                            pickedFiles = files
+                            pickedFileCount = files.size
+                            pickedFileLoadedFiles = files.size
+                        }
+
                         fun startFile(file: File) {
                             if (splitByDomain) {
                                 MassImportJob.startFromFileSplitByHost(
@@ -849,23 +863,29 @@ fun MassImportDialog(
                         // per-file streaming: staged files stay separate (or are joined) on disk
                         // and typed text becomes its own file, so nothing large hits memory.
                         if (separateFilePerBatch || splitByDomain) {
-                            val batchFiles = withContext(Dispatchers.IO) {
-                                if (separateFilePerBatch) {
-                                    // One batch per picked file; typed text is its own batch.
-                                    val files = ArrayList(staged)
-                                    if (combinedRawText.isNotBlank()) {
-                                        files.add(writeTempUrlsFile(context, combinedRawText))
-                                    }
-                                    files
-                                } else {
-                                    // Not separating files, but splitting by domain: fold
-                                    // everything into one file, then split it below.
-                                    if (staged.isNotEmpty() || combinedRawText.isNotBlank()) {
-                                        listOf(joinUrlFiles(context, staged, combinedRawText.takeIf { it.isNotBlank() }))
+                            val batchFiles = try {
+                                withContext(Dispatchers.IO) {
+                                    if (separateFilePerBatch) {
+                                        // One batch per picked file; typed text is its own batch.
+                                        val files = ArrayList(staged)
+                                        if (combinedRawText.isNotBlank()) {
+                                            files.add(writeTempUrlsFile(context, combinedRawText))
+                                        }
+                                        files
                                     } else {
-                                        emptyList()
+                                        // Not separating files, but splitting by domain: fold
+                                        // everything into one file, then split it below.
+                                        if (staged.isNotEmpty() || combinedRawText.isNotBlank()) {
+                                            listOf(joinUrlFiles(context, staged, combinedRawText.takeIf { it.isNotBlank() }))
+                                        } else {
+                                            emptyList()
+                                        }
                                     }
                                 }
+                            } catch (e: IOException) {
+                                restoreStagedFiles(staged)
+                                context.toast(e.message ?: "Failed to read import files")
+                                return@launch
                             }
                             batchFiles.forEach { startFile(it) }
                             return@launch
@@ -874,8 +894,14 @@ fun MassImportDialog(
                         // Default: staged files (if any) are joined with typed text into a single
                         // batch on disk (large imports never touch memory).
                         if (staged.isNotEmpty()) {
-                            val joined = withContext(Dispatchers.IO) {
-                                joinUrlFiles(context, staged, combinedRawText.takeIf { it.isNotBlank() })
+                            val joined = try {
+                                withContext(Dispatchers.IO) {
+                                    joinUrlFiles(context, staged, combinedRawText.takeIf { it.isNotBlank() })
+                                }
+                            } catch (e: IOException) {
+                                restoreStagedFiles(staged)
+                                context.toast(e.message ?: "Failed to read import files")
+                                return@launch
                             }
                             startFile(joined)
                             return@launch
