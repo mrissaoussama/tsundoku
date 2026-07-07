@@ -2015,7 +2015,7 @@ class MangaRepositoryImpl(
         // Single transaction, chunked under SQLite's 999 bound-variable limit; replaces the
         // per-id N+1 that thrashed the DB on a large mass import.
         database.transaction {
-            mangaIds.chunked(900).forEach { chunk ->
+            mangaIds.chunked(SQLITE_VARIABLE_LIMIT).forEach { chunk ->
                 database.mangasQueries.recomputeAggregatesForMangas(chunk)
             }
         }
