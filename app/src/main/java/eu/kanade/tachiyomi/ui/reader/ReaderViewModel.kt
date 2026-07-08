@@ -724,6 +724,15 @@ class ReaderViewModel @JvmOverloads constructor(
     fun setNovelVisibleChapter(chapter: Chapter?) {
         mutableState.update { it.copy(novelVisibleChapter = chapter) }
         downloadNextChapters()
+
+        // Stamp history on visibility so it lands even if the app is killed before onPause flushes
+        // the read timer. Duration is added by the timer flush, so 0 here only sets last_read.
+        val chapterId = chapter?.id
+        if (!incognitoMode && chapterId != null) {
+            viewModelScope.launchNonCancellable {
+                upsertHistory.await(HistoryUpdate(chapterId, Date(), 0))
+            }
+        }
     }
 
     /**
@@ -1162,7 +1171,7 @@ class ReaderViewModel @JvmOverloads constructor(
             }
 
             if (detected != null && detected.equals(target, ignoreCase = true)) {
-                logcat(LogPriority.DEBUG) { "translateContent: skipping — source lang matches target ($detected)" }
+                logcat(LogPriority.DEBUG) { "translateContent: skipping - source lang matches target ($detected)" }
                 return content
             }
         }
