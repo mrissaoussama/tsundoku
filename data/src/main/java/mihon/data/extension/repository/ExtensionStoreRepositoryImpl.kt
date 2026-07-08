@@ -83,9 +83,10 @@ class ExtensionStoreRepositoryImpl(
                     .filterNot { it.indexUrl in disabledIndexUrls }
                     .map { store ->
                         async {
-                            service.getExtensions(store).onFailure {
+                            val resolved = normalizeIfStub(store)
+                            service.getExtensions(resolved).onFailure {
                                 this@ExtensionStoreRepositoryImpl.logcat(LogPriority.ERROR, it) {
-                                    "Failed to fetch extensions for store '${store.name} (${store.indexUrl})'"
+                                    "Failed to fetch extensions for store '${resolved.name} (${resolved.indexUrl})'"
                                 }
                             }
                         }
@@ -97,6 +98,21 @@ class ExtensionStoreRepositoryImpl(
             logcat(LogPriority.ERROR, e)
             emptyList()
         }
+    }
+
+
+    private suspend fun normalizeIfStub(store: ExtensionStore): ExtensionStore {
+        if (store.isLegacy || !store.indexUrl.endsWith("/repo.json")) return store
+        return service.fetch(store.indexUrl).map { resolved ->
+            val fixed = resolved.copy(isNovel = store.isNovel)
+            database.transaction {
+                upsert(fixed)
+                if (store.indexUrl != fixed.indexUrl) {
+                    database.extension_storeQueries.delete(store.indexUrl)
+                }
+            }
+            fixed
+        }.getOrDefault(store)
     }
 
     override suspend fun getAll(): List<ExtensionStore> {
