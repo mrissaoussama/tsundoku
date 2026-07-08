@@ -9,7 +9,7 @@
 //   __LOAD_THRESHOLD__           — 0.0 - 1.0 JS literal
 //
 // Reports to the Android side via the `Android` JS interface:
-//   Android.onChapterScrollUpdate(chapterIdx, progress)
+//   Android.onChapterScrollUpdate(chapterId, progress)
 //   Android.onScrollUpdate(progress)
 //   Android.onScrollProgress(progress)
 //   Android.loadNextChapter()
@@ -109,9 +109,12 @@
             // Throttle onChapterScrollUpdate to 50 ms — same cadence as onScrollUpdate.
             // Without the gate this fires at 60 fps and floods the Android JS bridge.
             var now = Date.now();
-            if (now - lastChapterUpdate > 50) {
+            if (now - lastChapterUpdate > 50 && boundary.chapterId != null) {
                 lastChapterUpdate = now;
-                Android.onChapterScrollUpdate(currentChapterIdx, currentChapterProgress);
+                // Report the stable chapter id, not currentChapterIdx: the Android side resolves it
+                // against its own chapter list, which can be ordered differently from this boundary
+                // array for a moment after a prepend/front-trim.
+                Android.onChapterScrollUpdate(String(boundary.chapterId), currentChapterProgress);
             }
         }
 

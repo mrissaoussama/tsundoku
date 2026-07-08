@@ -1563,14 +1563,20 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         }
 
         @JavascriptInterface
-        fun onChapterScrollUpdate(chapterIndex: Int, progress: Float) {
+        fun onChapterScrollUpdate(chapterId: String, progress: Float) {
             activity.runOnUiThread {
                 val now = System.currentTimeMillis()
                 // Ignore chapter re-detection during the grace window after a switch, so boundary
                 // jitter (scroll oscillating across a divider) can't keep renewing the window and
                 // freeze progress. Mirrors NovelViewer suppressing detection during its grace.
                 if (now - chapterEntryTime < CHAPTER_ENTRY_GRACE_MS) return@runOnUiThread
-                if (chapterIndex != currentChapterIndex && chapterIndex >= 0 && chapterIndex < loadedChapters.size) {
+                // Resolve by stable chapter id, not the array index the JS used to send: the DOM
+                // boundaries and chapterQueue briefly disagree on ordering right after a prepend or a
+                // front-trim (boundaries rebuild async), so an index would attribute progress to the
+                // wrong chapter during that window.
+                val id = chapterId.toLongOrNull() ?: return@runOnUiThread
+                val chapterIndex = loadedChapters.indexOfFirst { it.chapter.id == id }
+                if (chapterIndex != currentChapterIndex && chapterIndex >= 0) {
                     // Keep currentPage in lockstep with the index. If the target chapter has no page
                     // yet (still loading), skip the switch: advancing the index without advancing
                     // currentPage makes the next onScrollProgress persist the new chapter's progress
