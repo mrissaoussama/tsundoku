@@ -327,7 +327,6 @@ class GetLibraryManga(
      */
     suspend fun addToLibraryBulk(mangaIds: List<Long>) {
         if (mangaIds.isEmpty()) return
-        // One transaction instead of a per-id loop that thrashed the DB on a large mass import.
         mangaRepository.refreshLibraryCacheForMangas(mangaIds)
 
         val newItems = mangaRepository.getLibraryMangaByIds(mangaIds)
