@@ -131,7 +131,6 @@ class JsSource(
             return html.replace(DOUBLE_ENCODED_ENTITY_REGEX) { "&${it.groupValues[1]};" }
         }
 
-
         private val INVALID_CHARS = Regex("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\uFFFE\\uFFFF]")
 
         /** Remove control chars that break XML serialization and SAF file/folder names. */
@@ -1065,7 +1064,8 @@ class JsSource(
                         } catch (e: Exception) {
                             0L
                         }
-                        scanlator = chapterObj["page"]?.jsonPrimitive?.content?.let { stripInvalidChars(it) } // Volume info
+                        // Volume info
+                        scanlator = chapterObj["page"]?.jsonPrimitive?.content?.let { stripInvalidChars(it) }
                     }
                 } catch (e: Exception) {
                     null
