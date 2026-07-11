@@ -195,7 +195,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     // (not the loading-indicator page). Lets onPageFinished distinguish real vs loading loads.
     private var isLoadingRealChapter = false
 
-    // False while the loading indicator is up or real content is still loading, true once real
+    // False while the loading indicator is up or real content is still loading; true once real
     // chapter content has finished rendering. Guards TTS from reading the loading placeholder.
     private var webChapterContentReady = false
 
@@ -429,7 +429,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
         scope.launch {
             if (preferences.novelInfiniteScroll.get()) {
-                // TTS owns the chapter transition here, suppress the visible "Loading…"
+                // TTS owns the chapter transition here; suppress the visible "Loading…"
                 // banner so it doesn't flash while the cache hits (or the fresh fetch
                 // runs in the background). Errors still surface via showInlineError.
                 // 30 s hard cap: if the fetch stalls (e.g. no-timeout HTTP client),
@@ -644,7 +644,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     // when the chapter URL is relative, making the URL useless as a guard.
                     if (isLoadingRealChapter) {
                         isLoadingRealChapter = false
-                        // Real content rendered, TTS may now read the body.
+                        // Real content rendered; TTS may now read the body.
                         webChapterContentReady = true
                         if (pendingTtsAutoStartOnLoad) {
                             pendingTtsAutoStartOnLoad = false
@@ -820,7 +820,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
             try {
                 webView.evaluateJavascript(js, callback)
             } catch (t: Throwable) {
-                // WebView may already be destroyed, avoid crashing.
+                // WebView may already be destroyed; avoid crashing.
                 logcat(LogPriority.WARN) { "NovelWebViewViewer: evaluateJavascript ignored (${t.message})" }
             }
         }
@@ -1105,7 +1105,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
     /**
      * Prepend [processed] (already through [ContentPipeline]) to the WebView DOM.
-     * No preprocessing is performed here, the content is injected as-is.
+     * No preprocessing is performed here; the content is injected as-is.
      */
     private fun prependHtmlContent(
         processed: ProcessedContent,
@@ -1628,10 +1628,11 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         fun onScrollUpdate(progress: Float) {
             activity.runOnUiThread {
                 if (isRestoringScroll) return@runOnUiThread
+                // Don't let a delayed echo from a slider seek overwrite the finger's live position,
+                // nor let it clobber lastSavedProgress with a stale in-flight value.
+                if (System.currentTimeMillis() - lastUserSeekAt < SEEK_ECHO_SUPPRESS_MS) return@runOnUiThread
                 awaitingFirstScrollSample = false
                 lastSavedProgress = progress
-                // Don't let a delayed echo from a slider seek overwrite the finger's live position.
-                if (System.currentTimeMillis() - lastUserSeekAt < SEEK_ECHO_SUPPRESS_MS) return@runOnUiThread
                 activity.onNovelProgressChanged(progress)
             }
         }
@@ -1930,7 +1931,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     setJsLoadingNext()
                 }
             }
-            // Already loaded counts as success, the caller still advances TTS onto it.
+            // Already loaded counts as success; the caller still advances TTS onto it.
             return true
         }
 
@@ -2081,6 +2082,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     fun setProgressPercent(percent: Int) {
         val progress = percent.coerceIn(0, 100)
         lastSavedProgress = progress / 100f
+        // An explicit user seek is a real sample, so drop the backward-entry baseline hold or a
+        // flush on pause right after would skip persisting this position.
+        awaitingFirstScrollSample = false
         // Suppress the scroll->slider echo so the async, throttled onScrollUpdate from this
         // programmatic scroll can't fight the user's finger.
         lastUserSeekAt = System.currentTimeMillis()
@@ -2143,8 +2147,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         ttsController.pendingStartRequest = null
         ttsController.isTtsAutoPlay = true
         if (!webChapterContentReady) {
-            // Loading indicator still up, reading the body now would speak the placeholder
-            // and auto-advance. Defer, onPageFinished starts TTS once content is rendered.
+            // Loading indicator still up; reading the body now would speak the placeholder
+            // and auto-advance. Defer; onPageFinished starts TTS once content is rendered.
             pendingTtsAutoStartOnLoad = true
             return
         }
@@ -2156,7 +2160,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                 logcat(LogPriority.DEBUG) { "TTS (WebView): Starting to speak ${text.length} characters" }
                 ttsController.speak(text, chapterIdx, chapterId)
 
-                // Inf-scroll TTS reads in place, the JS scroll threshold that normally kicks
+                // Inf-scroll TTS reads in place; the JS scroll threshold that normally kicks
                 // the prefetch may never fire. Start it when playback begins on the last loaded
                 // chapter so the next chapter is cached before onLastChunkDone hands off,
                 // instead of stalling on a cold fetch. Idempotent via the handoffState guard.
@@ -2243,7 +2247,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         ttsController.pendingStartRequest = null
         ttsController.isTtsAutoPlay = true
         if (!webChapterContentReady) {
-            // Still loading, defer so onPageFinished re-runs the viewport start once content is in.
+            // Still loading; defer so onPageFinished re-runs the viewport start once content is in.
             ttsController.pendingStartRequest = TtsController.StartRequest.VIEWPORT
             return
         }

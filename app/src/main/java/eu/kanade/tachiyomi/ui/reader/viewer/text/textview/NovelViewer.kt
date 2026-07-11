@@ -358,7 +358,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         val textHeight = textBottom - textTop
 
         // Guard: if the textView hasn't been laid out yet, its height will be 0.
-        // Returning 1f (100%) here would cause a spurious progress jump, keep last known progress.
+        // Returning 1f (100%) here would cause a spurious progress jump; keep last known progress.
         if (textHeight <= 0) return lastSavedProgress.coerceIn(0f, 1f)
         // An empty textView has a small but non-zero layout height that would produce a bogus ratio
         // before content arrives.
@@ -595,7 +595,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
                     logcat(LogPriority.ERROR) { "NovelViewer: Timed out loading next chapter page after 30s" }
                     false
                 } catch (_: CancellationException) {
-                    // Reader was closed/navigated away, don't surface as an error or latch a cooldown.
+                    // Reader was closed/navigated away; don't surface as an error or latch a cooldown.
                     logcat(LogPriority.DEBUG) { "NovelViewer: loadNext cancelled" }
                     return@launch
                 } catch (e: Exception) {
@@ -902,7 +902,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
                 trimReadChaptersForTts()
                 // For already-loaded chapters, text is ready - start immediately.
                 // For pre-fetched chapters, moveToLoadedNextChapterForTts sets pendingTtsAutoStart
-                // and fires setChapterContent, startTts() will be called once the chunks are ready.
+                // and fires setChapterContent; startTts() will be called once the chunks are ready.
                 if (!pendingTtsAutoStart) {
                     startTts()
                 }
@@ -1089,7 +1089,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         return true
     }
 
-    // Read chapters kept behind the TTS head for back-scroll, older ones unloaded to bound memory.
+    // Read chapters kept behind the TTS head for back-scroll; older ones unloaded to bound memory.
     private val ttsKeepBehindChapters = 1
 
     // Drops chapters far behind the TTS head and scrolls back their height so the read chapter
@@ -1118,7 +1118,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         chapterQueue.removeFirstN(removeCount)
         currentChapterIndex = (currentChapterIndex - removeCount).coerceAtLeast(0)
         ttsController.shiftPlaybackChapterIndex(removeCount)
-        // Removed views were above the viewport, compensate so the read chapter stays put.
+        // Removed views were above the viewport; compensate so the read chapter stays put.
         // Post the scrollBy so it runs after the layout pass that follows removeView - a
         // synchronous call here reads stale ScrollView content height and can be re-clamped
         // by the deferred layout, causing a visible jump. isRestoringScroll stays true until
@@ -1145,7 +1145,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         val text = loadedChapters.getOrNull(currentChapterIndex)?.block?.fullText
             ?: loadedChapters.firstOrNull()?.block?.fullText
         if (text.isNullOrEmpty()) {
-            // Chapter text hasn't rendered yet, defer so onChapterTextSet starts playback
+            // Chapter text hasn't rendered yet; defer so onChapterTextSet starts playback
             // once it's ready instead of failing the start silently.
             logcat(LogPriority.WARN) {
                 "TTS: text not ready, deferring start. loadedChapters=${loadedChapters.size}, currentIndex=$currentChapterIndex"
@@ -1163,7 +1163,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         // Inf-scroll TTS reads in place, so the scroll listener that normally kicks the
         // prefetch may never reach the load threshold (keep-in-view off, or a chapter shorter
         // than the viewport). Start the prefetch when playback begins on the last loaded
-        // chapter so the next chapter is cached before onLastChunkDone hands off, otherwise
+        // chapter so the next chapter is cached before onLastChunkDone hands off; otherwise
         // the handoff stalls on a cold fetch and playback fails to advance. Idempotent: the
         // prefetch no-ops unless handoffState is Idle.
         if (preferences.novelInfiniteScroll.get() &&
@@ -1240,7 +1240,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         val text = loadedChapters.getOrNull(currentChapterIndex)?.block?.fullText
             ?: loadedChapters.firstOrNull()?.block?.fullText
         if (text.isNullOrEmpty()) {
-            // Chapter text not rendered yet, defer to onChapterTextSet rather than no-op.
+            // Chapter text not rendered yet; defer to onChapterTextSet rather than no-op.
             logcat(LogPriority.WARN) { "TTS: text not ready for viewport start, deferring" }
             pendingTtsAutoStart = true
             return

@@ -43,6 +43,9 @@ object NovelPageLoader {
             // retryPage is a no-op in the PageLoader base class; if the loader didn't reset the
             // state, fall back to launching the load directly so recovery still works.
             if (page.status is Page.State.Error) {
+                // Clear the stale Error first: statusFlow replays its current value, so leaving it
+                // Error makes the first{} below match immediately and return before loadPage runs.
+                page.status = Page.State.Queue
                 loadJob = scope.launch(Dispatchers.IO) {
                     try {
                         loader.loadPage(page)
