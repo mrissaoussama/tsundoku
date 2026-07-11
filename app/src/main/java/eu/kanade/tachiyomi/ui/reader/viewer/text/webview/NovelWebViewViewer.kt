@@ -722,6 +722,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
             val js = """
                 (function() {
                     var target = $progress;
+                    var token = $token;
                     function range() {
                         var docHeight = Math.max(
                             document.documentElement.scrollHeight,
@@ -732,29 +733,29 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     }
                     function done() {
                         if (window.Android && window.Android.onScrollRestoreComplete) {
-                            window.Android.onScrollRestoreComplete();
+                            window.Android.onScrollRestoreComplete(token);
                         }
                     }
                     function apply() {
                         var r = range();
-                        if (r > 0) window.scrollTo(0, r * target);
-                        return r > 0;
+                        if (r > 0) { window.scrollTo(0, r * target); return true; }
+                        return false;
                     }
                     if (apply()) {
                         requestAnimationFrame(function() { apply(); done(); });
                         return;
                     }
+                    // Short chapter fits the viewport: finish now, keep observing for a late reflow.
                     if (typeof ResizeObserver === 'function' && document.body) {
                         var ro = new ResizeObserver(function() {
                             if (apply()) {
                                 ro.disconnect();
-                                requestAnimationFrame(function() { apply(); done(); });
+                                requestAnimationFrame(function() { apply(); });
                             }
                         });
                         ro.observe(document.body);
-                    } else {
-                        done();
                     }
+                    requestAnimationFrame(function() { done(); });
                 })();
             """
             webView.evaluateJavascript(js, null)
@@ -1092,6 +1093,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     ) {
         val plainTextMode = processed.isPlainText
         val escapedContent = quoteForJson(processed.text)
+        val token = ++scrollRestoreToken
 
         val js = """
             (function() {
@@ -1132,7 +1134,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                         window.updateChapterBoundaries();
                     }
                     if (window.Android && window.Android.onScrollRestoreComplete) {
-                        window.Android.onScrollRestoreComplete();
+                        window.Android.onScrollRestoreComplete($token);
                     }
                 });
             })();
@@ -1143,6 +1145,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         evaluateJavascriptSafe(js) {
             styler.injectScript { buildTsundokuScript() }
         }
+        // JS lift runs in rAF (paused while backgrounded); fallback so the guard can't stick forever.
+        webView.postDelayed({ if (scrollRestoreToken == token) isRestoringScroll = false }, 3000)
 
         logcat(LogPriority.DEBUG) {
             "NovelWebViewViewer: Prepended chapter $chapterId (${loadedChapterIds.size} total)"
@@ -1651,8 +1655,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         }
 
         @JavascriptInterface
-        fun onScrollRestoreComplete() {
-            activity.runOnUiThread { isRestoringScroll = false }
+        fun onScrollRestoreComplete(token: Int) {
+            // Only the latest restore may lift the guard; ignore stale completions.
+            activity.runOnUiThread { if (token == scrollRestoreToken) isRestoringScroll = false }
         }
 
         @JavascriptInterface
