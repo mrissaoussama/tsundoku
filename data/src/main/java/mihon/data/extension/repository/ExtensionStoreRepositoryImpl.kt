@@ -100,7 +100,6 @@ class ExtensionStoreRepositoryImpl(
         }
     }
 
-
     private suspend fun normalizeIfStub(store: ExtensionStore): ExtensionStore {
         if (store.isLegacy || !store.indexUrl.endsWith("/repo.json")) return store
         return service.fetch(store.indexUrl).map { resolved ->
