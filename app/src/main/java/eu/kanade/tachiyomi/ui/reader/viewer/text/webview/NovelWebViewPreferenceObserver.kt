@@ -67,6 +67,14 @@ internal class NovelWebViewPreferenceObserver(
         }
 
         scope.launch {
+            // Infinite scroll is a structural change (single document vs. multi-chapter appends),
+            // so reload the whole view for a consistent state instead of patching it live.
+            preferences.novelInfiniteScroll.changes()
+                .drop(1)
+                .collect { onChapterReloadRequested() }
+        }
+
+        scope.launch {
             merge(
                 preferences.novelTtsVoice.changes(),
                 preferences.novelTtsSpeed.changes(),

@@ -13,7 +13,6 @@ internal class NovelTextViewPreferenceObserver(
     private val onStylePrefChanged: () -> Unit,
     private val onContentReloadRequested: () -> Unit,
     private val onTtsSettingsChanged: () -> Unit,
-    private val onInfiniteScrollChanged: (Boolean) -> Unit,
 ) {
 
     fun observe() {
@@ -69,9 +68,11 @@ internal class NovelTextViewPreferenceObserver(
         }
 
         scope.launch {
+            // Infinite scroll is a structural change (single flow vs. multi-chapter appends), so
+            // reload the whole view for a consistent state instead of patching it live.
             preferences.novelInfiniteScroll.changes()
                 .drop(1)
-                .collectLatest { infiniteEnabled -> onInfiniteScrollChanged(infiniteEnabled) }
+                .collectLatest { onContentReloadRequested() }
         }
 
         scope.launch {

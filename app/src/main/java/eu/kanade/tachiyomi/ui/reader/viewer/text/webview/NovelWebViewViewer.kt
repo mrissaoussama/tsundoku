@@ -83,6 +83,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         const val ATTR_DATA_EDITABLE = "data-tsundoku-editable"
         const val ID_EDIT_MODE_STYLE = "edit-mode-style"
         const val NEXT_LOAD_RETRY_COOLDOWN_MS = 15_000L
+        const val SEEK_ECHO_SUPPRESS_MS = 350L
 
         const val TTS_TEXT_EXTRACTION_JS = """
             (function() {
@@ -144,6 +145,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
     // Blocks flushing the backward-entry 1f baseline until a real scroll sample replaces it.
     private var awaitingFirstScrollSample = false
+
+    // Timestamp of the last slider seek; scroll->slider echoes are ignored briefly after so a stale
+    // async onScrollUpdate can't overwrite the value the user is dragging to.
+    private var lastUserSeekAt = 0L
 
     // Latched once the novel has no further chapter to append.
     private var reachedNovelEnd = false
@@ -241,6 +246,15 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     e.x / container.width.toFloat(),
                     e.y / container.height.toFloat(),
                 )
+
+                // Center-only mode: navigator.getAction defaults every unmatched tap to MENU, so
+                // gate the toggle on the center rect ourselves (parity with the TextView viewer).
+                if (preferences.navigationModeNovel.get() == ReaderPreferences.TapZones.size) {
+                    if (pos.x in 0.4f..0.6f && pos.y in 0.4f..0.6f) {
+                        activity.toggleMenu()
+                    }
+                    return true
+                }
 
                 when (navigator.getAction(pos)) {
                     eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.MENU -> {
@@ -1613,6 +1627,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                 if (isRestoringScroll) return@runOnUiThread
                 awaitingFirstScrollSample = false
                 lastSavedProgress = progress
+                // Don't let a delayed echo from a slider seek overwrite the finger's live position.
+                if (System.currentTimeMillis() - lastUserSeekAt < SEEK_ECHO_SUPPRESS_MS) return@runOnUiThread
                 activity.onNovelProgressChanged(progress)
             }
         }
@@ -2038,22 +2054,38 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     fun setProgressPercent(percent: Int) {
         val progress = percent.coerceIn(0, 100)
         lastSavedProgress = progress / 100f
+        // Suppress the scroll->slider echo so the async, throttled onScrollUpdate from this
+        // programmatic scroll can't fight the user's finger.
+        lastUserSeekAt = System.currentTimeMillis()
 
         evaluateJavascriptSafe(
             """
             (function() {
-                var docHeight = Math.max(
-                    document.documentElement.scrollHeight,
-                    document.body ? document.body.scrollHeight : 0
-                );
+                var frac = $progress / 100;
                 var viewport = window.innerHeight || document.documentElement.clientHeight;
-                var scrollHeight = docHeight - viewport;
-                var targetScroll = scrollHeight * $progress / 100;
-                window.scrollTo(0, targetScroll);
-                // A programmatic scrollTo from the slider does not reliably fire the page's
-                // 'scroll' listener, so the infinite-scroll threshold check (which lives in
-                // that listener) never runs. Dispatch one explicitly so a slider jump to the
-                // end of the last loaded chapter loads the next chapter just like a manual scroll.
+                var boundaries = window.chapterBoundaries || [];
+                if (boundaries.length > 1) {
+                    // The slider shows per-chapter progress, so seek within the current chapter
+                    // (not the whole loaded document) or the landing point won't match the display.
+                    var scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+                    var idx = 0;
+                    for (var i = 0; i < boundaries.length; i++) {
+                        if (scrollTop >= boundaries[i].startOffset) idx = i; else break;
+                    }
+                    var b = boundaries[idx];
+                    var isLast = idx === boundaries.length - 1;
+                    var effectiveHeight = Math.max(b.height - (isLast ? viewport : 0), 1);
+                    window.scrollTo(0, b.startOffset + effectiveHeight * frac);
+                } else {
+                    var docHeight = Math.max(
+                        document.documentElement.scrollHeight,
+                        document.body ? document.body.scrollHeight : 0
+                    );
+                    window.scrollTo(0, (docHeight - viewport) * frac);
+                }
+                // A programmatic scrollTo does not reliably fire the page's 'scroll' listener, so the
+                // infinite-scroll threshold check (which lives there) never runs. Dispatch one so a
+                // slider jump to the chapter end still triggers the next-chapter load.
                 window.dispatchEvent(new Event('scroll'));
             })();
             """.trimIndent(),

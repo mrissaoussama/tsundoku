@@ -361,19 +361,27 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         // Guard: if the textView hasn't been laid out yet, its height will be 0.
         // Returning 1f (100%) here would cause a spurious progress jump, keep last known progress.
         if (textHeight <= 0) return lastSavedProgress.coerceIn(0f, 1f)
+        // An empty textView has a small but non-zero layout height that would produce a bogus ratio
+        // before content arrives.
+        if (!loaded.isTextSet) return lastSavedProgress.coerceIn(0f, 1f)
 
-        // If the chapter text fits entirely within the viewport, it's 100% visible.
-        // Guard isTextSet: an empty textView has a small but non-zero layout height that
-        // would falsely satisfy textHeight <= scrollView.height before content arrives.
-        if (textHeight <= scrollView.height) {
-            val page = loaded.chapter.pages?.firstOrNull()
-            if (!loaded.isTextSet) return lastSavedProgress.coerceIn(0f, 1f)
-            return if (shouldAutoMarkShortChapter(page)) 1f else lastSavedProgress.coerceIn(0f, 1f)
+        // Only the last loaded chapter has an unreachable trailing viewport (nothing below it to
+        // scroll into), so subtract the viewport and let a short one auto-mark. Middle chapters flow
+        // straight into the next in infinite scroll, so progress runs the full chapter height and
+        // hits 100% exactly as the chapter scrolls past - matching the WebView model, no safe zone.
+        val isLast = currentChapterIndex >= loadedChapters.size - 1
+        if (isLast) {
+            if (textHeight <= scrollView.height) {
+                val page = loaded.chapter.pages?.firstOrNull()
+                return if (shouldAutoMarkShortChapter(page)) 1f else lastSavedProgress.coerceIn(0f, 1f)
+            }
+            val scrollableHeight = (textHeight - scrollView.height).coerceAtLeast(1)
+            val scrollInText = (scrollY - textTop).coerceIn(0, scrollableHeight)
+            return (scrollInText.toFloat() / scrollableHeight).coerceIn(0f, 1f)
         }
 
-        val scrollableHeight = (textHeight - scrollView.height).coerceAtLeast(1)
-        val scrollInText = (scrollY - textTop).coerceIn(0, scrollableHeight)
-        return (scrollInText.toFloat() / scrollableHeight).coerceIn(0f, 1f)
+        val scrollInText = (scrollY - textTop).coerceIn(0, textHeight)
+        return (scrollInText.toFloat() / textHeight).coerceIn(0f, 1f)
     }
 
     private var progressSaveJob: Job? = null
@@ -642,17 +650,6 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             onContentReloadRequested = ::reloadContent,
             onTtsSettingsChanged = {
                 if (ttsController.ttsInitialized) ttsController.applySettings()
-            },
-            onInfiniteScrollChanged = { infiniteEnabled ->
-                activity.runOnUiThread {
-                    if (infiniteEnabled) {
-                        contentContainer.findViewWithTag<View>(NEXT_CHAPTER_BUTTON_TAG)?.let {
-                            contentContainer.removeView(it)
-                        }
-                    } else {
-                        addNextChapterButton()
-                    }
-                }
             },
         ).observe()
     }
