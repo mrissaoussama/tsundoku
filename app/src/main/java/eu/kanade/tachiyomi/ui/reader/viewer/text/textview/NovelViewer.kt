@@ -586,21 +586,23 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
                     awaitPageText(page = page, loader = loader, timeoutMs = 30_000)
                 } catch (_: TimeoutCancellationException) {
                     logcat(LogPriority.ERROR) { "NovelViewer: Timed out loading next chapter page after 30s" }
-                    loadFailed = true
-                    inlineFeedback.showInlineError("Timeout loading next chapter", isPrepend = false, onRetry = retry)
                     false
                 } catch (_: CancellationException) {
-                    // Reader was closed/navigated away, don't surface as an error.
+                    // Reader was closed/navigated away, don't surface as an error or latch a cooldown.
                     logcat(LogPriority.DEBUG) { "NovelViewer: loadNext cancelled" }
-                    false
+                    return@launch
                 } catch (e: Exception) {
                     logcat(LogPriority.ERROR) { "NovelViewer: Error loading next chapter page: ${e.message}" }
-                    loadFailed = true
-                    inlineFeedback.showInlineError("Error: ${e.message ?: "Unknown error"}", isPrepend = false, onRetry = retry)
                     false
                 }
 
-                if (!loaded) return@launch
+                // Covers both a thrown failure and a page cached in Error state (returns false
+                // without throwing), so a chapter that keeps failing always latches the cooldown.
+                if (!loaded) {
+                    loadFailed = true
+                    inlineFeedback.showInlineError("Couldn't load next chapter", isPrepend = false, onRetry = retry)
+                    return@launch
+                }
 
                 logcat(LogPriority.DEBUG) { "NovelViewer: appending chapter ${preparedChapter.chapter.id}" }
                 displayChapter(preparedChapter, page)
