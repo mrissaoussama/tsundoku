@@ -22,6 +22,7 @@
     var infiniteScrollEnabled = __INFINITE_SCROLL_ENABLED__;
     var loadThreshold = __LOAD_THRESHOLD__;
     var lastSliderProgress = -1;
+    var lastScrollUpdateTime = 0;
 
     runtime.loadingNext = runtime.loadingNext || false;
     runtime.setLoadingNext = function (v) { runtime.loadingNext = !!v; };
@@ -78,10 +79,19 @@
             Android.onChapterScrollUpdate(String(s.chapterId), s.chapterProgress);
         }
 
-        if (s.chapterProgress !== lastSliderProgress) {
-            lastSliderProgress = s.chapterProgress;
-            Android.onScrollUpdate(s.chapterProgress);
-            if (s.chapterProgress >= 1.0) Android.onScrollProgress(s.chapterProgress);
+        // Throttle slider bridge (50ms + 0.01 delta); 100% persist exempt so completion isn't dropped.
+        if (Math.abs(s.chapterProgress - lastSliderProgress) > 0.01) {
+            var now = Date.now();
+            if (now - lastScrollUpdateTime > 50) {
+                lastScrollUpdateTime = now;
+                lastSliderProgress = s.chapterProgress;
+                Android.onScrollUpdate(s.chapterProgress);
+            }
+        }
+        if (s.chapterProgress >= 1.0 && lastSliderProgress !== 1.0) {
+            lastSliderProgress = 1.0;
+            Android.onScrollUpdate(1.0);
+            Android.onScrollProgress(1.0);
         }
 
         if (!runtime.loadingNext && infiniteScrollEnabled && !runtime.noMoreChapters) {
