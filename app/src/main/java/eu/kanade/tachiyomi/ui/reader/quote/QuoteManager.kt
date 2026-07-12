@@ -55,28 +55,40 @@ class QuoteManager(private val context: Context) {
     /**
      * Save quotes for a novel
      */
-    fun saveQuotes(sourceName: String, novelTitle: String, quotes: List<Quote>) {
+    fun saveQuotes(sourceName: String, novelTitle: String, quotes: List<Quote>): Boolean {
         try {
             val fileName = getNovelFileName(novelTitle)
 
-            // Delete existing file first to avoid duplicate files
-            val existingFile = getQuotesFile(sourceName, novelTitle)
-            if (existingFile?.exists() == true) {
-                existingFile.delete()
+            if (quotes.isEmpty()) {
+                getQuotesFile(sourceName, novelTitle)?.takeIf { it.exists() }?.delete()
+                return true
             }
-
-            if (quotes.isEmpty()) return
 
             val json = jsonFormat.encodeToString(NovelQuotes(quotes))
-            val file = getOrCreateSourceDir(sourceName)?.createFile(fileName) ?: return
-            file.openOutputStream().use { outputStream ->
+            val dir = getOrCreateSourceDir(sourceName) ?: return false
+
+            // Write to a temp file then swap it in, so a crash mid-write or a
+            // concurrent save can't corrupt or duplicate the destination.
+            val tmpName = "$fileName.tmp"
+            dir.findFile(tmpName)?.takeIf { it.exists() }?.delete()
+            val tmp = dir.createFile(tmpName) ?: return false
+            tmp.openOutputStream().use { outputStream ->
                 outputStream.write(json.toByteArray())
             }
+            getQuotesFile(sourceName, novelTitle)?.takeIf { it.exists() }?.delete()
+            if (!tmp.renameTo(fileName)) {
+                tmp.delete()
+                logcat(LogPriority.ERROR) { "Failed to finalize quotes file for $sourceName/$novelTitle" }
+                return false
+            }
             logcat(LogPriority.DEBUG) { "Quotes saved for $sourceName/$novelTitle: ${quotes.size} quotes" }
+            return true
         } catch (e: IOException) {
             logcat(LogPriority.ERROR) { "Failed to save quotes for $sourceName/$novelTitle: ${e.message}" }
+            return false
         } catch (e: SerializationException) {
             logcat(LogPriority.ERROR) { "Failed to serialize quotes for $sourceName/$novelTitle: ${e.message}" }
+            return false
         }
     }
 

@@ -49,6 +49,12 @@ class TranslatedChapterRepositoryImpl(
         migrateFromLegacyDir()
     }
 
+    private companion object {
+        // Hex chars of the url MD5 appended to disambiguate chapters whose sanitized
+        // names collide. 8 chars (~4.3B values) keeps per-novel collisions negligible.
+        const val HASH_LENGTH = 8
+    }
+
     /**
      * Move translation files from old app-internal dir to the shared storage dir.
      * Safe to call multiple times – it only moves files that still exist in the legacy dir.
@@ -108,10 +114,16 @@ class TranslatedChapterRepositoryImpl(
 
     private fun novelDirName(novelTitle: String): String = DiskUtil.buildValidFilename(novelTitle)
 
+    private fun langDirName(targetLanguage: String): String = DiskUtil.buildValidFilename(targetLanguage)
+
     private fun chapterFileBase(chapterName: String, chapterUrl: String): String {
-        // Reserve bytes for the longest suffix we append: "_<6 hex>" + ".html.tmp".
-        val base = DiskUtil.buildValidFilename(chapterName, DiskUtil.MAX_FILE_NAME_BYTES - 16)
-        return base + "_" + Hash.md5(chapterUrl).take(6)
+        // Reserve bytes for the longest suffix we append: "_<hash>" + ".html.tmp".
+        val reserved = 1 + HASH_LENGTH + ".html.tmp".length
+        val sanitized = DiskUtil.buildValidFilename(chapterName, DiskUtil.MAX_FILE_NAME_BYTES - reserved)
+        // buildValidFilename can yield an empty string; keep a stable prefix so the
+        // filename still carries a chapter marker before the url hash.
+        val base = sanitized.ifEmpty { "chapter" }
+        return base + "_" + Hash.md5(chapterUrl).take(HASH_LENGTH)
     }
 
     private fun fileName(locator: TranslationLocator): String =
@@ -124,13 +136,13 @@ class TranslatedChapterRepositoryImpl(
         translationsDir.findFile(sourceDirName(sourceName))?.findFile(novelDirName(novelTitle))
 
     private fun findLangDir(locator: TranslationLocator, targetLanguage: String): UniFile? =
-        findNovelDir(locator.sourceName, locator.novelTitle)?.findFile(targetLanguage)
+        findNovelDir(locator.sourceName, locator.novelTitle)?.findFile(langDirName(targetLanguage))
 
     private fun getOrCreateLangDir(locator: TranslationLocator, targetLanguage: String): UniFile? {
         val root = translationsDir
         val src = root.findChildDir(sourceDirName(locator.sourceName)) ?: return null
         val novel = src.findChildDir(novelDirName(locator.novelTitle)) ?: return null
-        return novel.findChildDir(targetLanguage)
+        return novel.findChildDir(langDirName(targetLanguage))
     }
 
     private fun UniFile.findChildDir(name: String): UniFile? {
@@ -234,7 +246,7 @@ class TranslatedChapterRepositoryImpl(
         chapters: Collection<ChapterRef>,
     ): Set<Long> = withContext(Dispatchers.IO) {
         if (chapters.isEmpty()) return@withContext emptySet()
-        val langDir = findNovelDir(sourceName, novelTitle)?.findFile(targetLanguage) ?: return@withContext emptySet()
+        val langDir = findNovelDir(sourceName, novelTitle)?.findFile(langDirName(targetLanguage)) ?: return@withContext emptySet()
         val present = langDir.listFiles()
             ?.mapNotNull { it.name }
             ?.filterTo(HashSet()) { it.endsWith(".html") && !it.endsWith(".html.tmp") }

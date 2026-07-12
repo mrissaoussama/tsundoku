@@ -45,12 +45,13 @@ object QuotesPortableMigrator {
                 }
                 val manga = mangaRepository.getMangaById(novelId)
                 val sourceName = sourceManager.getOrStub(manga.source).toString()
-                quoteManager.saveQuotes(sourceName, manga.title, quotes)
-                // saveQuotes swallows IO errors; only drop the legacy file once the
-                // new one is confirmed written, so a failed write can't lose quotes.
-                if (quoteManager.getQuotes(sourceName, manga.title).size == quotes.size) {
+                // Only drop the legacy file once the new one is confirmed written,
+                // so a failed write can't lose quotes.
+                if (quoteManager.saveQuotes(sourceName, manga.title, quotes)) {
                     file.delete()
                     migrated++
+                } else {
+                    logcat(LogPriority.WARN) { "Quote migration write failed for $name, keeping legacy file" }
                 }
             } catch (e: Exception) {
                 logcat(LogPriority.WARN, e) { "Failed to migrate quotes file $name" }
