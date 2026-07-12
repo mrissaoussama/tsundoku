@@ -81,6 +81,32 @@ internal class ChapterTextBlock(
         return view.text.subSequence(start, end).toString()
     }
 
+    /**
+     * 0-based index of the paragraph the current selection starts in, using the same
+     * single-\n split as TTS so quote paragraph indexes align with playback positions.
+     */
+    fun selectedParagraphIndex(): Int? {
+        val chunkIndex = chunkViews.indexOfFirst { it.hasSelection() }
+        if (chunkIndex < 0) return null
+        val start = chunkViews[chunkIndex].selectionStart
+        if (start < 0) return null
+        val text = fullText ?: return null
+        val absoluteOffset = (chunkStarts.getOrNull(chunkIndex) ?: 0) + start
+
+        val paragraphLines = text.split("\n").filter { it.isNotBlank() }
+        if (paragraphLines.isEmpty()) return null
+
+        var searchFrom = 0
+        var index = -1
+        for ((i, line) in paragraphLines.withIndex()) {
+            val idx = text.indexOf(line, searchFrom)
+            val offset = if (idx >= 0) idx else searchFrom
+            if (offset <= absoluteOffset) index = i else break
+            searchFrom = if (idx >= 0) idx + line.length else searchFrom
+        }
+        return index.takeIf { it >= 0 }
+    }
+
     fun clearSelections() {
         chunkViews.forEach { NovelTextRenderer.clearTextViewSelection(it) }
     }

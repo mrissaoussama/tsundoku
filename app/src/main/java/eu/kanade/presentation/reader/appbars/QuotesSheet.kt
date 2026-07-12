@@ -688,7 +688,9 @@ private fun QuoteItem(
                 )
             }
             Text(
-                text = quote.chapterName,
+                text = quote.paragraphIndex
+                    ?.let { "${quote.chapterName}  ·  ¶${it + 1}" }
+                    ?: quote.chapterName,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f),

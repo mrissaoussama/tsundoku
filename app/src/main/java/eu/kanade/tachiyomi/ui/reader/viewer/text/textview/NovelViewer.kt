@@ -2024,6 +2024,11 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         return loaded.block.selectedText()
     }
 
+    fun getSelectedParagraphIndex(): Int? {
+        val loaded = loadedChapters.getOrNull(currentChapterIndex) ?: return null
+        return loaded.block.selectedParagraphIndex()
+    }
+
     fun getCurrentChapterName(): String? {
         val loaded = loadedChapters.getOrNull(currentChapterIndex) ?: return null
         return loaded.chapter.chapter.name

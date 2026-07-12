@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.ui.reader.quote
 
 import android.content.Context
 import com.hippo.unifile.UniFile
+import eu.kanade.tachiyomi.util.storage.DiskUtil
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import logcat.LogPriority
@@ -12,15 +13,18 @@ import uy.kohesive.injekt.api.get
 import java.io.IOException
 
 /**
- * Manager for handling quote storage and retrieval
+ * Manager for handling quote storage and retrieval.
+ *
+ * Quotes are stored in a portable, human-readable layout that mirrors downloads:
+ *   {quotes}/{source name}/{novel title}.json
+ * so they survive re-imports and can be moved between installs.
  */
 class QuoteManager(private val context: Context) {
 
-    companion object {
-        private const val QUOTES_DIR = "quotes"
+    private val jsonFormat = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
     }
-
-    private val jsonFormat = Json { prettyPrint = true }
 
     private val storageManager: StorageManager by lazy {
         Injekt.get<StorageManager>()
@@ -30,59 +34,71 @@ class QuoteManager(private val context: Context) {
         storageManager.getQuotesDirectory()
     }
 
-    /**
-     * Get the file for storing quotes for a specific novel
-     */
-    private fun getQuotesFile(novelId: Long): UniFile? {
-        return quotesDir?.findFile("novel_$novelId.json")
+    private fun getSourceDirName(sourceName: String): String = DiskUtil.buildValidFilename(sourceName)
+
+    private fun getNovelFileName(novelTitle: String): String = "${DiskUtil.buildValidFilename(novelTitle)}.json"
+
+    private fun findSourceDir(sourceName: String): UniFile? {
+        return quotesDir?.findFile(getSourceDirName(sourceName))
+    }
+
+    private fun getOrCreateSourceDir(sourceName: String): UniFile? {
+        val name = getSourceDirName(sourceName)
+        val dir = quotesDir ?: return null
+        return dir.findFile(name)?.takeIf { it.isDirectory } ?: dir.createDirectory(name)
+    }
+
+    private fun getQuotesFile(sourceName: String, novelTitle: String): UniFile? {
+        return findSourceDir(sourceName)?.findFile(getNovelFileName(novelTitle))
     }
 
     /**
      * Save quotes for a novel
      */
-    fun saveQuotes(novelId: Long, quotes: List<Quote>) {
+    fun saveQuotes(sourceName: String, novelTitle: String, quotes: List<Quote>) {
         try {
-            val novelQuotes = NovelQuotes(novelId, quotes)
-            val json = jsonFormat.encodeToString(novelQuotes)
+            val fileName = getNovelFileName(novelTitle)
 
             // Delete existing file first to avoid duplicate files
-            val existingFile = getQuotesFile(novelId)
+            val existingFile = getQuotesFile(sourceName, novelTitle)
             if (existingFile?.exists() == true) {
                 existingFile.delete()
             }
 
-            val file = quotesDir?.createFile("novel_$novelId.json") ?: return
+            if (quotes.isEmpty()) return
+
+            val json = jsonFormat.encodeToString(NovelQuotes(quotes))
+            val file = getOrCreateSourceDir(sourceName)?.createFile(fileName) ?: return
             file.openOutputStream().use { outputStream ->
                 outputStream.write(json.toByteArray())
             }
-            logcat(LogPriority.DEBUG) { "Quotes saved for novel $novelId: ${quotes.size} quotes" }
+            logcat(LogPriority.DEBUG) { "Quotes saved for $sourceName/$novelTitle: ${quotes.size} quotes" }
         } catch (e: IOException) {
-            logcat(LogPriority.ERROR) { "Failed to save quotes for novel $novelId: ${e.message}" }
+            logcat(LogPriority.ERROR) { "Failed to save quotes for $sourceName/$novelTitle: ${e.message}" }
         } catch (e: SerializationException) {
-            logcat(LogPriority.ERROR) { "Failed to serialize quotes for novel $novelId: ${e.message}" }
+            logcat(LogPriority.ERROR) { "Failed to serialize quotes for $sourceName/$novelTitle: ${e.message}" }
         }
     }
 
     /**
      * Load quotes for a novel
      */
-    fun loadQuotes(novelId: Long): List<Quote> {
+    fun loadQuotes(sourceName: String, novelTitle: String): List<Quote> {
         return try {
-            val file = getQuotesFile(novelId)
+            val file = getQuotesFile(sourceName, novelTitle)
             if (file == null || !file.exists()) {
                 emptyList()
             } else {
                 val json = file.openInputStream().use { inputStream ->
                     String(inputStream.readBytes())
                 }
-                val novelQuotes = jsonFormat.decodeFromString<NovelQuotes>(json)
-                novelQuotes.quotes
+                jsonFormat.decodeFromString<NovelQuotes>(json).quotes
             }
         } catch (e: IOException) {
-            logcat(LogPriority.ERROR) { "Failed to load quotes for novel $novelId: ${e.message}" }
+            logcat(LogPriority.ERROR) { "Failed to load quotes for $sourceName/$novelTitle: ${e.message}" }
             emptyList()
         } catch (e: SerializationException) {
-            logcat(LogPriority.ERROR) { "Failed to deserialize quotes for novel $novelId: ${e.message}" }
+            logcat(LogPriority.ERROR) { "Failed to deserialize quotes for $sourceName/$novelTitle: ${e.message}" }
             emptyList()
         }
     }
@@ -90,45 +106,45 @@ class QuoteManager(private val context: Context) {
     /**
      * Add a new quote for a novel
      */
-    fun addQuote(novelId: Long, quote: Quote) {
-        val existingQuotes = loadQuotes(novelId).toMutableList()
+    fun addQuote(sourceName: String, novelTitle: String, quote: Quote) {
+        val existingQuotes = loadQuotes(sourceName, novelTitle).toMutableList()
         existingQuotes.add(quote)
-        saveQuotes(novelId, existingQuotes)
+        saveQuotes(sourceName, novelTitle, existingQuotes)
     }
 
     /**
      * Remove a quote by ID
      */
-    fun removeQuote(novelId: Long, quoteId: String) {
-        val existingQuotes = loadQuotes(novelId).toMutableList()
+    fun removeQuote(sourceName: String, novelTitle: String, quoteId: String) {
+        val existingQuotes = loadQuotes(sourceName, novelTitle).toMutableList()
         existingQuotes.removeAll { it.id == quoteId }
-        saveQuotes(novelId, existingQuotes)
+        saveQuotes(sourceName, novelTitle, existingQuotes)
     }
 
     /**
      * Update an existing quote
      */
-    fun updateQuote(novelId: Long, updatedQuote: Quote) {
-        val existingQuotes = loadQuotes(novelId).toMutableList()
+    fun updateQuote(sourceName: String, novelTitle: String, updatedQuote: Quote) {
+        val existingQuotes = loadQuotes(sourceName, novelTitle).toMutableList()
         val index = existingQuotes.indexOfFirst { it.id == updatedQuote.id }
         if (index >= 0) {
             existingQuotes[index] = updatedQuote
-            saveQuotes(novelId, existingQuotes)
+            saveQuotes(sourceName, novelTitle, existingQuotes)
         }
     }
 
     /**
      * Get all quotes for a novel, preserving the stored order
      */
-    fun getQuotes(novelId: Long): List<Quote> {
-        return loadQuotes(novelId)
+    fun getQuotes(sourceName: String, novelTitle: String): List<Quote> {
+        return loadQuotes(sourceName, novelTitle)
     }
 
     /**
      * Clear all quotes for a novel
      */
-    fun clearQuotes(novelId: Long) {
-        val file = getQuotesFile(novelId)
+    fun clearQuotes(sourceName: String, novelTitle: String) {
+        val file = getQuotesFile(sourceName, novelTitle)
         if (file?.exists() == true) {
             file.delete()
         }
@@ -137,16 +153,16 @@ class QuoteManager(private val context: Context) {
     /**
      * Get quote count for a novel
      */
-    fun getQuoteCount(novelId: Long): Int {
-        return loadQuotes(novelId).size
+    fun getQuoteCount(sourceName: String, novelTitle: String): Int {
+        return loadQuotes(sourceName, novelTitle).size
     }
 
     /**
      * Reorder quotes for a novel
      */
-    fun reorderQuotes(novelId: Long, quotes: List<Quote>) {
-        saveQuotes(novelId, quotes)
-        logcat(LogPriority.DEBUG) { "Quotes reordered for novel $novelId: ${quotes.size} quotes" }
+    fun reorderQuotes(sourceName: String, novelTitle: String, quotes: List<Quote>) {
+        saveQuotes(sourceName, novelTitle, quotes)
+        logcat(LogPriority.DEBUG) { "Quotes reordered for $sourceName/$novelTitle: ${quotes.size} quotes" }
     }
 }
 

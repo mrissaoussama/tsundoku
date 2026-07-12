@@ -68,6 +68,8 @@ import eu.kanade.presentation.more.settings.screen.debug.DebugInfoScreen
 import eu.kanade.tachiyomi.data.database.DatabaseMaintenanceJob
 import eu.kanade.tachiyomi.data.download.DownloadCache
 import eu.kanade.tachiyomi.data.library.MetadataUpdateJob
+import eu.kanade.tachiyomi.data.storage.QuotesPortableMigrator
+import eu.kanade.tachiyomi.data.storage.TranslationsPortableMigrator
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.NetworkPreferences
 import eu.kanade.tachiyomi.network.PREF_DOH_360
@@ -1234,6 +1236,46 @@ object SettingsAdvancedScreen : SearchableSettings {
                     title = stringResource(MR.strings.pref_delete_all_translations),
                     subtitle = stringResource(MR.strings.pref_delete_all_translations_subtitle),
                     onClick = { showDeleteTranslationsDialog = true },
+                ),
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(MR.strings.pref_migrate_quotes_portable),
+                    subtitle = stringResource(MR.strings.pref_migrate_quotes_portable_subtitle),
+                    onClick = {
+                        scope.launch {
+                            val count = try {
+                                QuotesPortableMigrator.run()
+                            } catch (e: Exception) {
+                                logcat(LogPriority.ERROR, e)
+                                withUIContext { context.toast(MR.strings.pref_portable_migration_error) }
+                                return@launch
+                            }
+                            withUIContext {
+                                context.toast(
+                                    context.contextStringResource(MR.strings.pref_portable_migration_done, count),
+                                )
+                            }
+                        }
+                    },
+                ),
+                Preference.PreferenceItem.TextPreference(
+                    title = stringResource(MR.strings.pref_migrate_translations_portable),
+                    subtitle = stringResource(MR.strings.pref_migrate_translations_portable_subtitle),
+                    onClick = {
+                        scope.launch {
+                            val count = try {
+                                TranslationsPortableMigrator.run()
+                            } catch (e: Exception) {
+                                logcat(LogPriority.ERROR, e)
+                                withUIContext { context.toast(MR.strings.pref_portable_migration_error) }
+                                return@launch
+                            }
+                            withUIContext {
+                                context.toast(
+                                    context.contextStringResource(MR.strings.pref_portable_migration_done, count),
+                                )
+                            }
+                        }
+                    },
                 ),
                 Preference.PreferenceItem.TextPreference(
                     title = stringResource(MR.strings.pref_clear_temp_files),

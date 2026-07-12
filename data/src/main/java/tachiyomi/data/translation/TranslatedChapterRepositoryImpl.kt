@@ -2,32 +2,32 @@ package tachiyomi.data.translation
 
 import android.content.Context
 import com.hippo.unifile.UniFile
+import eu.kanade.tachiyomi.util.lang.Hash
+import eu.kanade.tachiyomi.util.storage.DiskUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import logcat.LogPriority
-import tachiyomi.core.common.storage.nameWithoutExtension
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.storage.service.StorageManager
+import tachiyomi.domain.translation.model.ChapterRef
 import tachiyomi.domain.translation.model.TranslatedChapter
+import tachiyomi.domain.translation.model.TranslationLocator
 import tachiyomi.domain.translation.repository.TranslatedChapterRepository
 import java.io.File
-import java.security.MessageDigest
 
 /**
  * Filesystem-only implementation of [TranslatedChapterRepository].
  *
- * Storage layout (shared storage via SAF / UniFile):
- *   {baseDir}/translations/{chapterId}_{targetLanguage}.html
+ * Portable storage layout (shared storage via SAF / UniFile), mirroring downloads:
+ *   {baseDir}/translations/{source name}/{novel title}/{language}/{chapter name}_{urlHash}.html
  *
- * Falls back to app-internal storage if shared storage is unavailable:
- *   filesDir/translations/{chapterId}_{targetLanguage}.html
+ * Falls back to app-internal storage if shared storage is unavailable.
  *
  * Engine and date metadata are embedded as an HTML comment on the first line:
  *   <!-- tsundoku-meta:engineId:dateTranslated -->
  *
  * NOTE: This implementation uses [UniFile] throughout (same as the download system)
- * to avoid converting SAF URIs to file paths, which causes crashes on some devices/ROMs
- * when [android.content.Context.getExternalCacheDirs] fails.
+ * to avoid converting SAF URIs to file paths, which crashes on some devices/ROMs.
  */
 class TranslatedChapterRepositoryImpl(
     private val context: Context,
@@ -37,22 +37,15 @@ class TranslatedChapterRepositoryImpl(
     /** Legacy (app-internal) directory – used for fallback and migration. */
     private val legacyDir = File(context.filesDir, "translations")
 
-    /**
-     * Resolve the translations directory via SAF, falling back to app-internal.
-     * Returns a [UniFile] that can be used for all I/O operations without needing
-     * to convert to a filesystem path.
-     */
     private val translationsDir: UniFile
         get() {
             val shared = storageManager.getTranslationsDirectory()
             if (shared != null && shared.exists()) return shared
-            // Fallback to app-internal wrapped as UniFile
             legacyDir.mkdirs()
             return UniFile.fromFile(legacyDir)!!
         }
 
     init {
-        // Migrate existing translations from legacy location to shared storage on first access
         migrateFromLegacyDir()
     }
 
@@ -67,7 +60,6 @@ class TranslatedChapterRepositoryImpl(
             if (files.isEmpty()) return
 
             val targetDir = storageManager.getTranslationsDirectory() ?: return
-            // Don't migrate if target is effectively the same as legacy (both are app-internal)
             val targetPath = try {
                 targetDir.filePath
             } catch (_: Exception) {
@@ -78,13 +70,11 @@ class TranslatedChapterRepositoryImpl(
             var migrated = 0
             for (file in files) {
                 val name = file.name
-                // Check if already exists in target
                 if (targetDir.findFile(name) != null) {
                     file.delete()
                     migrated++
                     continue
                 }
-                // Copy file content via SAF
                 val dest = targetDir.createFile(name) ?: continue
                 try {
                     file.inputStream().use { input ->
@@ -100,7 +90,6 @@ class TranslatedChapterRepositoryImpl(
                 }
             }
 
-            // Clean up empty legacy dir
             if (legacyDir.listFiles()?.isEmpty() == true) {
                 legacyDir.delete()
             }
@@ -113,17 +102,52 @@ class TranslatedChapterRepositoryImpl(
         }
     }
 
-    private fun getTranslationFileName(chapterId: Long, targetLanguage: String): String {
-        return "${chapterId}_$targetLanguage.html"
+    // ── Path helpers ──────────────────────────────────────────────────
+
+    private fun sourceDirName(sourceName: String): String = DiskUtil.buildValidFilename(sourceName)
+
+    private fun novelDirName(novelTitle: String): String = DiskUtil.buildValidFilename(novelTitle)
+
+    private fun chapterFileBase(chapterName: String, chapterUrl: String): String {
+        // Subtract 11 bytes to leave room for the "_<6 hex>" suffix.
+        val base = DiskUtil.buildValidFilename(chapterName, DiskUtil.MAX_FILE_NAME_BYTES - 11)
+        return base + "_" + Hash.md5(chapterUrl).take(6)
     }
 
-    private fun getTmpTranslationFileName(chapterId: Long, targetLanguage: String): String {
-        return "${chapterId}_$targetLanguage.html.tmp"
+    private fun fileName(locator: TranslationLocator): String =
+        chapterFileBase(locator.chapterName, locator.chapterUrl) + ".html"
+
+    private fun tmpFileName(locator: TranslationLocator): String =
+        chapterFileBase(locator.chapterName, locator.chapterUrl) + ".html.tmp"
+
+    private fun findNovelDir(sourceName: String, novelTitle: String): UniFile? =
+        translationsDir.findFile(sourceDirName(sourceName))?.findFile(novelDirName(novelTitle))
+
+    private fun findLangDir(locator: TranslationLocator, targetLanguage: String): UniFile? =
+        findNovelDir(locator.sourceName, locator.novelTitle)?.findFile(targetLanguage)
+
+    private fun getOrCreateLangDir(locator: TranslationLocator, targetLanguage: String): UniFile? {
+        val root = translationsDir
+        val src = root.findChildDir(sourceDirName(locator.sourceName)) ?: return null
+        val novel = src.findChildDir(novelDirName(locator.novelTitle)) ?: return null
+        return novel.findChildDir(targetLanguage)
     }
 
-    private fun findTranslationFile(chapterId: Long, targetLanguage: String): UniFile? {
-        val name = getTranslationFileName(chapterId, targetLanguage)
-        return translationsDir.findFile(name)
+    private fun UniFile.findChildDir(name: String): UniFile? {
+        val existing = findFile(name)
+        if (existing != null) return existing.takeIf { it.isDirectory }
+        return createDirectory(name)
+    }
+
+    private fun allFilesRecursive(dir: UniFile): Sequence<UniFile> = sequence {
+        dir.listFiles()?.forEach { f ->
+            if (f.isDirectory) yieldAll(allFilesRecursive(f)) else yield(f)
+        }
+    }
+
+    private fun deleteRecursive(file: UniFile) {
+        if (file.isDirectory) file.listFiles()?.forEach { deleteRecursive(it) }
+        file.delete()
     }
 
     // ── Metadata helpers ──────────────────────────────────────────────
@@ -132,25 +156,16 @@ class TranslatedChapterRepositoryImpl(
     private val metaSuffix = " -->"
     private val metaRegex = Regex("^<!-- tsundoku-meta:(.+?):(-?\\d+)(?::([a-f0-9]{64}))? -->\\n?")
 
-    private fun buildMetaComment(engineId: String, dateTranslated: Long, sourceContentHash: String? = null): String {
-        val hashPart = if (!sourceContentHash.isNullOrEmpty()) ":$sourceContentHash" else ""
-        return "$metaPrefix$engineId:$dateTranslated$hashPart$metaSuffix\n"
-    }
-
-    private fun computeSourceHash(content: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val hashBytes = digest.digest(content.toByteArray(Charsets.UTF_8))
-        return hashBytes.joinToString("") { "%02x".format(it) }
+    private fun buildMetaComment(engineId: String, dateTranslated: Long): String {
+        return "$metaPrefix$engineId:$dateTranslated$metaSuffix\n"
     }
 
     private data class FileMeta(
         val engineId: String,
         val dateTranslated: Long,
-        val sourceHash: String?,
         val content: String,
     )
 
-    /** Read a translation file, parsing the optional metadata comment from the first line. */
     private fun parseUniFile(file: UniFile): FileMeta? {
         if (!file.exists()) return null
         val raw = try {
@@ -164,145 +179,97 @@ class TranslatedChapterRepositoryImpl(
             FileMeta(
                 engineId = match.groupValues[1],
                 dateTranslated = match.groupValues[2].toLong(),
-                sourceHash = match.groupValues[3].takeIf { it.isNotEmpty() },
                 content = raw.removeRange(match.range).trimStart('\n'),
             )
         } else {
-            FileMeta(engineId = "unknown", dateTranslated = 0L, sourceHash = null, content = raw)
+            FileMeta(engineId = "unknown", dateTranslated = 0L, content = raw)
         }
     }
 
+    private fun toTranslatedChapter(meta: FileMeta, targetLanguage: String): TranslatedChapter =
+        TranslatedChapter(
+            chapterId = 0,
+            mangaId = 0,
+            targetLanguage = targetLanguage,
+            engineId = meta.engineId,
+            translatedContent = meta.content,
+            dateTranslated = meta.dateTranslated,
+        )
+
     // ── Read operations ───────────────────────────────────────────────
 
-    override suspend fun getTranslatedChapter(chapterId: Long, targetLanguage: String): TranslatedChapter? =
-        withContext(Dispatchers.IO) {
-            val file = findTranslationFile(chapterId, targetLanguage) ?: return@withContext null
-            val meta = parseUniFile(file) ?: return@withContext null
-            TranslatedChapter(
-                chapterId = chapterId,
-                mangaId = 0,
-                targetLanguage = targetLanguage,
-                engineId = meta.engineId,
-                translatedContent = meta.content,
-                dateTranslated = meta.dateTranslated,
-            )
-        }
+    override suspend fun getTranslatedChapter(
+        locator: TranslationLocator,
+        targetLanguage: String,
+    ): TranslatedChapter? = withContext(Dispatchers.IO) {
+        val file = findLangDir(locator, targetLanguage)?.findFile(fileName(locator)) ?: return@withContext null
+        val meta = parseUniFile(file) ?: return@withContext null
+        toTranslatedChapter(meta, targetLanguage)
+    }
 
-    override suspend fun getAllTranslationsForChapter(chapterId: Long): List<TranslatedChapter> =
+    override suspend fun getAllTranslationsForChapter(locator: TranslationLocator): List<TranslatedChapter> =
         withContext(Dispatchers.IO) {
-            val prefix = "${chapterId}_"
-            val dir = translationsDir
-            dir.listFiles()
-                ?.filter { it.name?.startsWith(prefix) == true && it.name?.endsWith(".html") == true }
-                ?.mapNotNull { file ->
-                    val nameWithoutExt = file.nameWithoutExtension ?: return@mapNotNull null
-                    val lang = nameWithoutExt.removePrefix(prefix)
+            val novelDir = findNovelDir(locator.sourceName, locator.novelTitle) ?: return@withContext emptyList()
+            val target = fileName(locator)
+            novelDir.listFiles()
+                ?.filter { it.isDirectory }
+                ?.mapNotNull { langDir ->
+                    val lang = langDir.name ?: return@mapNotNull null
+                    val file = langDir.findFile(target) ?: return@mapNotNull null
                     val meta = parseUniFile(file) ?: return@mapNotNull null
-                    TranslatedChapter(
-                        chapterId = chapterId,
-                        mangaId = 0,
-                        targetLanguage = lang,
-                        engineId = meta.engineId,
-                        translatedContent = meta.content,
-                        dateTranslated = meta.dateTranslated,
-                    )
+                    toTranslatedChapter(meta, lang)
                 }
                 .orEmpty()
         }
 
-    override suspend fun hasTranslation(chapterId: Long, targetLanguage: String): Boolean =
+    override suspend fun hasTranslation(locator: TranslationLocator, targetLanguage: String): Boolean =
         withContext(Dispatchers.IO) {
-            findTranslationFile(chapterId, targetLanguage) != null
+            findLangDir(locator, targetLanguage)?.findFile(fileName(locator)) != null
         }
 
-    /**
-     * Check if a partial (tmp) translation exists for a chapter.
-     */
-    override suspend fun hasTmpTranslation(chapterId: Long, targetLanguage: String): Boolean =
-        withContext(Dispatchers.IO) {
-            val name = getTmpTranslationFileName(chapterId, targetLanguage)
-            translationsDir.findFile(name) != null
-        }
-
-    override suspend fun getTranslatedChapterIds(chapterIds: Collection<Long>): Set<Long> =
-        withContext(Dispatchers.IO) {
-            if (chapterIds.isEmpty()) return@withContext emptySet()
-            val dir = translationsDir
-            val allFiles = dir.listFiles() ?: return@withContext emptySet()
-            val wantedIds = chapterIds.toHashSet()
-            allFiles.asSequence()
-                .filter { it.name?.endsWith(".html") == true && it.name?.endsWith(".html.tmp") != true }
-                .mapNotNull { it.nameWithoutExtension?.substringBefore('_')?.toLongOrNull() }
-                .filter { it in wantedIds }
-                .toSet()
-        }
-
-    override suspend fun getTranslatedLanguagesForChapters(chapterIds: Collection<Long>): List<String> =
-        withContext(Dispatchers.IO) {
-            if (chapterIds.isEmpty()) return@withContext emptyList()
-            val dir = translationsDir
-            val allFiles = dir.listFiles() ?: return@withContext emptyList()
-            val wantedIds = chapterIds.toHashSet()
-            allFiles.asSequence()
-                .filter { it.name?.endsWith(".html") == true && it.name?.endsWith(".html.tmp") != true }
-                .filter { it.nameWithoutExtension?.substringBefore('_')?.toLongOrNull() in wantedIds }
-                .mapNotNull { it.nameWithoutExtension?.substringAfter('_') }
-                .distinct()
-                .toList()
-        }
-
-    override suspend fun getAll(): List<TranslatedChapter> = withContext(Dispatchers.IO) {
-        val dir = translationsDir
-        dir.listFiles()
-            ?.filter { it.name?.endsWith(".html") == true && it.name?.endsWith(".html.tmp") != true }
-            ?.mapNotNull { file ->
-                val nameWithoutExt = file.nameWithoutExtension ?: return@mapNotNull null
-                val parts = nameWithoutExt.split('_', limit = 2)
-                if (parts.size != 2) return@mapNotNull null
-                val chapterId = parts[0].toLongOrNull() ?: return@mapNotNull null
-                val lang = parts[1]
-                val meta = parseUniFile(file) ?: return@mapNotNull null
-                TranslatedChapter(
-                    chapterId = chapterId,
-                    mangaId = 0,
-                    targetLanguage = lang,
-                    engineId = meta.engineId,
-                    translatedContent = meta.content,
-                    dateTranslated = meta.dateTranslated,
-                )
-            }
-            .orEmpty()
+    override suspend fun filterTranslatedChapters(
+        sourceName: String,
+        novelTitle: String,
+        targetLanguage: String,
+        chapters: Collection<ChapterRef>,
+    ): Set<Long> = withContext(Dispatchers.IO) {
+        if (chapters.isEmpty()) return@withContext emptySet()
+        val langDir = findNovelDir(sourceName, novelTitle)?.findFile(targetLanguage) ?: return@withContext emptySet()
+        val present = langDir.listFiles()
+            ?.mapNotNull { it.name }
+            ?.filterTo(HashSet()) { it.endsWith(".html") && !it.endsWith(".html.tmp") }
+            ?: return@withContext emptySet()
+        if (present.isEmpty()) return@withContext emptySet()
+        chapters.asSequence()
+            .filter { (chapterFileBase(it.name, it.url) + ".html") in present }
+            .map { it.id }
+            .toSet()
     }
 
     // ── Write operations ──────────────────────────────────────────────
 
-    override suspend fun upsertTranslation(translatedChapter: TranslatedChapter) =
+    override suspend fun upsertTranslation(locator: TranslationLocator, translatedChapter: TranslatedChapter) =
         withContext(Dispatchers.IO) {
-            val dir = translationsDir
-            val name = getTranslationFileName(translatedChapter.chapterId, translatedChapter.targetLanguage)
+            val dir = getOrCreateLangDir(locator, translatedChapter.targetLanguage)
+                ?: throw IllegalStateException("Failed to create translation dir for ${locator.novelTitle}")
+            val name = fileName(locator)
             val meta = buildMetaComment(translatedChapter.engineId, translatedChapter.dateTranslated)
             val content = (meta + translatedChapter.translatedContent).toByteArray()
 
-            // Delete existing file first (createFile may fail if it already exists on some backends)
             dir.findFile(name)?.delete()
             val file = dir.createFile(name)
                 ?: throw IllegalStateException("Failed to create translation file: $name")
             file.openOutputStream().use { it.write(content) }
 
-            // Remove any tmp file for this chapter+language
-            val tmpName = getTmpTranslationFileName(translatedChapter.chapterId, translatedChapter.targetLanguage)
-            dir.findFile(tmpName)?.delete()
+            dir.findFile(tmpFileName(locator))?.delete()
             Unit
         }
 
-    /**
-     * Save a partial (in-progress) translation with .tmp extension.
-     * This allows resuming incomplete translations.
-     */
-    override suspend fun upsertTmpTranslation(translatedChapter: TranslatedChapter) =
+    override suspend fun upsertTmpTranslation(locator: TranslationLocator, translatedChapter: TranslatedChapter) =
         withContext(Dispatchers.IO) {
-            val dir = translationsDir
-            val name = getTmpTranslationFileName(translatedChapter.chapterId, translatedChapter.targetLanguage)
+            val dir = getOrCreateLangDir(locator, translatedChapter.targetLanguage)
+                ?: throw IllegalStateException("Failed to create translation dir for ${locator.novelTitle}")
+            val name = tmpFileName(locator)
             val meta = buildMetaComment(translatedChapter.engineId, translatedChapter.dateTranslated)
             val content = (meta + translatedChapter.translatedContent).toByteArray()
 
@@ -312,114 +279,75 @@ class TranslatedChapterRepositoryImpl(
             file.openOutputStream().use { it.write(content) }
         }
 
-    /**
-     * Read a partial (in-progress) translation.
-     */
-    override suspend fun getTmpTranslation(chapterId: Long, targetLanguage: String): TranslatedChapter? =
-        withContext(Dispatchers.IO) {
-            val name = getTmpTranslationFileName(chapterId, targetLanguage)
-            val file = translationsDir.findFile(name) ?: return@withContext null
-            val meta = parseUniFile(file) ?: return@withContext null
-            TranslatedChapter(
-                chapterId = chapterId,
-                mangaId = 0,
-                targetLanguage = targetLanguage,
-                engineId = meta.engineId,
-                translatedContent = meta.content,
-                dateTranslated = meta.dateTranslated,
-            )
-        }
-
-    /**
-     * Promote a tmp translation to a final one (remove .tmp extension).
-     */
-    suspend fun promoteTmpTranslation(chapterId: Long, targetLanguage: String): Boolean =
-        withContext(Dispatchers.IO) {
-            val tmpName = getTmpTranslationFileName(chapterId, targetLanguage)
-            val tmpFile = translationsDir.findFile(tmpName) ?: return@withContext false
-            val meta = parseUniFile(tmpFile) ?: return@withContext false
-
-            // Write final file
-            val dir = translationsDir
-            val finalName = getTranslationFileName(chapterId, targetLanguage)
-            dir.findFile(finalName)?.delete()
-            val finalFile = dir.createFile(finalName) ?: return@withContext false
-            val metaComment = buildMetaComment(meta.engineId, meta.dateTranslated)
-            finalFile.openOutputStream().use { it.write((metaComment + meta.content).toByteArray()) }
-
-            // Delete tmp
-            tmpFile.delete()
-            true
-        }
+    override suspend fun getTmpTranslation(
+        locator: TranslationLocator,
+        targetLanguage: String,
+    ): TranslatedChapter? = withContext(Dispatchers.IO) {
+        val file = findLangDir(locator, targetLanguage)?.findFile(tmpFileName(locator)) ?: return@withContext null
+        val meta = parseUniFile(file) ?: return@withContext null
+        toTranslatedChapter(meta, targetLanguage)
+    }
 
     // ── Delete operations ─────────────────────────────────────────────
 
-    override suspend fun deleteTranslation(chapterId: Long, targetLanguage: String) =
+    override suspend fun deleteTranslation(locator: TranslationLocator, targetLanguage: String) =
         withContext(Dispatchers.IO) {
-            findTranslationFile(chapterId, targetLanguage)?.delete()
-            // Also delete any tmp file
-            val tmpName = getTmpTranslationFileName(chapterId, targetLanguage)
-            translationsDir.findFile(tmpName)?.delete()
+            findLangDir(locator, targetLanguage)?.let { dir ->
+                dir.findFile(fileName(locator))?.delete()
+                dir.findFile(tmpFileName(locator))?.delete()
+            }
             Unit
         }
 
-    override suspend fun deleteAllForChapter(chapterId: Long) = withContext(Dispatchers.IO) {
-        val prefix = "${chapterId}_"
-        val dir = translationsDir
-        dir.listFiles()
-            ?.filter { it.name?.startsWith(prefix) == true }
-            ?.forEach { it.delete() }
+    override suspend fun deleteAllForChapter(locator: TranslationLocator) = withContext(Dispatchers.IO) {
+        val novelDir = findNovelDir(locator.sourceName, locator.novelTitle) ?: return@withContext
+        val target = fileName(locator)
+        val tmp = tmpFileName(locator)
+        novelDir.listFiles()
+            ?.filter { it.isDirectory }
+            ?.forEach { langDir ->
+                langDir.findFile(target)?.delete()
+                langDir.findFile(tmp)?.delete()
+            }
         Unit
     }
 
-    override suspend fun deleteAllForChapters(chapterIds: Collection<Long>) = withContext(Dispatchers.IO) {
-        if (chapterIds.isEmpty()) return@withContext
-        val wantedIds = chapterIds.toHashSet()
-        val dir = translationsDir
-        dir.listFiles()
-            ?.filter {
-                val name = it.name ?: return@filter false
-                name.endsWith(".html") || name.endsWith(".html.tmp")
+    override suspend fun deleteAllForChapters(
+        sourceName: String,
+        novelTitle: String,
+        chapters: Collection<ChapterRef>,
+    ) = withContext(Dispatchers.IO) {
+        if (chapters.isEmpty()) return@withContext
+        val novelDir = findNovelDir(sourceName, novelTitle) ?: return@withContext
+        val wanted = chapters.flatMapTo(HashSet()) {
+            val base = chapterFileBase(it.name, it.url)
+            listOf("$base.html", "$base.html.tmp")
+        }
+        novelDir.listFiles()
+            ?.filter { it.isDirectory }
+            ?.forEach { langDir ->
+                langDir.listFiles()
+                    ?.filter { it.name in wanted }
+                    ?.forEach { it.delete() }
             }
-            ?.filter {
-                val nameNoExt = it.name?.substringBefore('_') ?: return@filter false
-                nameNoExt.toLongOrNull() in wantedIds
-            }
-            ?.forEach { it.delete() }
+        Unit
+    }
+
+    override suspend fun deleteAllForManga(sourceName: String, novelTitle: String) = withContext(Dispatchers.IO) {
+        findNovelDir(sourceName, novelTitle)?.let { deleteRecursive(it) }
         Unit
     }
 
     override suspend fun deleteAll() = withContext(Dispatchers.IO) {
-        val dir = translationsDir
-        dir.listFiles()?.forEach { it.delete() }
-        Unit
-    }
-
-    // ── Cache management ──────────────────────────────────────────────
-
-    override suspend fun getCacheSize(): Long = withContext(Dispatchers.IO) {
-        val dir = translationsDir
-        dir.listFiles()
-            ?.filter { it.isFile }
-            ?.sumOf { it.length() }
-            ?: 0L
-    }
-
-    override suspend fun clearOldCache(olderThan: Long) = withContext(Dispatchers.IO) {
-        val dir = translationsDir
-        dir.listFiles()
-            ?.filter { it.name?.endsWith(".html") == true || it.name?.endsWith(".html.tmp") == true }
-            ?.filter { it.lastModified() < olderThan }
-            ?.forEach { it.delete() }
+        translationsDir.listFiles()?.forEach { deleteRecursive(it) }
         Unit
     }
 
     override suspend fun clearTmpFiles(): Long = withContext(Dispatchers.IO) {
-        val dir = translationsDir
         var freed = 0L
-        dir.listFiles()
-            ?.filter { it.name?.endsWith(".html.tmp") == true }
-            ?.forEach {
+        allFilesRecursive(translationsDir)
+            .filter { it.name?.endsWith(".html.tmp") == true }
+            .forEach {
                 freed += it.length()
                 it.delete()
             }

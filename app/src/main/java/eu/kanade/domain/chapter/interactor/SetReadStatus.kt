@@ -11,6 +11,8 @@ import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.download.service.DownloadPreferences
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
+import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.translation.model.TranslationLocator
 import tachiyomi.domain.translation.repository.TranslatedChapterRepository
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -21,6 +23,7 @@ class SetReadStatus(
     private val mangaRepository: MangaRepository,
     private val chapterRepository: ChapterRepository,
     private val translatedChapterRepository: TranslatedChapterRepository,
+    private val sourceManager: SourceManager,
 ) {
 
     private val sourceTrackerDispatcher: SourceTrackerDispatcher by lazy { Injekt.get() }
@@ -54,8 +57,18 @@ class SetReadStatus(
         }
 
         if (read) {
-            chaptersToUpdate.forEach { chapter ->
-                translatedChapterRepository.deleteAllForChapter(chapter.id)
+            chaptersToUpdate.groupBy { it.mangaId }.forEach { (mangaId, chapters) ->
+                try {
+                    val manga = mangaRepository.getMangaById(mangaId)
+                    val sourceName = sourceManager.getOrStub(manga.source).toString()
+                    chapters.forEach { chapter ->
+                        translatedChapterRepository.deleteAllForChapter(
+                            TranslationLocator(sourceName, manga.title, chapter.name, chapter.url),
+                        )
+                    }
+                } catch (e: Exception) {
+                    logcat(LogPriority.WARN, e) { "Failed to delete translations on mark-as-read for manga $mangaId" }
+                }
             }
         }
 

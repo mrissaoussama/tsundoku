@@ -91,6 +91,7 @@ import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.storage.service.StorageManager
 import tachiyomi.domain.track.interactor.GetTracks
+import tachiyomi.domain.translation.model.ChapterRef
 import tachiyomi.domain.translation.repository.TranslatedChapterRepository
 import tachiyomi.i18n.MR
 import tachiyomi.i18n.novel.TDMR
@@ -133,6 +134,7 @@ class MangaScreenModel(
     private val setMangaCategories: SetMangaCategories = Injekt.get(),
     private val storageManager: StorageManager = Injekt.get(),
     private val mangaRepository: MangaRepository = Injekt.get(),
+    private val sourceManager: SourceManager = Injekt.get(),
     private val filterChaptersForDownload: FilterChaptersForDownload = Injekt.get(),
     private val translatedChapterRepository: TranslatedChapterRepository = Injekt.get(),
     private val translationService: TranslationService = Injekt.get(),
@@ -201,11 +203,7 @@ class MangaScreenModel(
             ) { mangaAndChapters, _, _, _ -> mangaAndChapters }
                 .flowWithLifecycle(lifecycle)
                 .collectLatest { (manga, chapters) ->
-                    val translatedChapterIds = translatedChapterRepository.getTranslatedChapterIds(
-                        chapters.map {
-                            it.id
-                        },
-                    )
+                    val translatedChapterIds = translatedChapterIdsFor(manga, chapters)
                     updateSuccessState {
                         it.copy(
                             manga = manga,
@@ -247,7 +245,7 @@ class MangaScreenModel(
 
             val manga = mangaDeferred.await()
             val chapters = chaptersDeferred.await()
-            val translatedChapterIds = translatedChapterRepository.getTranslatedChapterIds(chapters.map { it.id })
+            val translatedChapterIds = translatedChapterIdsFor(manga, chapters)
             val chapterListItems = chapters.toChapterListItems(manga, translatedChapterIds)
 
             if (!manga.favorite) {
@@ -258,7 +256,7 @@ class MangaScreenModel(
             val needRefreshChapter = chapterListItems.isEmpty()
 
             // Show what we have earlier
-            val source = Injekt.get<SourceManager>().getOrStub(manga.source)
+            val source = sourceManager.getOrStub(manga.source)
             mutableState.update {
                 State.Success(
                     manga = manga,
@@ -1362,10 +1360,23 @@ class MangaScreenModel(
         }
     }
 
+    private suspend fun translatedChapterIdsFor(manga: Manga, chapters: List<Chapter>): Set<Long> =
+        translatedChapterRepository.filterTranslatedChapters(
+            sourceName = sourceManager.getOrStub(manga.source).toString(),
+            novelTitle = manga.title,
+            targetLanguage = translationService.getLastTargetLanguage(),
+            chapters = chapters.map { ChapterRef(it.id, it.name, it.url) },
+        )
+
     fun deleteTranslations(chapters: List<Chapter>) {
+        val manga = successState?.manga ?: return
         screenModelScope.launchNonCancellable {
             val chapterIds = chapters.map { it.id }.toSet()
-            translatedChapterRepository.deleteAllForChapters(chapterIds)
+            translatedChapterRepository.deleteAllForChapters(
+                sourceName = sourceManager.getOrStub(manga.source).toString(),
+                novelTitle = manga.title,
+                chapters = chapters.map { ChapterRef(it.id, it.name, it.url) },
+            )
             // Update the UI to reflect that these chapters no longer have translations
             updateSuccessState { state ->
                 state.copy(
@@ -1585,11 +1596,7 @@ class MangaScreenModel(
             val chaptersToTranslate = if (forceRetranslate) {
                 downloadedChapters
             } else {
-                val translatedIds = translatedChapterRepository.getTranslatedChapterIds(
-                    downloadedChapters.map {
-                        it.id
-                    },
-                )
+                val translatedIds = translatedChapterIdsFor(manga, downloadedChapters)
                 downloadedChapters.filter { it.id !in translatedIds }
             }
 
@@ -1632,7 +1639,7 @@ class MangaScreenModel(
             val chaptersToTranslate = if (forceRetranslate) {
                 chapters
             } else {
-                val translatedIds = translatedChapterRepository.getTranslatedChapterIds(chapters.map { it.id })
+                val translatedIds = translatedChapterIdsFor(manga, chapters)
                 chapters.filter { it.id !in translatedIds }
             }
 

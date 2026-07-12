@@ -1038,8 +1038,10 @@ class LibraryScreenModel(
 
             if (deleteTranslations) {
                 mangas.forEach { manga ->
-                    val chapters = getChaptersByMangaId.await(manga.id)
-                    translatedChapterRepository.deleteAllForChapters(chapters.map { it.id })
+                    translatedChapterRepository.deleteAllForManga(
+                        sourceManager.getOrStub(manga.source).toString(),
+                        manga.title,
+                    )
                 }
             }
 
@@ -1098,8 +1100,10 @@ class LibraryScreenModel(
 
                 if (deleteTranslations) {
                     mangas.forEach { manga ->
-                        val chapters = getChaptersByMangaId.await(manga.id)
-                        translatedChapterRepository.deleteAllForChapters(chapters.map { it.id })
+                        translatedChapterRepository.deleteAllForManga(
+                            sourceManager.getOrStub(manga.source).toString(),
+                            manga.title,
+                        )
                     }
                 }
 
@@ -1646,16 +1650,7 @@ class LibraryScreenModel(
                         var firstChapterNum = Double.MAX_VALUE
                         var lastChapterNum = Double.MIN_VALUE
 
-                        // Get translated chapter IDs for this manga if translation mode needs them
-                        val translatedChapterIds =
-                            @Suppress("ktlint:standard:max-line-length")
-                            if (options.translationMode !=
-                                tachiyomi.domain.translation.model.TranslationMode.ORIGINAL
-                            ) {
-                                translatedChapterRepository.getTranslatedChapterIds(chapters.map { it.id })
-                            } else {
-                                emptySet()
-                            }
+                        val exportSourceName = sourceManager.getOrStub(manga.source).toString()
 
                         for ((chapterIndex, chapter) in chapters.withIndex()) {
                             // Check if chapter is downloaded first
@@ -1667,8 +1662,29 @@ class LibraryScreenModel(
                                 manga.source,
                             )
 
-                            // Check if chapter has translation
-                            val hasTranslation = chapter.id in translatedChapterIds
+                            val chapterTranslations =
+                                if (options.translationMode !=
+                                    tachiyomi.domain.translation.model.TranslationMode.ORIGINAL
+                                ) {
+                                    try {
+                                        translatedChapterRepository.getAllTranslationsForChapter(
+                                            tachiyomi.domain.translation.model.TranslationLocator(
+                                                exportSourceName,
+                                                manga.title,
+                                                chapter.name,
+                                                chapter.url,
+                                            ),
+                                        )
+                                    } catch (e: Exception) {
+                                        logcat(LogPriority.WARN, e) {
+                                            "Failed to get translations for chapter: ${chapter.name}"
+                                        }
+                                        emptyList()
+                                    }
+                                } else {
+                                    emptyList()
+                                }
+                            val hasTranslation = chapterTranslations.isNotEmpty()
 
                             if (isDownloaded) hasDownloads = true
 
@@ -1679,22 +1695,8 @@ class LibraryScreenModel(
 
                             // Try to get translated content first if translation mode needs it
                             var content: String? = null
-                            @Suppress("ktlint:standard:max-line-length")
-                            if (options.translationMode != tachiyomi.domain.translation.model.TranslationMode.ORIGINAL &&
-                                hasTranslation
-                            ) {
-                                @Suppress("ktlint:standard:max-line-length")
-                                try {
-                                    @Suppress("ktlint:standard:max-line-length")
-                                    val translations = translatedChapterRepository.getAllTranslationsForChapter(
-                                        chapter.id,
-                                    )
-                                    content = translations.firstOrNull()?.translatedContent
-                                } catch (e: Exception) {
-                                    logcat(LogPriority.WARN, e) {
-                                        "Failed to get translation for chapter: ${chapter.name}"
-                                    }
-                                }
+                            if (hasTranslation) {
+                                content = chapterTranslations.firstOrNull()?.translatedContent
                             }
 
                             // Fall back to original content if no translation or not preferred

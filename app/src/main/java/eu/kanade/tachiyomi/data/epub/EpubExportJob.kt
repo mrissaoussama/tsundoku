@@ -45,6 +45,7 @@ import tachiyomi.domain.download.service.NovelDownloadPreferences
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.manga.repository.MangaRepository
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.translation.model.TranslationLocator
 import tachiyomi.domain.translation.model.TranslationMode
 import tachiyomi.domain.translation.repository.TranslatedChapterRepository
 import tachiyomi.i18n.novel.TDMR
@@ -213,13 +214,6 @@ class EpubExportJob(private val context: Context, workerParams: WorkerParameters
                         continue
                     }
 
-                    // Identify which chapters have translations
-                    val translatedChapterIds = if (translationMode != TranslationMode.ORIGINAL) {
-                        translatedChapterRepository.getTranslatedChapterIds(chapters.map { it.id })
-                    } else {
-                        emptySet()
-                    }
-
                     val chapterContents = mutableListOf<ChapterContent>()
                     val isLocalSource = source.isLocal() || manga.isLocalNovel()
                     val localEpubContexts = mutableMapOf<String, LocalEpubContext>()
@@ -239,7 +233,21 @@ class EpubExportJob(private val context: Context, workerParams: WorkerParameters
                                 )
                             }
 
-                            val hasTranslation = chapter.id in translatedChapterIds
+                            val chapterTranslations = if (translationMode != TranslationMode.ORIGINAL) {
+                                try {
+                                    translatedChapterRepository.getAllTranslationsForChapter(
+                                        TranslationLocator(source.toString(), manga.title, chapter.name, chapter.url),
+                                    )
+                                } catch (e: Exception) {
+                                    logcat(LogPriority.WARN, e) {
+                                        "Failed to get translations for chapter: ${chapter.name}"
+                                    }
+                                    emptyList()
+                                }
+                            } else {
+                                emptyList()
+                            }
+                            val hasTranslation = chapterTranslations.isNotEmpty()
                             val localReference = if (isLocalSource) parseLocalEpubReference(chapter.url) else null
                             val localContext = localReference?.let {
                                 getOrCreateLocalEpubContext(it, localEpubContexts)
@@ -302,16 +310,7 @@ class EpubExportJob(private val context: Context, workerParams: WorkerParameters
                             // Translated content
                             var translatedContent: String? = null
                             if (translationMode != TranslationMode.ORIGINAL && hasTranslation) {
-                                try {
-                                    val translations = translatedChapterRepository.getAllTranslationsForChapter(
-                                        chapter.id,
-                                    )
-                                    translatedContent = translations.firstOrNull()?.translatedContent
-                                } catch (e: Exception) {
-                                    logcat(LogPriority.WARN, e) {
-                                        "Failed to get translation for chapter: ${chapter.name}"
-                                    }
-                                }
+                                translatedContent = chapterTranslations.firstOrNull()?.translatedContent
                             }
 
                             val keepLocalOriginalSlot = isLocalSource && isDownloaded
