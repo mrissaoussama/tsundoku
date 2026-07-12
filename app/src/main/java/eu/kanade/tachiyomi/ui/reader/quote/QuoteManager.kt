@@ -34,9 +34,11 @@ class QuoteManager(private val context: Context) {
         storageManager.getQuotesDirectory()
     }
 
-    private fun getSourceDirName(sourceName: String): String = DiskUtil.buildValidFilename(sourceName)
+    private fun getSourceDirName(sourceName: String): String =
+        DiskUtil.buildValidFilename(sourceName).ifEmpty { "source" }
 
-    private fun getNovelFileName(novelTitle: String): String = "${DiskUtil.buildValidFilename(novelTitle)}.json"
+    private fun getNovelFileName(novelTitle: String): String =
+        "${DiskUtil.buildValidFilename(novelTitle).ifEmpty { "novel" }}.json"
 
     private fun findSourceDir(sourceName: String): UniFile? {
         return quotesDir?.findFile(getSourceDirName(sourceName))

@@ -110,11 +110,14 @@ class TranslatedChapterRepositoryImpl(
 
     // ── Path helpers ──────────────────────────────────────────────────
 
-    private fun sourceDirName(sourceName: String): String = DiskUtil.buildValidFilename(sourceName)
+    private fun sourceDirName(sourceName: String): String =
+        DiskUtil.buildValidFilename(sourceName).ifEmpty { "source" }
 
-    private fun novelDirName(novelTitle: String): String = DiskUtil.buildValidFilename(novelTitle)
+    private fun novelDirName(novelTitle: String): String =
+        DiskUtil.buildValidFilename(novelTitle).ifEmpty { "novel" }
 
-    private fun langDirName(targetLanguage: String): String = DiskUtil.buildValidFilename(targetLanguage)
+    private fun langDirName(targetLanguage: String): String =
+        DiskUtil.buildValidFilename(targetLanguage).ifEmpty { "unknown" }
 
     private fun chapterFileBase(chapterName: String, chapterUrl: String): String {
         // Reserve bytes for the longest suffix we append: "_<hash>" + ".html.tmp".
@@ -268,10 +271,19 @@ class TranslatedChapterRepositoryImpl(
             val meta = buildMetaComment(translatedChapter.engineId, translatedChapter.dateTranslated)
             val content = (meta + translatedChapter.translatedContent).toByteArray()
 
-            dir.findFile(name)?.delete()
-            val file = dir.createFile(name)
+            // Write to a scratch file then swap it in so a crash mid-write can't leave a
+            // truncated translation. ".saving" is not read back (reads require ".html").
+            val savingName = "$name.saving"
+            dir.findFile(savingName)?.delete()
+            val scratch = dir.createFile(savingName)
                 ?: throw IllegalStateException("Failed to create translation file: $name")
-            file.openOutputStream().use { it.write(content) }
+            scratch.openOutputStream().use { it.write(content) }
+
+            dir.findFile(name)?.delete()
+            if (!scratch.renameTo(name)) {
+                scratch.delete()
+                throw IllegalStateException("Failed to finalize translation file: $name")
+            }
 
             dir.findFile(tmpFileName(locator))?.delete()
             Unit
