@@ -149,7 +149,6 @@ fun MassImportDialog(
     // boundaries; joined on import when that option is off.
     var pickedFiles by remember { mutableStateOf<List<File>>(emptyList()) }
     var pickedFileCount by remember { mutableIntStateOf(0) }
-    var pickedFileLoadedFiles by remember { mutableIntStateOf(0) }
 
     // Staged files that never got imported would otherwise leak in cacheDir; on import the
     // staged refs are cleared first, so this only deletes abandoned files.
@@ -240,7 +239,6 @@ fun MassImportDialog(
                         previous.forEach { old -> runCatching { old.delete() } }
                         pickedFiles = staged
                         pickedFileCount = count
-                        pickedFileLoadedFiles = staged.size
                         withContext(Dispatchers.Main) {
                             context.toast(String.format(toastAddedUrlsFromFiles, count, staged.size))
                         }
@@ -737,7 +735,7 @@ fun MassImportDialog(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = String.format(toastAddedUrlsFromFiles, pickedFileCount, pickedFileLoadedFiles),
+                            text = String.format(toastAddedUrlsFromFiles, pickedFileCount, pickedFiles.size),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -748,7 +746,6 @@ fun MassImportDialog(
                             }
                             pickedFiles = emptyList()
                             pickedFileCount = 0
-                            pickedFileLoadedFiles = 0
                         }) {
                             Text(stringResource(TDMR.strings.mass_import_button_clear))
                         }
@@ -823,16 +820,20 @@ fun MassImportDialog(
                         val splitByDomain = novelDownloadPreferences.massImportSplitByDomain().get()
 
                         val staged = pickedFiles
+                        val stagedCount = pickedFileCount
+                        val previousUrlText = urlText
+                        val previousPendingUrls = pendingUrls
                         pickedFiles = emptyList()
                         pickedFileCount = 0
-                        pickedFileLoadedFiles = 0
                         urlText = ""
                         pendingUrls = ""
 
-                        fun restoreStagedFiles(files: List<File>) {
+                        // Restore both staged files and typed text on read failure.
+                        fun restoreInputs(files: List<File>) {
                             pickedFiles = files
-                            pickedFileCount = files.size
-                            pickedFileLoadedFiles = files.size
+                            pickedFileCount = stagedCount
+                            urlText = previousUrlText
+                            pendingUrls = previousPendingUrls
                         }
 
                         fun startFile(file: File) {
@@ -883,7 +884,7 @@ fun MassImportDialog(
                                     }
                                 }
                             } catch (e: IOException) {
-                                restoreStagedFiles(staged)
+                                restoreInputs(staged)
                                 context.toast(e.message ?: "Failed to read import files")
                                 return@launch
                             }
@@ -899,7 +900,7 @@ fun MassImportDialog(
                                     joinUrlFiles(context, staged, combinedRawText.takeIf { it.isNotBlank() })
                                 }
                             } catch (e: IOException) {
-                                restoreStagedFiles(staged)
+                                restoreInputs(staged)
                                 context.toast(e.message ?: "Failed to read import files")
                                 return@launch
                             }

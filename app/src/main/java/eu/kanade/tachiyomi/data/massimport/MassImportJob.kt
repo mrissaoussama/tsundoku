@@ -123,6 +123,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
     private var lastNotificationTime = 0L
     private var lastNotifiedProgress = -1
     private var lastNotificationStatus: String? = null
+    private var currentBatchId = ""
 
     // Serializes the memory-pressure back-off so concurrent fetch coroutines don't all spin
     // (and previously all fire System.gc()) at once.
@@ -152,6 +153,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         val missingSourceHosts = ConcurrentHashMap.newKeySet<String>()
 
         val jobBatchId = inputData.getString(KEY_BATCH_ID) ?: ""
+        currentBatchId = jobBatchId
         val resumeOffset = inputData.getInt(KEY_RESUME_OFFSET, 0).coerceAtLeast(0)
         // Exit instead of parking in the pause loop: a parked foreground worker burns the
         // Android 15 dataSync time budget. Resume flips the status before re-enqueueing.
@@ -241,7 +243,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                         Result.failure()
                     }
                 } finally {
-                    context.cancelNotification(Notifications.ID_MASS_IMPORT_PROGRESS)
+                    context.cancelNotification(progressNotificationId(currentBatchId))
                     runCatching { File(streamFilePath).delete() }
                     liveErroredUrls.remove(batchId)
                 }
@@ -283,7 +285,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                     Result.failure()
                 }
             } finally {
-                context.cancelNotification(Notifications.ID_MASS_IMPORT_PROGRESS)
+                context.cancelNotification(progressNotificationId(currentBatchId))
                 inputData.getString(KEY_URLS_FILE)?.let { path -> runCatching { File(path).delete() } }
                 inputData.getString(KEY_RAW_TEXT_FILE)?.let { path -> runCatching { File(path).delete() } }
                 liveErroredUrls.remove(batchId)
@@ -293,7 +295,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
 
     override suspend fun getForegroundInfo(): ForegroundInfo {
         return ForegroundInfo(
-            Notifications.ID_MASS_IMPORT_PROGRESS,
+            progressNotificationId(currentBatchId),
             notificationBuilder.build(),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
@@ -1117,7 +1119,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                     ),
                 )
             }.build()
-            context.notify(Notifications.ID_MASS_IMPORT_PROGRESS, notification)
+            context.notify(progressNotificationId(currentBatchId), notification)
 
             lastNotificationTime = now
             lastNotifiedProgress = current
@@ -1125,9 +1127,13 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
         }
     }
 
-    // Distinct id per batch so concurrent completions don't overwrite each other. Far from the
-    // app's small negative ids, so no collision.
-    private fun completionNotificationId(batchId: String): Int = 600_000 + (batchId.hashCode() and 0xFFFF)
+    // Per-batch ids so concurrent batches don't clobber each other's notification. Two disjoint
+    // positive bands 100M apart (progress vs completion); 24-bit spread makes collisions negligible.
+    private fun progressNotificationId(batchId: String): Int =
+        if (batchId.isEmpty()) Notifications.ID_MASS_IMPORT_PROGRESS else 600_000_000 + (batchId.hashCode() and 0xFFFFFF)
+
+    private fun completionNotificationId(batchId: String): Int =
+        if (batchId.isEmpty()) Notifications.ID_MASS_IMPORT_COMPLETE else 700_000_000 + (batchId.hashCode() and 0xFFFFFF)
 
     private fun showCompletionNotification(batchId: String, added: Int, skipped: Int, errored: Int, message: String?) {
         val text = message ?: "Added: $added, Skipped: $skipped, Errors: $errored"
@@ -1800,7 +1806,7 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                     eldest: MutableMap.MutableEntry<String, java.io.BufferedWriter>,
                 ): Boolean {
                     if (size > MAX_OPEN_DOMAIN_WRITERS) {
-                        runCatching { eldest.value.flush(); eldest.value.close() }
+                        runCatching { eldest.value.close() }
                         return true
                     }
                     return false
@@ -1834,17 +1840,20 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
             try {
                 source.bufferedReader().useLines { lines ->
                     for (raw in lines) {
-                        val line = raw.trim()
-                        if (line.isEmpty()) continue
-                        val host = splitHostKey(line)
-                        val writer = if (host == null) overflowWriter() else writerFor(host)
-                        writer.write(line)
-                        writer.write("\n")
+                        // Tokenize first so multi-URL lines route per-host instead of failing URI
+                        // parse and spilling to overflow.
+                        for (line in MassImport.tokenizeLine(raw)) {
+                            val host = splitHostKey(line)
+                            val writer = if (host == null) overflowWriter() else writerFor(host)
+                            writer.write(line)
+                            writer.write("\n")
+                        }
                     }
                 }
             } finally {
-                open.values.forEach { runCatching { it.flush(); it.close() } }
-                runCatching { overflowWriter?.flush(); overflowWriter?.close() }
+                // close() flushes; keep them separate so one writer's failure can't skip the rest.
+                open.values.forEach { runCatching { it.close() } }
+                runCatching { overflowWriter?.close() }
             }
 
             runCatching { source.delete() }
@@ -2112,6 +2121,10 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
 
         private fun deleteBatchFiles(context: Context, batchId: String) {
             runCatching { File(context.cacheDir, "mass_import_$batchId.txt").delete() }
+            // Result file (createFileInCacheDir prefers externalCacheDir) would otherwise leak.
+            val resultName = "tsundoku_mass_import_results_${batchId.ifEmpty { "unknown" }}.txt"
+            runCatching { File(context.cacheDir, resultName).delete() }
+            context.externalCacheDir?.let { runCatching { File(it, resultName).delete() } }
             MassImportStore.delete(context, batchId)
             lastMetaWrite.remove(batchId)
         }
@@ -2201,40 +2214,50 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                 var wrote = 0
                 val ok = runCatching {
                     tmp.bufferedWriter().use { w ->
-                        MassImportStore.forEachError(appContext, batchId) { url, _ ->
-                            val t = url.trim()
-                            if (t.isNotEmpty()) {
-                                w.write(t)
-                                w.newLine()
-                                wrote++
-                            }
-                        }
-                        if (wrote == 0) {
-                            // Pre-log / in-memory-only batch: bounded preview fallback.
-                            getErroredUrls(appContext, batchId, limit = META_ERROR_PREVIEW).forEach {
-                                w.write(it)
-                                w.newLine()
-                                wrote++
-                            }
+                        fun emit(url: String) {
+                            w.write(url)
+                            w.newLine()
+                            wrote++
                         }
                         if (includeRemaining) {
+                            // Single pass emits each URL once (tail overlaps errored URLs otherwise);
+                            // only the errored set is held in memory, the tail streams.
+                            val errored = HashSet<String>()
+                            MassImportStore.forEachError(appContext, batchId) { url, _ ->
+                                val t = url.trim()
+                                if (t.isNotEmpty()) errored.add(t)
+                            }
                             // Conservative offset (matches resume): processing is out of order, so
                             // re-do the overlap rather than risk dropping an unfinished URL. URLs
                             // already imported skip instantly on the re-run.
                             val offset = (batch.progress - (MAX_LOOKAHEAD + MAX_CONCURRENCY)).coerceAtLeast(0)
-                            MassImportStore.openUrlsReader(appContext, batchId)?.use { reader ->
-                                var idx = 0
-                                reader.lineSequence().forEach { line ->
-                                    val t = line.trim()
-                                    if (t.isNotEmpty()) {
-                                        if (idx >= offset) {
-                                            w.write(t)
-                                            w.newLine()
-                                            wrote++
+                            val reader = MassImportStore.openUrlsReader(appContext, batchId)
+                            if (reader != null) {
+                                reader.use {
+                                    var idx = 0
+                                    it.lineSequence().forEach { line ->
+                                        val t = line.trim()
+                                        if (t.isNotEmpty()) {
+                                            if (idx >= offset || t in errored) emit(t)
+                                            idx++
                                         }
-                                        idx++
                                     }
                                 }
+                            } else {
+                                errored.forEach { emit(it) }
+                            }
+                            if (wrote == 0) {
+                                getErroredUrls(appContext, batchId, limit = META_ERROR_PREVIEW).forEach { emit(it) }
+                            }
+                        } else {
+                            // Completed batch: only errors, streamed (no tail, so no overlap).
+                            MassImportStore.forEachError(appContext, batchId) { url, _ ->
+                                val t = url.trim()
+                                if (t.isNotEmpty()) emit(t)
+                            }
+                            if (wrote == 0) {
+                                // Pre-log / in-memory-only batch: bounded preview fallback.
+                                getErroredUrls(appContext, batchId, limit = META_ERROR_PREVIEW).forEach { emit(it) }
                             }
                         }
                     }
