@@ -1,18 +1,13 @@
 // Page-side scroll listener for the novel WebView reader.
+// Installed once per load via NovelWebViewStyler.injectScrollTracking(), which substitutes the
+// __TSUNDOKU_OBJECT_NAME__ / __CHAPTER_DIVIDER_CLASS__ / __CHAPTER_ID_ATTR__ /
+// __INFINITE_SCROLL_ENABLED__ / __LOAD_THRESHOLD__ / __DONE_THRESHOLD__ tokens.
 //
-// Installed once per WebView load via NovelWebViewStyler.injectScrollTracking().
-// Replaces the following tokens at install time (see NovelWebViewJsAssets):
-//   __TSUNDOKU_OBJECT_NAME__     — `Tsundoku` (the global window key)
-//   __CHAPTER_DIVIDER_CLASS__    — CSS class on per-chapter divider divs
-//   __CHAPTER_ID_ATTR__          — HTML attribute holding the chapter id
-//   __INFINITE_SCROLL_ENABLED__  — `true` / `false` JS literal
-//   __LOAD_THRESHOLD__           — 0.0 - 1.0 JS literal
-//
-// Reports to the Android side via the `Android` JS interface:
-//   Android.onChapterScrollUpdate(chapterIdx, progress)
-//   Android.onScrollUpdate(progress)
-//   Android.onScrollProgress(progress)
-//   Android.loadNextChapter()
+// Reports to the Android JS interface:
+//   onChapterScrollUpdate(chapterId, progress)  visible chapter changed
+//   onScrollUpdate(progress)                     live slider position
+//   onScrollProgress(progress)                   persist point (scroll settled / 100%)
+//   loadNextChapter()
 
 (function () {
     window.__TSUNDOKU_OBJECT_NAME__ = window.__TSUNDOKU_OBJECT_NAME__ || {};
@@ -24,38 +19,28 @@
     }
     runtime.infiniteScrollInstalled = true;
 
-    var lastProgress = 0;
-    var saveTimeout = null;
-    var lastChapterUpdate = 0;   // throttle gate for onChapterScrollUpdate
-    var lastScrollUpdate = 0;    // throttle gate for onScrollUpdate
-    runtime.loadingNext = runtime.loadingNext || false;
-    runtime.setLoadingNext = function (v) { runtime.loadingNext = !!v; };
     var infiniteScrollEnabled = __INFINITE_SCROLL_ENABLED__;
     var loadThreshold = __LOAD_THRESHOLD__;
+    var lastSliderProgress = -1;
+    var lastScrollUpdateTime = 0;
+
+    runtime.loadingNext = runtime.loadingNext || false;
+    runtime.setLoadingNext = function (v) { runtime.loadingNext = !!v; };
+    runtime.noMoreChapters = runtime.noMoreChapters || false;
+    runtime.setNoMoreChapters = function (v) { runtime.noMoreChapters = !!v; };
+    runtime.lastChapterIdxSeen = (typeof runtime.lastChapterIdxSeen === 'number') ? runtime.lastChapterIdxSeen : -1;
+    // Forces the next scroll frame to re-emit onChapterScrollUpdate. Called by the Android side when
+    // it lifts the scroll-restore guard, so a chapter switch dropped while the guard was up (this
+    // callback is edge-triggered and won't otherwise re-fire for the same idx) is re-reported.
+    runtime.resetChapterTracking = function () { runtime.lastChapterIdxSeen = -1; };
 
     window.chapterBoundaries = window.chapterBoundaries || [];
-    runtime.lastBoundaryUpdate = runtime.lastBoundaryUpdate || 0;
     runtime.knownDividerCount = runtime.knownDividerCount || 0;
 
-    window.addEventListener('scroll', function () {
-        if (infiniteScrollEnabled && typeof window.updateChapterBoundaries === 'function') {
-            // Only re-query when DOM actually changed; the count check is O(1)
-            // whereas querySelectorAll is O(n). Periodic fallback is skipped when
-            // the divider count is stable to avoid unnecessary DOM traversal at
-            // 60 fps.
-            var domDividerCount = document.querySelectorAll('.__CHAPTER_DIVIDER_CLASS__').length;
-            if (domDividerCount !== runtime.knownDividerCount) {
-                runtime.knownDividerCount = domDividerCount;
-                window.updateChapterBoundaries();
-            }
-        }
-
+    function computeState() {
         var scrollTop = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
-        // Use the real content height and the VISUAL viewport (window.innerHeight).
-        // documentElement.clientHeight is the layout viewport, which diverges from the
-        // visual viewport under useWideViewPort/loadWithOverviewMode (and any scaling),
-        // making scrollHeight - clientHeight larger than the reachable scroll range, so
-        // the true bottom computed to ~0.92 and never hit 100%.
+        // window.innerHeight is the visual viewport, documentElement.clientHeight (layout viewport)
+        // diverges under useWideViewPort/loadWithOverviewMode so the bottom never reaches 100%.
         var docHeight = Math.max(
             document.documentElement.scrollHeight,
             document.body ? document.body.scrollHeight : 0
@@ -63,71 +48,103 @@
         var viewport = window.innerHeight || document.documentElement.clientHeight;
         var scrollable = docHeight - viewport;
         var progress = scrollable > 0 ? scrollTop / scrollable : 1;
-        // Snap to 100% at the real bottom: sub-pixel rounding and fractional DPI leave a
-        // few px of slack that scrollTop can never close.
         if (scrollable > 0 && scrollTop >= scrollable - 2) progress = 1.0;
-        if (progress >= 0.99) progress = 1.0;
+        if (progress >= __DONE_THRESHOLD__) progress = 1.0;
         if (progress < 0) progress = 0;
 
-        var currentChapterProgress = progress;
-        var currentChapterIdx = 0;
+        var chapterProgress = progress;
+        var idx = 0;
+        var chapterId = null;
+        var isLast = true;
         if (infiniteScrollEnabled && window.chapterBoundaries.length > 1) {
             for (var i = 0; i < window.chapterBoundaries.length; i++) {
-                var boundary = window.chapterBoundaries[i];
-                var chapterEnd = boundary.startOffset + boundary.height;
-                if (scrollTop >= boundary.startOffset && scrollTop < chapterEnd) {
-                    currentChapterIdx = i;
-                    var chapterScrollY = scrollTop - boundary.startOffset;
-                    var effectiveHeight = Math.max(boundary.height - window.innerHeight, 1);
-                    currentChapterProgress = Math.min(chapterScrollY / effectiveHeight, 1.0);
-                    break;
+                if (scrollTop >= window.chapterBoundaries[i].startOffset) idx = i; else break;
+            }
+            var boundary = window.chapterBoundaries[idx];
+            chapterId = boundary.chapterId;
+            var chapterScrollY = Math.max(scrollTop - boundary.startOffset, 0);
+            // Only the last loaded chapter has an unreachable trailing viewport, middle chapters
+            // end at the next divider, so subtract innerHeight only for the last one.
+            isLast = idx === window.chapterBoundaries.length - 1;
+            if (isLast && boundary.height <= viewport) {
+                // A last chapter shorter than the viewport has no scroll room of its own, so
+                // chapterScrollY stays 0 and it would never reach the load threshold or 100%.
+                // Fall back to whole-document progress (the doc bottom is reachable).
+                chapterProgress = progress;
+            } else {
+                var effectiveHeight = Math.max(boundary.height - (isLast ? viewport : 0), 1);
+                chapterProgress = Math.min(chapterScrollY / effectiveHeight, 1.0);
+                if (chapterProgress >= __DONE_THRESHOLD__) chapterProgress = 1.0;
+            }
+        }
+        return { progress: progress, chapterProgress: chapterProgress, idx: idx, chapterId: chapterId, isLast: isLast };
+    }
+
+    var framePending = false;
+
+    function onFrame() {
+        framePending = false;
+        var s = computeState();
+
+        if (infiniteScrollEnabled && s.idx !== runtime.lastChapterIdxSeen && s.chapterId != null) {
+            runtime.lastChapterIdxSeen = s.idx;
+            Android.onChapterScrollUpdate(String(s.chapterId), s.chapterProgress);
+        }
+
+        // Throttle slider bridge (50ms + 0.01 delta); 100% persist exempt so completion isn't dropped.
+        if (Math.abs(s.chapterProgress - lastSliderProgress) > 0.01) {
+            var now = Date.now();
+            if (now - lastScrollUpdateTime > 50) {
+                lastScrollUpdateTime = now;
+                lastSliderProgress = s.chapterProgress;
+                Android.onScrollUpdate(s.chapterProgress);
+            }
+        }
+        // Only the last chapter flashes to 100% and self-persists; a middle chapter momentarily
+        // hitting 1.0 as it crosses a divider is marked read Android-side on the chapter switch,
+        // so flashing the slider to 100% here would just flicker it for one frame.
+        if (s.isLast && s.chapterProgress >= 1.0 && lastSliderProgress !== 1.0) {
+            lastSliderProgress = 1.0;
+            Android.onScrollUpdate(1.0);
+            Android.onScrollProgress(1.0);
+        }
+
+        if (!runtime.loadingNext && infiniteScrollEnabled && !runtime.noMoreChapters) {
+            var shouldLoadNext = window.chapterBoundaries.length > 1
+                ? (s.idx === window.chapterBoundaries.length - 1) && (s.chapterProgress >= loadThreshold)
+                : s.progress >= loadThreshold;
+            if (shouldLoadNext) {
+                runtime.loadingNext = true;
+                try {
+                    Android.loadNextChapter();
+                } catch (e) {
+                    runtime.loadingNext = false;
                 }
             }
-            // Throttle onChapterScrollUpdate to 50 ms — same cadence as onScrollUpdate.
-            // Without the gate this fires at 60 fps and floods the Android JS bridge.
-            var now = Date.now();
-            if (now - lastChapterUpdate > 50) {
-                lastChapterUpdate = now;
-                Android.onChapterScrollUpdate(currentChapterIdx, currentChapterProgress);
-            }
         }
+    }
 
-        if (Math.abs(currentChapterProgress - lastProgress) > 0.01) {
-            lastProgress = currentChapterProgress;
+    function onScroll() {
+        if (framePending) return;
+        framePending = true;
+        requestAnimationFrame(onFrame);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
 
-            var now = Date.now();
-            if (now - lastScrollUpdate > 50) {
-                lastScrollUpdate = now;
-                Android.onScrollUpdate(currentChapterProgress);
-            }
+    // computeState() is re-read here so a chapter switch mid-scroll can't persist a stale value.
+    function persistCurrent() {
+        Android.onScrollProgress(computeState().chapterProgress);
+    }
+    if ('onscrollend' in window) {
+        window.addEventListener('scrollend', persistCurrent, { passive: true });
+    } else {
+        var settleTimer = null;
+        window.addEventListener('scroll', function () {
+            clearTimeout(settleTimer);
+            settleTimer = setTimeout(persistCurrent, 250);
+        }, { passive: true });
+    }
 
-            clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(function () {
-                Android.onScrollProgress(currentChapterProgress);
-            }, 500);
-        }
-
-        var shouldLoadNext = false;
-        if (infiniteScrollEnabled) {
-            if (window.chapterBoundaries.length > 1) {
-                shouldLoadNext = (currentChapterIdx === (window.chapterBoundaries.length - 1)) && (currentChapterProgress >= loadThreshold);
-            } else {
-                shouldLoadNext = progress >= loadThreshold;
-            }
-        }
-        if (shouldLoadNext && !runtime.loadingNext) {
-            runtime.loadingNext = true;
-            try {
-                Android.loadNextChapter();
-            } catch (e) {
-                console.error('Infinite scroll: Error calling loadNextChapter:', e);
-                runtime.loadingNext = false;
-            }
-        }
-    });
-
-    // Use getBoundingClientRect() + scrollY rather than offsetTop so boundaries
-    // are correct even when dividers sit inside a positioned container.
     window.addChapterBoundary = function (chapterId, startOffset, height) {
         window.chapterBoundaries.push({
             chapterId: chapterId,
@@ -136,6 +153,8 @@
         });
     };
 
+    // getBoundingClientRect() + scrollY (not offsetTop) so offsets are correct inside a positioned
+    // container.
     window.updateChapterBoundaries = function () {
         var dividers = document.querySelectorAll('.__CHAPTER_DIVIDER_CLASS__');
         var scrollY = window.scrollY || window.pageYOffset || 0;
@@ -156,12 +175,33 @@
         });
         window.chapterBoundaries = boundaries;
         runtime.knownDividerCount = dividers.length;
-        runtime.lastBoundaryUpdate = Date.now();
     };
 
-    setTimeout(function () {
-        if (typeof window.updateChapterBoundaries === 'function') {
-            window.updateChapterBoundaries();
+    // Rebuild boundaries on DOM change (append/prepend/trim) or reflow (image/font load), coalesced
+    // to one rebuild per frame.
+    if (infiniteScrollEnabled && document.body) {
+        var rebuildPending = false;
+        function scheduleBoundaryRebuild() {
+            if (rebuildPending) return;
+            rebuildPending = true;
+            requestAnimationFrame(function () {
+                rebuildPending = false;
+                if (typeof window.updateChapterBoundaries === 'function') window.updateChapterBoundaries();
+            });
         }
-    }, 0);
+        if (typeof ResizeObserver === 'function') {
+            runtime.boundaryResizeObserver = new ResizeObserver(scheduleBoundaryRebuild);
+            runtime.boundaryResizeObserver.observe(document.body);
+        }
+        if (typeof MutationObserver === 'function') {
+            // Coalesce to one rebuild per frame rather than scanning querySelectorAll on every
+            // mutation (a chapter insert fires many); updateChapterBoundaries re-reads dividers anyway.
+            runtime.boundaryMutationObserver = new MutationObserver(scheduleBoundaryRebuild);
+            runtime.boundaryMutationObserver.observe(document.body, { childList: true, subtree: true });
+        }
+    }
+
+    requestAnimationFrame(function () {
+        if (typeof window.updateChapterBoundaries === 'function') window.updateChapterBoundaries();
+    });
 })();

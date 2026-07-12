@@ -41,6 +41,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Prevent duplicate custom sources [@mrissaoussama](https://github.com/mrissaoussama) [#294](https://github.com/tsundoku-otaku/tsundoku/pull/294)
 - Added novel extension repos entry into browse settings [@mrissaoussama](https://github.com/mrissaoussama) [#304](https://github.com/tsundoku-otaku/tsundoku/pull/304)
 - Added bulk import/export, block duplicate imports [@mrissaoussama](https://github.com/mrissaoussama) [#303](https://github.com/tsundoku-otaku/tsundoku/pull/303)
+- Tons of adjustments to novelprogress and scroll tracking [@mrissaoussama](https://github.com/mrissaoussama) [#332](https://github.com/tsundoku-otaku/tsundoku/pull/332)
 
 ### Fixed
 - Make unread ch count update after fetching new chapters [@mrissaoussama](https://github.com/mrissaoussama) [#334](https://github.com/tsundoku-otaku/tsundoku/pull/334)

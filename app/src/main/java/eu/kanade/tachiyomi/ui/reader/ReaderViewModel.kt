@@ -724,7 +724,20 @@ class ReaderViewModel @JvmOverloads constructor(
     fun setNovelVisibleChapter(chapter: Chapter?) {
         mutableState.update { it.copy(novelVisibleChapter = chapter) }
         downloadNextChapters()
+
+        // Stamp history on visibility so it lands even if the app is killed before onPause flushes
+        // the read timer. Duration is added by the timer flush, so 0 here only sets last_read.
+        // Dedup by chapter id so repeated same-chapter calls don't each fire a history write.
+        val chapterId = chapter?.id
+        if (!incognitoMode && chapterId != null && chapterId != lastStampedHistoryChapterId) {
+            lastStampedHistoryChapterId = chapterId
+            viewModelScope.launchNonCancellable {
+                upsertHistory.await(HistoryUpdate(chapterId, Date(), 0))
+            }
+        }
     }
+
+    private var lastStampedHistoryChapterId: Long? = null
 
     /**
      * Saves reading progress for novel chapters using percentage (0-100).
@@ -1162,7 +1175,7 @@ class ReaderViewModel @JvmOverloads constructor(
             }
 
             if (detected != null && detected.equals(target, ignoreCase = true)) {
-                logcat(LogPriority.DEBUG) { "translateContent: skipping — source lang matches target ($detected)" }
+                logcat(LogPriority.DEBUG) { "translateContent: skipping - source lang matches target ($detected)" }
                 return content
             }
         }

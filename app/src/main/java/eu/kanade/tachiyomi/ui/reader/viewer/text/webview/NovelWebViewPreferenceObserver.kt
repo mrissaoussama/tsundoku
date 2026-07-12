@@ -2,6 +2,8 @@ package eu.kanade.tachiyomi.ui.reader.viewer.text.webview
 
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
@@ -16,6 +18,7 @@ internal class NovelWebViewPreferenceObserver(
     private val onTtsSettingsChanged: () -> Unit,
 ) {
 
+    @OptIn(FlowPreview::class)
     fun observe() {
         scope.launch {
             merge(
@@ -36,7 +39,7 @@ internal class NovelWebViewPreferenceObserver(
                 preferences.novelCustomCssSnippets.changes().drop(1),
                 preferences.novelHideChapterTitle.changes().drop(1),
                 preferences.novelTextSelectable.changes().drop(1),
-            ).collect { onStyleChanged() }
+            ).debounce(STYLE_DEBOUNCE_MS).collect { onStyleChanged() }
         }
 
         scope.launch {
@@ -64,6 +67,14 @@ internal class NovelWebViewPreferenceObserver(
         }
 
         scope.launch {
+            // Infinite scroll is a structural change (single document vs. multi-chapter appends),
+            // so reload the whole view for a consistent state instead of patching it live.
+            preferences.novelInfiniteScroll.changes()
+                .drop(1)
+                .collect { onChapterReloadRequested() }
+        }
+
+        scope.launch {
             merge(
                 preferences.novelTtsVoice.changes(),
                 preferences.novelTtsSpeed.changes(),
@@ -76,5 +87,6 @@ internal class NovelWebViewPreferenceObserver(
 
     companion object {
         private const val TTS_PREF_COUNT = 3
+        private const val STYLE_DEBOUNCE_MS = 120L
     }
 }

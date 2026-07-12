@@ -35,6 +35,7 @@ import eu.kanade.tachiyomi.ui.reader.viewer.text.shared.ContentPipeline
 import eu.kanade.tachiyomi.ui.reader.viewer.text.shared.ErrorFormatter
 import eu.kanade.tachiyomi.ui.reader.viewer.text.shared.HtmlUtils
 import eu.kanade.tachiyomi.ui.reader.viewer.text.shared.NovelPageLoader
+import eu.kanade.tachiyomi.ui.reader.viewer.text.shared.NovelProgress
 import eu.kanade.tachiyomi.ui.reader.viewer.text.shared.ProcessedContent
 import eu.kanade.tachiyomi.ui.reader.viewer.text.shared.RenderTarget
 import eu.kanade.tachiyomi.ui.reader.viewer.text.shared.ThemeUtils
@@ -81,6 +82,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         const val REMEMBER_MENU_ITEM_ID = 0xBEEF // arbitrary unique ID
         const val ATTR_DATA_EDITABLE = "data-tsundoku-editable"
         const val ID_EDIT_MODE_STYLE = "edit-mode-style"
+        const val SEEK_ECHO_SUPPRESS_MS = 350L
 
         const val TTS_TEXT_EXTRACTION_JS = """
             (function() {
@@ -135,9 +137,32 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     private var isInfiniteScrollPrepend = false
     private val chapterQueue = ChapterQueue<ReaderChapter> { it.chapter.id }
 
+    // Suppresses JS scroll callbacks while a full-document load + scroll restore is in flight, so a
+    // stale event or the programmatic restore scroll can't persist against the new chapter's page.
+    private var isRestoringScroll = false
+    private var scrollRestoreToken = 0
+
+    // Blocks flushing the backward-entry 1f baseline until a real scroll sample replaces it.
+    private var awaitingFirstScrollSample = false
+
+    // Timestamp of the last slider seek; scroll->slider echoes are ignored briefly after so a stale
+    // async onScrollUpdate can't overwrite the value the user is dragging to.
+    private var lastUserSeekAt = 0L
+
+    // Latched once the novel has no further chapter to append.
+    private var reachedNovelEnd = false
+
+    // Suppresses auto-append for NEXT_LOAD_RETRY_COOLDOWN_MS after a failure; the JS load guard
+    // clears each finally, so without this a chapter that keeps timing out re-fires every frame.
+    private var lastNextLoadFailedAt = 0L
+
+    // True while a delayed JS-latch release is queued for the current cooldown, so the JS load latch
+    // is held (not re-fired every scroll frame) and released exactly once when the cooldown ends.
+    private var cooldownReleaseScheduled = false
+
     // Lightweight property accessors so existing call sites keep working.
     // Mutations should go through chapterQueue's methods (append / prepend /
-    // removeFirst / clear) — they keep the cursor and id-set in sync.
+    // removeFirst / clear) - they keep the cursor and id-set in sync.
     private val loadedChapters: List<ReaderChapter> get() = chapterQueue.all
     private val loadedChapterIds: Set<Long> get() = chapterQueue.loadedIds
     private var currentChapterIndex: Int
@@ -163,7 +188,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
     private val prefetchCompletedSignal = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
-    // Survives ttsController.stop() — set when TTS triggers a non-inf-scroll chapter load.
+    // Survives ttsController.stop() - set when TTS triggers a non-inf-scroll chapter load.
     private var pendingTtsAutoStartOnLoad = false
 
     // True only while loadHtmlContent() has called loadDataWithBaseURL for real chapter content
@@ -224,6 +249,15 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     e.x / container.width.toFloat(),
                     e.y / container.height.toFloat(),
                 )
+
+                // Center-only mode: navigator.getAction defaults every unmatched tap to MENU, so
+                // gate the toggle on the center rect ourselves (parity with the TextView viewer).
+                if (preferences.navigationModeNovel.get() == ReaderPreferences.TapZones.size) {
+                    if (pos.x in 0.4f..0.6f && pos.y in 0.4f..0.6f) {
+                        activity.toggleMenu()
+                    }
+                    return true
+                }
 
                 when (navigator.getAction(pos)) {
                     eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.MENU -> {
@@ -294,7 +328,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
         // NovelConfig swallows the initial navigationMode emit, so this
         // listener now fires only when the user actually changes the nav-mode
-        // preference. Always show the preview in that case — opening the
+        // preference. Always show the preview in that case - opening the
         // reader plainly should NOT re-pop the overlay.
         config.navigationModeChangedListener = {
             activity.binding.navigationOverlay.setNavigation(config.navigator, true)
@@ -434,7 +468,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     /**
      * Remove all chapters already read (0..ttsPlaybackChapterIndex) from the DOM and Kotlin state,
      * then start TTS fresh from the beginning of the next chapter. Used in inf-scroll mode when
-     * TTS finishes the last chunk and the next chapter is already appended to the DOM — avoids the
+     * TTS finishes the last chunk and the next chapter is already appended to the DOM - avoids the
      * unreliable scroll-based viewport handoff entirely.
      */
     private fun unloadReadChaptersAndStartNextTts() {
@@ -584,6 +618,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     request: android.webkit.WebResourceRequest?,
                 ): android.webkit.WebResourceResponse? {
                     val url = request?.url?.toString() ?: return null
+                    styler.interceptFont(url)?.let { return it }
                     val fallbackChapterId =
                         currentPage?.chapter?.chapter?.id ?: currentChapters?.currChapter?.chapter?.id
                     val fallbackLoader = activity.viewModel.state.value.viewerChapters?.currChapter?.pageLoader
@@ -605,7 +640,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                         toggleEditMode(true)
                     }
                     // isLoadingRealChapter distinguishes real chapter loads from
-                    // showLoadingIndicator() loads — both fire onPageFinished(about:blank)
+                    // showLoadingIndicator() loads - both fire onPageFinished(about:blank)
                     // when the chapter URL is relative, making the URL useless as a guard.
                     if (isLoadingRealChapter) {
                         isLoadingRealChapter = false
@@ -685,50 +720,77 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     }
 
     private fun restoreScrollPosition() {
-        currentPage?.let { page ->
-            val savedProgress = page.chapter.chapter.last_page_read
-            val isRead = page.chapter.chapter.read
+        val page = currentPage ?: run {
+            isRestoringScroll = false
+            return
+        }
+        val savedProgress = page.chapter.chapter.last_page_read
+        val isRead = page.chapter.chapter.read
 
-            logcat(LogPriority.DEBUG) {
-                "NovelWebViewViewer: Restoring progress, savedProgress=$savedProgress, isRead=$isRead for ${page.chapter.chapter.name}"
-            }
+        val shouldRestore = if (!isRead) {
+            savedProgress > 0 && savedProgress <= 100
+        } else {
+            libraryPreferences.novelReadProgress100.get() && savedProgress > 0 && savedProgress <= 100
+        }
+        if (shouldRestore) {
+            val progress = savedProgress / 100f
+            lastSavedProgress = progress
+            activity.onNovelProgressChanged(progress)
+            isRestoringScroll = true
+            val token = ++scrollRestoreToken
 
-            val shouldRestore = if (!isRead) {
-                savedProgress > 0 && savedProgress <= 100
-            } else {
-                libraryPreferences.novelReadProgress100.get() && savedProgress > 0 && savedProgress <= 100
-            }
-            if (shouldRestore) {
-                val progress = savedProgress / 100f
-                lastSavedProgress = progress
-
-                webView.postDelayed({
-                    val js = """
-                        (function() {
-                            function scrollable() {
-                                var docHeight = Math.max(
-                                    document.documentElement.scrollHeight,
-                                    document.body ? document.body.scrollHeight : 0
-                                );
-                                var viewport = window.innerHeight || document.documentElement.clientHeight;
-                                return docHeight - viewport;
+            // Apply the saved ratio once the content has a scrollable range: immediately if laid
+            // out, else a ResizeObserver waits for the body height. onScrollRestoreComplete lifts
+            // the guard when done.
+            val js = """
+                (function() {
+                    var target = $progress;
+                    var token = $token;
+                    function range() {
+                        var docHeight = Math.max(
+                            document.documentElement.scrollHeight,
+                            document.body ? document.body.scrollHeight : 0
+                        );
+                        var viewport = window.innerHeight || document.documentElement.clientHeight;
+                        return docHeight - viewport;
+                    }
+                    function done() {
+                        if (window.Android && window.Android.onScrollRestoreComplete) {
+                            window.Android.onScrollRestoreComplete(token);
+                        }
+                    }
+                    function apply() {
+                        var r = range();
+                        if (r > 0) { window.scrollTo(0, r * target); return true; }
+                        return false;
+                    }
+                    if (apply()) {
+                        requestAnimationFrame(function() { apply(); done(); });
+                        return;
+                    }
+                    // Short chapter fits the viewport: finish now, keep observing for a late reflow.
+                    if (typeof ResizeObserver === 'function' && document.body) {
+                        var ro = new ResizeObserver(function() {
+                            if (apply()) {
+                                ro.disconnect();
+                                requestAnimationFrame(function() { apply(); });
                             }
-                            var range = scrollable();
-                            if (range > 0) {
-                                window.scrollTo(0, range * $progress);
-                            } else {
-                                setTimeout(function() {
-                                    window.scrollTo(0, scrollable() * $progress);
-                                }, 200);
-                            }
-                        })();
-                    """
-                    webView.evaluateJavascript(js, null)
-                }, 100)
-            } else {
-                webView.scrollTo(0, 0)
-                lastSavedProgress = 0f
-            }
+                        });
+                        ro.observe(document.body);
+                    }
+                    requestAnimationFrame(function() { done(); });
+                })();
+            """
+            evaluateJavascriptSafe(js)
+            webView.postDelayed({ liftRestoreGuard(token) }, 3000)
+        } else {
+            isRestoringScroll = true
+            val token = ++scrollRestoreToken
+            webView.scrollTo(0, 0)
+            lastSavedProgress = 0f
+            activity.onNovelProgressChanged(0f)
+            // Hold the guard past the scrollTo(0,0) settle so it can't persist 0 over a read chapter.
+            webView.postDelayed({ liftRestoreGuard(token) }, 300)
         }
     }
 
@@ -740,7 +802,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         // until onPageFinished restores or the user scrolls. Saving 0 here on an early
         // teardown (orientation lock recreates the activity before restore runs) would
         // wipe the chapter's saved progress.
-        if (lastSavedProgress > 0f) saveProgress()
+        if (lastSavedProgress > 0f && !awaitingFirstScrollSample) saveProgress()
 
         ttsController.destroy()
         imageCache.clear()
@@ -764,9 +826,22 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         }
     }
 
+    /**
+     * Persist the latest live progress immediately. The JS debounce timer can be throttled while
+     * the WebView is backgrounded, so the activity's onPause calls this to avoid losing the tail.
+     */
+    fun flushProgress() {
+        if (awaitingFirstScrollSample) return
+        if (lastSavedProgress > 0f && NovelProgress.progressToPercent(lastSavedProgress) != lastPersistedPercent) {
+            saveProgress()
+        }
+    }
+
+    private var lastPersistedPercent = -1
     private fun saveProgress() {
         currentPage?.let { page ->
-            val progressValue = (lastSavedProgress * 100).toInt().coerceIn(0, 100)
+            val progressValue = NovelProgress.progressToPercent(lastSavedProgress)
+            lastPersistedPercent = progressValue
             activity.saveNovelProgress(page, progressValue)
             logcat(LogPriority.DEBUG) { "NovelWebViewViewer: Saving progress $progressValue%" }
         }
@@ -1041,6 +1116,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     ) {
         val plainTextMode = processed.isPlainText
         val escapedContent = quoteForJson(processed.text)
+        val token = ++scrollRestoreToken
 
         val js = """
             (function() {
@@ -1069,23 +1145,31 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                 document.body.insertBefore(chapterElement, firstChild);
                 document.body.insertBefore(divider, chapterElement);
 
-                setTimeout(function() {
+                // Reading scrollHeight inside rAF forces the pending layout so the delta is exact.
+                // Pin the reading position, rebuild boundaries, then lift the guard.
+                requestAnimationFrame(function() {
                     var newHeight = document.body.scrollHeight;
                     var diff = newHeight - oldHeight;
                     if (diff > 0) {
                         window.scrollTo(0, oldScrollY + diff);
                     }
-
                     if (typeof window.updateChapterBoundaries === 'function') {
                         window.updateChapterBoundaries();
                     }
-                }, 10);
+                    if (window.Android && window.Android.onScrollRestoreComplete) {
+                        window.Android.onScrollRestoreComplete($token);
+                    }
+                });
             })();
         """.trimIndent()
 
+        // Guard scroll callbacks while the prepend shifts every startOffset, JS lifts it when done.
+        isRestoringScroll = true
         evaluateJavascriptSafe(js) {
             styler.injectScript { buildTsundokuScript() }
         }
+        // JS lift runs in rAF (paused while backgrounded); fallback so the guard can't stick forever.
+        webView.postDelayed({ liftRestoreGuard(token) }, 3000)
 
         logcat(LogPriority.DEBUG) {
             "NovelWebViewViewer: Prepended chapter $chapterId (${loadedChapterIds.size} total)"
@@ -1142,6 +1226,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
             styler.injectScript { buildTsundokuScript() }
         }
 
+        // A chapter was appended, so the end-of-novel verdict is stale.
+        reachedNovelEnd = false
+        setJsNoMoreChapters(false)
+
         logcat(LogPriority.DEBUG) { "NovelWebViewViewer: Appended chapter $chapterId (${loadedChapterIds.size} total)" }
     }
 
@@ -1160,8 +1248,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         chapterQueue.clear()
         currentChapterIndex = 0
 
-        // Inputs are gathered on Main (touch viewer state), but the heavy work — the image-URL
-        // regex scan and the Jsoup parse + full-document string build — runs off the main thread.
+        // Inputs are gathered on Main (touch viewer state), but the heavy work - the image-URL
+        // regex scan and the Jsoup parse + full-document string build - runs off the main thread.
         // For large chapters this was a multi-MB alloc + DOM parse on the UI thread (frame skips).
         val input = NovelWebViewDocumentBuilder.DocumentInput(
             processed = processed,
@@ -1182,6 +1270,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         // the loading-indicator page (which also fires onPageFinished with url="about:blank").
         isLoadingRealChapter = true
         webChapterContentReady = false
+        // New document: hold scroll callbacks and clear the baseline so a stale flush can't write
+        // the previous chapter's percent here, restoreScrollPosition seeds the real value.
+        isRestoringScroll = true
+        lastSavedProgress = 0f
+        lastPersistedPercent = -1
+        reachedNovelEnd = false
         webView.loadDataWithBaseURL(resolveWebViewBaseUrl(chapterPath), html, "text/html", "UTF-8", null)
     }
 
@@ -1522,7 +1616,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         @JavascriptInterface
         fun onScrollProgress(progress: Float) {
             activity.runOnUiThread {
+                if (isRestoringScroll) return@runOnUiThread
+                awaitingFirstScrollSample = false
                 lastSavedProgress = progress
+                if (NovelProgress.progressToPercent(progress) == lastPersistedPercent) return@runOnUiThread
                 saveProgress()
             }
         }
@@ -1530,34 +1627,63 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         @JavascriptInterface
         fun onScrollUpdate(progress: Float) {
             activity.runOnUiThread {
+                if (isRestoringScroll) return@runOnUiThread
+                // Don't let a delayed echo from a slider seek overwrite the finger's live position,
+                // nor let it clobber lastSavedProgress with a stale in-flight value.
+                if (System.currentTimeMillis() - lastUserSeekAt < SEEK_ECHO_SUPPRESS_MS) return@runOnUiThread
+                awaitingFirstScrollSample = false
                 lastSavedProgress = progress
                 activity.onNovelProgressChanged(progress)
             }
         }
 
         @JavascriptInterface
-        fun onChapterScrollUpdate(chapterIndex: Int, progress: Float) {
+        fun onChapterScrollUpdate(chapterId: String, @Suppress("UNUSED_PARAMETER") progress: Float) {
             activity.runOnUiThread {
-                if (chapterIndex != currentChapterIndex && chapterIndex >= 0 && chapterIndex < loadedChapters.size) {
+                if (isRestoringScroll) return@runOnUiThread
+                // Fired edge-triggered by the JS (only on a real change). Resolve by stable chapter
+                // id, not index: DOM boundaries and chapterQueue briefly disagree after a prepend.
+                val id = chapterId.toLongOrNull() ?: return@runOnUiThread
+                val chapterIndex = loadedChapters.indexOfFirst { it.chapter.id == id }
+                if (chapterIndex != currentChapterIndex && chapterIndex >= 0) {
+                    // Skip if the target has no page yet: advancing the index without currentPage
+                    // would persist the new chapter's progress against the old page.
+                    val newPage = loadedChapters.getOrNull(chapterIndex)?.pages?.firstOrNull() ?: return@runOnUiThread
                     val oldIndex = currentChapterIndex
                     currentChapterIndex = chapterIndex
-                    logcat(LogPriority.DEBUG) {
-                        "NovelWebViewViewer: onChapterScrollUpdate chapterIndex=$chapterIndex progress=$progress ts=${System.currentTimeMillis()} ttsPlaybackChapterIndex=${ttsController.ttsPlaybackChapterIndex} (changed from $oldIndex)"
-                    }
+
+                    // Moving forward marks the outgoing chapter (and any skipped) read, per-chapter
+                    // progress never snaps to 100 in the DOM so onScrollProgress can't.
+                    NovelProgress.forwardChaptersToMarkRead(oldIndex, chapterIndex, loadedChapters.size)
+                        .forEach { idx ->
+                            loadedChapters.getOrNull(idx)?.pages?.firstOrNull()?.let { page ->
+                                activity.saveNovelProgress(page, 100)
+                                logcat(LogPriority.DEBUG) {
+                                    "NovelWebViewViewer: Marking chapter index $idx as 100% (moved forward)"
+                                }
+                            }
+                        }
 
                     activity.viewModel.setNovelVisibleChapter(loadedChapters.getOrNull(chapterIndex)?.chapter)
 
-                    loadedChapters.getOrNull(chapterIndex)?.pages?.firstOrNull()?.let { page ->
-                        currentPage = page
-                        activity.onPageSelected(page)
-                    }
+                    currentPage = newPage
+                    activity.onPageSelected(newPage)
 
-                    lastSavedProgress = progress
-                    activity.onNovelProgressChanged(progress)
+                    // Directional baseline so a flush before the next scroll event isn't wrong.
+                    // The next onScrollUpdate replaces it with the real position.
+                    lastSavedProgress = if (chapterIndex > oldIndex) 0f else 1f
+                    lastPersistedPercent = -1
+                    awaitingFirstScrollSample = true
 
                     updateChapterMetaJs()
                 }
             }
+        }
+
+        @JavascriptInterface
+        fun onScrollRestoreComplete(token: Int) {
+            // Only the latest restore may lift the guard; ignore stale completions.
+            activity.runOnUiThread { liftRestoreGuard(token) }
         }
 
         @JavascriptInterface
@@ -1575,21 +1701,34 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                 }
                 if (!preferences.novelInfiniteScroll.get()) {
                     activity.loadNextChapter()
+                } else if (reachedNovelEnd) {
+                    setJsNoMoreChapters(true)
                 } else if (ttsController.isTtsAutoPlay) {
-                    // Don't append to DOM while TTS is active — TTS drives its own appends.
-                    // Instead, pre-fetch and cache the next chapter so it's ready instantly
-                    // when TTS finishes the current chapter and calls appendNextChapterIfAvailable.
+                    // Don't append while TTS is active, pre-fetch so the next chapter is ready when
+                    // TTS calls appendNextChapterIfAvailable.
                     if (handoffState.isIdle) {
-                        logcat(LogPriority.DEBUG) {
-                            "NovelWebViewViewer: loadNextChapter — TTS active, pre-fetching next chapter"
-                        }
                         scope.launch { preFetchNextChapterForTts() }
                     }
+                } else if (System.currentTimeMillis() - lastNextLoadFailedAt < NovelProgress.NEXT_LOAD_RETRY_COOLDOWN_MS) {
+                    // Keep the JS load latch held (JS set it before this call) so it stops re-firing
+                    // loadNextChapter every scroll frame during the cooldown; schedule a single
+                    // release for when the cooldown expires so it can't become permanent.
+                    if (!cooldownReleaseScheduled) {
+                        cooldownReleaseScheduled = true
+                        val remaining = NovelProgress.NEXT_LOAD_RETRY_COOLDOWN_MS -
+                            (System.currentTimeMillis() - lastNextLoadFailedAt)
+                        webView.postDelayed({
+                            cooldownReleaseScheduled = false
+                            setJsLoadingNext()
+                        }, remaining.coerceAtLeast(0))
+                    }
+                    logcat(LogPriority.DEBUG) { "NovelWebViewViewer: loadNextChapter ignored, in failure cooldown" }
                 } else if (!isLoadingNext) {
                     isLoadingNext = true
                     scope.launch {
                         try {
-                            appendNextChapterIfAvailable()
+                            val ok = appendNextChapterIfAvailable()
+                            lastNextLoadFailedAt = if (ok) 0L else System.currentTimeMillis()
                         } finally {
                             isLoadingNext = false
                             setJsLoadingNext()
@@ -1646,6 +1785,25 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     private fun setJsLoadingNext() {
         evaluateJavascriptSafe(
             "(function(){ if (window.$TSUNDOKU_OBJECT_NAME && window.$TSUNDOKU_OBJECT_NAME.runtime && window.$TSUNDOKU_OBJECT_NAME.runtime.setLoadingNext) window.$TSUNDOKU_OBJECT_NAME.runtime.setLoadingNext(false); })();",
+            null,
+        )
+    }
+
+    private fun setJsNoMoreChapters(value: Boolean) {
+        evaluateJavascriptSafe(
+            "(function(){ if (window.$TSUNDOKU_OBJECT_NAME && window.$TSUNDOKU_OBJECT_NAME.runtime && window.$TSUNDOKU_OBJECT_NAME.runtime.setNoMoreChapters) window.$TSUNDOKU_OBJECT_NAME.runtime.setNoMoreChapters($value); })();",
+            null,
+        )
+    }
+
+    // Lift the scroll-restore guard for [token] only if it's still the latest restore, and tell the
+    // page to re-emit onChapterScrollUpdate so a chapter switch dropped while the guard was up isn't
+    // lost (the JS callback is edge-triggered and won't re-fire for the same idx on its own).
+    private fun liftRestoreGuard(token: Int) {
+        if (token != scrollRestoreToken) return
+        isRestoringScroll = false
+        evaluateJavascriptSafe(
+            "(function(){ if (window.$TSUNDOKU_OBJECT_NAME && window.$TSUNDOKU_OBJECT_NAME.runtime && window.$TSUNDOKU_OBJECT_NAME.runtime.resetChapterTracking) window.$TSUNDOKU_OBJECT_NAME.runtime.resetChapterTracking(); })();",
             null,
         )
     }
@@ -1746,7 +1904,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
     /**
      * Append the next chapter to the WebView, using the pre-fetched cache if
-     * available. [silent] suppresses the inline "Loading…" banner — set it
+     * available. [silent] suppresses the inline "Loading…" banner - set it
      * when this is invoked from the TTS auto-advance path so the user doesn't
      * see the banner flash during TTS chapter handoff (errors still surface
      * via `showInlineError`). The JS-driven scroll trigger path uses the
@@ -1783,13 +1941,13 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
             logcat(LogPriority.DEBUG) { "NovelWebViewViewer: TTS append waiting on in-flight pre-fetch" }
             withTimeoutOrNull(5_000L) { prefetchCompletedSignal.first() }
             if (handoffState.cachedOrNull != null) {
-                // Cache populated while we waited — recurse to take the cache path.
+                // Cache populated while we waited - recurse to take the cache path.
                 return appendNextChapterIfAvailable(silent = true)
             }
             // Timed out: the prefetch is still running but we're proceeding with a
             // cold fetch. Clear PreFetching now so the racing prefetch coroutine
             // cannot later set handoffState = Cached for a chapter we're about to
-            // load here — that stale entry would confuse the *next* TTS handoff.
+            // load here - that stale entry would confuse the *next* TTS handoff.
             handoffState = TtsHandoffState.Idle
         }
 
@@ -1806,7 +1964,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
         val preparedChapter = activity.viewModel.prepareNextChapterForInfiniteScroll(anchor) ?: run {
             logcat(LogPriority.WARN) { "NovelWebViewViewer: No next chapter available after ${anchor.chapter.name}" }
-            inlineFeedback.showInlineError("No next chapter available", isPrepend = false)
+            // Surface once, then latch so the scroll handler stops re-triggering at the last chapter.
+            if (!reachedNovelEnd) inlineFeedback.showInlineError("No next chapter available", isPrepend = false)
+            reachedNovelEnd = true
+            setJsNoMoreChapters(true)
             return false
         }
         val nextId = preparedChapter.chapter.id ?: run {
@@ -1915,23 +2076,47 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     fun isAutoScrollActive(): Boolean = isAutoScrolling
 
     fun getProgressPercent(): Int {
-        return (lastSavedProgress * 100).toInt().coerceIn(0, 100)
+        return NovelProgress.progressToPercent(lastSavedProgress)
     }
 
     fun setProgressPercent(percent: Int) {
         val progress = percent.coerceIn(0, 100)
         lastSavedProgress = progress / 100f
+        // An explicit user seek is a real sample, so drop the backward-entry baseline hold or a
+        // flush on pause right after would skip persisting this position.
+        awaitingFirstScrollSample = false
+        // Suppress the scroll->slider echo so the async, throttled onScrollUpdate from this
+        // programmatic scroll can't fight the user's finger.
+        lastUserSeekAt = System.currentTimeMillis()
 
         evaluateJavascriptSafe(
             """
             (function() {
-                var scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
-                var targetScroll = scrollHeight * $progress / 100;
-                window.scrollTo(0, targetScroll);
-                // A programmatic scrollTo from the slider does not reliably fire the page's
-                // 'scroll' listener, so the infinite-scroll threshold check (which lives in
-                // that listener) never runs. Dispatch one explicitly so a slider jump to the
-                // end of the last loaded chapter loads the next chapter just like a manual scroll.
+                var frac = $progress / 100;
+                var viewport = window.innerHeight || document.documentElement.clientHeight;
+                var boundaries = window.chapterBoundaries || [];
+                if (boundaries.length > 1) {
+                    // The slider shows per-chapter progress, so seek within the current chapter
+                    // (not the whole loaded document) or the landing point won't match the display.
+                    var scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+                    var idx = 0;
+                    for (var i = 0; i < boundaries.length; i++) {
+                        if (scrollTop >= boundaries[i].startOffset) idx = i; else break;
+                    }
+                    var b = boundaries[idx];
+                    var isLast = idx === boundaries.length - 1;
+                    var effectiveHeight = Math.max(b.height - (isLast ? viewport : 0), 1);
+                    window.scrollTo(0, b.startOffset + effectiveHeight * frac);
+                } else {
+                    var docHeight = Math.max(
+                        document.documentElement.scrollHeight,
+                        document.body ? document.body.scrollHeight : 0
+                    );
+                    window.scrollTo(0, (docHeight - viewport) * frac);
+                }
+                // A programmatic scrollTo does not reliably fire the page's 'scroll' listener, so the
+                // infinite-scroll threshold check (which lives there) never runs. Dispatch one so a
+                // slider jump to the chapter end still triggers the next-chapter load.
                 window.dispatchEvent(new Event('scroll'));
             })();
             """.trimIndent(),
