@@ -10,6 +10,7 @@ import eu.kanade.tachiyomi.data.backup.models.BackupManga
 import eu.kanade.tachiyomi.data.backup.models.BackupTracking
 import tachiyomi.data.Database
 import tachiyomi.data.MemoColumnAdapter
+import tachiyomi.data.AlternativeTitlesColumnAdapter
 import tachiyomi.data.StringListColumnAdapter
 import tachiyomi.data.UpdateStrategyColumnAdapter
 import tachiyomi.domain.category.interactor.GetCategories
@@ -155,7 +156,7 @@ class MangaRestorer(
             notes = manga.notes,
             alternativeTitles = manga.alternativeTitles.takeIf {
                 it.isNotEmpty()
-            }?.let { StringListColumnAdapter.encode(it) },
+            }?.let { AlternativeTitlesColumnAdapter.encode(it) },
             isNovel = manga.isNovel,
             memo = manga.memo.let(MemoColumnAdapter::encode),
         )

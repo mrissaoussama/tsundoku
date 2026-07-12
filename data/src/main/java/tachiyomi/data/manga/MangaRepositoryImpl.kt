@@ -15,6 +15,7 @@ import mihon.core.common.extensions.EMPTY
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.data.Database
 import tachiyomi.data.MemoColumnAdapter
+import tachiyomi.data.AlternativeTitlesColumnAdapter
 import tachiyomi.data.StringListColumnAdapter
 import tachiyomi.data.UpdateStrategyColumnAdapter
 import tachiyomi.data.subscribeToList
@@ -29,6 +30,7 @@ import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.manga.model.MangaWithChapterCount
 import tachiyomi.domain.manga.repository.DuplicateGroup
 import tachiyomi.domain.manga.repository.DuplicatePair
+import tachiyomi.domain.manga.repository.FavoriteMetadataMatches
 import tachiyomi.domain.manga.repository.MangaRepository
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -820,6 +822,7 @@ class MangaRepositoryImpl(
             chapterCountThreshold = spec.filterChapterCountThreshold.toLong(),
             excludedSourceIds = excluded,
             searchTerm = spec.searchTerm,
+            searchAltTitles = if (spec.searchAlternativeTitles) 1L else 0L,
             includedTagsCsv = spec.includedTagsCsv,
             sortType = spec.sortType.toLong(),
             sortAscending = if (spec.sortAscending) 1L else 0L,
@@ -1225,8 +1228,13 @@ class MangaRepositoryImpl(
         }.subscribeToList()
     }
 
-    override suspend fun getDuplicateLibraryManga(id: Long, title: String): List<MangaWithChapterCount> {
-        return database.mangasQueries.getDuplicateLibraryManga(id, title) {
+    override suspend fun getDuplicateLibraryManga(
+        id: Long,
+        title: String,
+        altTitles: List<String>,
+    ): List<MangaWithChapterCount> {
+        val altTitlesEncoded = altTitles.takeIf { it.isNotEmpty() }?.let(AlternativeTitlesColumnAdapter::encode).orEmpty()
+        return database.mangasQueries.getDuplicateLibraryManga(id, title, altTitlesEncoded) {
                 id,
                 source,
                 url,
@@ -1318,20 +1326,25 @@ class MangaRepositoryImpl(
         matchAuthor: ((String) -> Boolean)?,
         matchArtist: ((String) -> Boolean)?,
         matchDescription: ((String) -> Boolean)?,
-    ): Triple<Set<Long>, Set<Long>, Set<Long>> {
+        matchAltTitle: ((List<String>) -> Boolean)?,
+    ): FavoriteMetadataMatches {
         val authorIds = HashSet<Long>()
         val artistIds = HashSet<Long>()
         val descriptionIds = HashSet<Long>()
+        val altTitleIds = HashSet<Long>()
         // Side-effecting mapper: each row's strings are matched and discarded as the cursor
         // streams, so the full favorite metadata is never held in memory at once.
-        database.mangasQueries.getFavoriteMetadataForSearch { id, author, artist, description ->
+        database.mangasQueries.getFavoriteMetadataForSearch { id, author, artist, description, altTitles ->
             if (matchAuthor != null && author != null && matchAuthor(author)) authorIds.add(id)
             if (matchArtist != null && artist != null && matchArtist(artist)) artistIds.add(id)
             if (matchDescription != null && description != null && matchDescription(description)) {
                 descriptionIds.add(id)
             }
+            if (matchAltTitle != null && !altTitles.isNullOrEmpty() && matchAltTitle(altTitles)) {
+                altTitleIds.add(id)
+            }
         }.awaitAsList()
-        return Triple(authorIds, artistIds, descriptionIds)
+        return FavoriteMetadataMatches(authorIds, artistIds, descriptionIds, altTitleIds)
     }
 
     override suspend fun getFavoriteIdAndTitle(): List<Pair<Long, String>> {
@@ -1765,7 +1778,7 @@ class MangaRepositoryImpl(
                     description = value.description,
                     genre = genre?.let(StringListColumnAdapter::encode),
                     title = value.title,
-                    alternativeTitles = value.alternativeTitles?.let(StringListColumnAdapter::encode),
+                    alternativeTitles = value.alternativeTitles?.let(AlternativeTitlesColumnAdapter::encode),
                     status = value.status,
                     thumbnailUrl = value.thumbnailUrl,
                     favorite = value.favorite,

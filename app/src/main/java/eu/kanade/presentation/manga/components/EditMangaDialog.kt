@@ -15,10 +15,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -30,6 +32,7 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +40,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.TabTitle
@@ -364,6 +369,8 @@ private fun EditAltTitlesTab(
     onSwapMainTitle: ((String, List<String>) -> Unit)? = null,
 ) {
     var newTitle by remember { mutableStateOf("") }
+    var pendingDelete by remember { mutableStateOf<Int?>(null) }
+    val clipboardManager = LocalClipboardManager.current
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -410,6 +417,14 @@ private fun EditAltTitlesTab(
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                    IconButton(
+                        onClick = { clipboardManager.setText(AnnotatedString(title)) },
+                    ) {
+                        Icon(
+                            Icons.Outlined.ContentCopy,
+                            contentDescription = stringResource(MR.strings.action_copy_to_clipboard),
+                        )
+                    }
                     if (onSwapMainTitle != null && mainTitle.isNotEmpty()) {
                         IconButton(
                             onClick = {
@@ -428,9 +443,7 @@ private fun EditAltTitlesTab(
                         }
                     }
                     IconButton(
-                        onClick = {
-                            onAltTitlesChange(altTitles.toMutableList().apply { removeAt(index) })
-                        },
+                        onClick = { pendingDelete = index },
                     ) {
                         Icon(
                             Icons.Outlined.Delete,
@@ -441,5 +454,33 @@ private fun EditAltTitlesTab(
                 }
             }
         }
+    }
+
+    pendingDelete?.let { index ->
+        val title = altTitles.getOrNull(index)
+        if (title == null) {
+            pendingDelete = null
+            return@let
+        }
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(stringResource(MR.strings.action_delete)) },
+            text = { Text(title) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onAltTitlesChange(altTitles.toMutableList().apply { removeAt(index) })
+                        pendingDelete = null
+                    },
+                ) {
+                    Text(stringResource(MR.strings.action_ok))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(MR.strings.action_cancel))
+                }
+            },
+        )
     }
 }

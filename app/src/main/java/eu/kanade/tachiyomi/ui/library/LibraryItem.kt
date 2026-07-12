@@ -103,10 +103,11 @@ data class LibraryItem(
         }
         if (inMemoryMatch) return true
 
-        // Author/artist/description/chapter live in the DB; their id-sets cover the whole query.
+        // Author/artist/description/alt-title/chapter live in the DB; their id-sets cover the whole query.
         return metadataMatchIds.author.contains(id) ||
             metadataMatchIds.artist.contains(id) ||
             metadataMatchIds.description.contains(id) ||
+            metadataMatchIds.altTitle.contains(id) ||
             chapterMatchIds.contains(id)
     }
 

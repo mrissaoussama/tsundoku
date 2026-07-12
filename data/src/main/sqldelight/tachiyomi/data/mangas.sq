@@ -278,7 +278,15 @@ SELECT M._id, M.source, M.url, M.artist, M.author, M.description, M.genre, M.tit
 FROM mangas M
 WHERE M.favorite = 1
 AND M._id != :id
-AND lower(trim(M.title)) = lower(trim(:title))
+AND (
+    lower(trim(M.title)) = lower(trim(:title))
+    -- :title is a full alt-title entry of the candidate (entries are U+001F-joined)
+    OR (M.alternative_titles IS NOT NULL AND M.alternative_titles != ''
+        AND instr(char(31) || lower(M.alternative_titles) || char(31), char(31) || lower(trim(:title)) || char(31)) > 0)
+    -- candidate's title is a full alt-title entry of the incoming manga
+    OR (:altTitles != ''
+        AND instr(char(31) || lower(:altTitles) || char(31), char(31) || lower(trim(M.title)) || char(31)) > 0)
+)
 LIMIT 10;
 
 -- Find all duplicate groups with exact title match (case-insensitive, trimmed)
@@ -298,7 +306,7 @@ ORDER BY duplicate_count DESC;
 -- this cursor and matches in Kotlin (one scan covers all three fields, supports regex, and
 -- avoids LIKE wildcard/escaping pitfalls).
 getFavoriteMetadataForSearch:
-SELECT _id, author, artist, description
+SELECT _id, author, artist, description, alternative_titles
 FROM mangas
 WHERE favorite = 1;
 
@@ -359,7 +367,7 @@ ORDER BY totalCount DESC;
 -- Uses same columns to keep SQLDelight column adapters working
 getMangaWithCountsLight:
 SELECT
-    M._id, M.source, M.url, M.artist, M.author, NULL AS description, NULL AS genre, M.title, NULL AS alternative_titles, M.status, M.thumbnail_url, M.favorite, M.last_update, M.next_update, M.initialized, M.viewer, M.chapter_flags, M.cover_last_modified, M.date_added, M.update_strategy, M.calculate_interval, M.last_modified_at, M.favorite_modified_at, M.version, M.is_syncing, '' AS notes, M.is_novel,
+    M._id, M.source, M.url, M.artist, M.author, NULL AS description, NULL AS genre, M.title, M.alternative_titles, M.status, M.thumbnail_url, M.favorite, M.last_update, M.next_update, M.initialized, M.viewer, M.chapter_flags, M.cover_last_modified, M.date_added, M.update_strategy, M.calculate_interval, M.last_modified_at, M.favorite_modified_at, M.version, M.is_syncing, '' AS notes, M.is_novel,
     COALESCE(CC.totalCount, 0) AS totalCount,
     COALESCE(CC.readCount, 0) AS readCount
 FROM mangas M
@@ -677,6 +685,7 @@ WHERE M.favorite = 1
     OR M.title LIKE '%' || :searchTerm || '%' ESCAPE '\'
     OR M.url LIKE '%' || :searchTerm || '%' ESCAPE '\'
     OR coalesce(M.genre, '') LIKE '%' || :searchTerm || '%' ESCAPE '\'
+    OR (:searchAltTitles = 1 AND coalesce(M.alternative_titles, '') LIKE '%' || :searchTerm || '%' ESCAPE '\')
   )
   -- Included-tag prefilter (superset of the exact in-memory match): keep rows whose genre
   -- contains ANY of the U+001F-joined lowercased tags. The CTE splits the param into rows so an

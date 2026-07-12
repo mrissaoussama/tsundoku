@@ -186,6 +186,8 @@ class LibraryPreferences(
     val searchChapterNames: Preference<Boolean> = preferenceStore.getBoolean("pref_search_chapter_names", false)
     val searchChapterContent: Preference<Boolean> = preferenceStore.getBoolean("pref_search_chapter_content", false)
     val searchByUrl: Preference<Boolean> = preferenceStore.getBoolean("pref_search_by_url", false)
+    val searchAlternativeTitles: Preference<Boolean> =
+        preferenceStore.getBoolean("pref_search_alternative_titles", true)
     val useRegexSearch: Preference<Boolean> = preferenceStore.getBoolean("pref_use_regex_search", false)
 
     fun filterChapterCount() = preferenceStore.getEnum(
