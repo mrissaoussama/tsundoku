@@ -1015,7 +1015,15 @@ class ReaderViewModel @JvmOverloads constructor(
         val endTime = Date()
         val sessionReadDuration = chapterReadStartTime?.let { endTime.time - it } ?: 0
 
-        upsertHistory.await(HistoryUpdate(chapterId, endTime, sessionReadDuration))
+        // Novels stamp last_read on chapter entry via setNovelVisibleChapter, which owns recency.
+        // Re-stamping it here (on a chapter switch or pause flush) can push the just-left chapter's
+        // last_read past the one being read, so on a hard kill the wrong chapter tops history. Only
+        // accumulate duration for novels; manga keeps the entry-less last_read = now behavior.
+        if (manga?.isNovel == true) {
+            upsertHistory.awaitTimeReadOnly(HistoryUpdate(chapterId, endTime, sessionReadDuration))
+        } else {
+            upsertHistory.await(HistoryUpdate(chapterId, endTime, sessionReadDuration))
+        }
         chapterReadStartTime = null
     }
 
