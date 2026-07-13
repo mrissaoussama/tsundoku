@@ -533,11 +533,12 @@ internal fun ColumnScope.NovelAppearanceTab(screenModel: ReaderSettingsScreenMod
 internal fun ColumnScope.NovelControlsTab(screenModel: ReaderSettingsScreenModel, renderingMode: String) {
     val autoScrollSpeed by screenModel.preferences.novelAutoScrollSpeed.collectAsState()
 
-    // Auto Scroll Speed
+    // Auto Scroll Speed - pref is half-steps (x2), so 2..20 shows as 1.0..10.0 in 0.5 increments.
     SliderItem(
         label = stringResource(TDMR.strings.pref_novel_auto_scroll_speed),
         value = autoScrollSpeed,
-        valueRange = 1..10,
+        valueRange = 2..20,
+        valueString = "${autoScrollSpeed / 2f}",
         onChange = { screenModel.preferences.novelAutoScrollSpeed.set(it) },
     )
 

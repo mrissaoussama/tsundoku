@@ -1887,16 +1887,23 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
     }
 
     fun startAutoScroll() {
-        val speed = preferences.novelAutoScrollSpeed.get().coerceIn(1, 10)
+        // Pref is half-steps (speed x2); level is 1.0..10.0 in 0.5 increments.
+        val level = preferences.novelAutoScrollSpeed.get().coerceIn(2, 20) / 2f
         isAutoScrolling = true
 
         autoScrollJob?.cancel()
         autoScrollJob = scope.launch {
+            // Accumulate the fractional per-tick amount so half-step speeds (and levels below 1px per
+            // tick) still scroll smoothly instead of truncating to 0. Instant per-tick scroll matches
+            // the WebView path; smoothScrollBy re-arms a ~250ms animation every 50ms and juddered.
+            var acc = 0f
             while (isActive && isAutoScrolling) {
-                val scrollAmount = speed
-                // Instant per-tick scroll (matches the WebView path). smoothScrollBy re-arms a ~250ms
-                // animation every 50ms, so each tick fights the previous one and the speed judders.
-                scrollView.scrollBy(0, scrollAmount)
+                acc += level
+                val step = acc.toInt()
+                if (step > 0) {
+                    scrollView.scrollBy(0, step)
+                    acc -= step
+                }
                 delay(50L)
             }
         }

@@ -2179,7 +2179,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     }
 
     private fun startAutoScroll() {
-        val speed = preferences.novelAutoScrollSpeed.get().coerceIn(1, 10)
+        // Pref is half-steps (speed x2); level is 1.0..10.0 in 0.5 increments.
+        val level = preferences.novelAutoScrollSpeed.get().coerceIn(2, 20) / 2f
         isAutoScrolling = true
 
         // Drive the scroll from a single in-page requestAnimationFrame loop instead of a Kotlin
@@ -2187,8 +2188,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         // with jittery timing and each moves a fixed integer step, which reads as stutter. The rAF
         // loop advances by (px/sec * frame delta) with sub-pixel accumulation for smooth motion, and
         // naturally pauses while the WebView is backgrounded (no frames), resuming without a jump via
-        // the dt clamp. speed (1..10) maps to CSS px/sec.
-        val pxPerSec = speed * 20
+        // the dt clamp. speed level (1..10) maps to CSS px/sec.
+        val pxPerSec = level * 20
         evaluateJavascriptSafe(
             """
             (function() {
