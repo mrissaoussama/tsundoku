@@ -77,7 +77,12 @@ object AlternativeTitlesColumnAdapter : ColumnAdapter<List<String>, String> {
         }
     }
 
-    override fun encode(value: List<String>) = value.joinToString(separator = ALT_TITLES_SEPARATOR)
+    // Trim + drop blanks symmetrically with decode so stored entries have exact char(31) boundaries;
+    // the duplicate-detection SQL (instr on char(31)-wrapped values) fails to match otherwise.
+    override fun encode(value: List<String>) = value
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .joinToString(separator = ALT_TITLES_SEPARATOR)
 }
 
 object UpdateStrategyColumnAdapter : ColumnAdapter<UpdateStrategy, Long> {
