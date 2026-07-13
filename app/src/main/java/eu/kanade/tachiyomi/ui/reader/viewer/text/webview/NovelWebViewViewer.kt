@@ -270,12 +270,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.NEXT,
                     eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.RIGHT,
                     -> {
-                        webView.evaluateJavascript("window.scrollBy(0, ${(container.height * 0.8).toInt()});", null)
+                        pageScrollBy(1)
                     }
                     eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.PREV,
                     eu.kanade.tachiyomi.ui.reader.viewer.ViewerNavigation.NavigationRegion.LEFT,
                     -> {
-                        webView.evaluateJavascript("window.scrollBy(0, -${(container.height * 0.8).toInt()});", null)
+                        pageScrollBy(-1)
                     }
                 }
 
@@ -662,6 +662,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                                 TtsController.StartRequest.VIEWPORT -> startTtsFromViewport()
                             }
                         }
+                        // A full reload replaces window, dropping the autoscroll rAF loop; re-arm it
+                        // on the new document so autoscroll survives a non-inf-scroll chapter change.
+                        if (isAutoScrolling) startAutoScroll()
                     }
                 }
             }
@@ -1533,7 +1536,6 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
     override fun handleKeyEvent(event: KeyEvent): Boolean {
         val isUp = event.action == KeyEvent.ACTION_UP
-        val scrollAmount = (container.height * 0.30).toInt()
 
         when (event.keyCode) {
             KeyEvent.KEYCODE_MENU -> {
@@ -1542,14 +1544,14 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
             }
             KeyEvent.KEYCODE_VOLUME_DOWN -> {
                 if (preferences.novelVolumeKeysScroll.get() && !activity.viewModel.state.value.menuVisible) {
-                    if (!isUp) webView.evaluateJavascript("window.scrollBy(0, $scrollAmount);", null)
+                    if (!isUp) pageScrollBy(1, 0.3)
                     return true
                 }
                 return false
             }
             KeyEvent.KEYCODE_VOLUME_UP -> {
                 if (preferences.novelVolumeKeysScroll.get() && !activity.viewModel.state.value.menuVisible) {
-                    if (!isUp) webView.evaluateJavascript("window.scrollBy(0, -$scrollAmount);", null)
+                    if (!isUp) pageScrollBy(-1, 0.3)
                     return true
                 }
                 return false
@@ -2156,6 +2158,16 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         webView.scrollTo(0, 0)
     }
 
+    /**
+     * Scroll by [fraction] of the viewport in [direction] (+1 down, -1 up). Uses window.innerHeight
+     * (CSS pixels) rather than container.height (device pixels): window.scrollBy expects CSS pixels,
+     * so passing device pixels overshoots by devicePixelRatio and skips content between taps.
+     */
+    private fun pageScrollBy(direction: Int, fraction: Double = 0.9) {
+        val sign = if (direction < 0) "-" else ""
+        webView.evaluateJavascript("window.scrollBy(0, $sign(window.innerHeight * $fraction));", null)
+    }
+
     fun toggleAutoScroll() {
         isAutoScrolling = !isAutoScrolling
 
@@ -2170,27 +2182,54 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         val speed = preferences.novelAutoScrollSpeed.get().coerceIn(1, 10)
         isAutoScrolling = true
 
-        autoScrollJob?.cancel()
-        autoScrollJob = scope.launch {
-            while (isActive && isAutoScrolling) {
-                val scrollAmount = speed
-                evaluateJavascriptSafe(
-                    """
-                    (function() {
-                        window.scrollBy(0, $scrollAmount);
-                    })();
-                    """.trimIndent(),
-                    null,
-                )
-                delay(50L)
-            }
-        }
+        // Drive the scroll from a single in-page requestAnimationFrame loop instead of a Kotlin
+        // timer that fires window.scrollBy over the JS bridge every 50ms: those round-trips arrive
+        // with jittery timing and each moves a fixed integer step, which reads as stutter. The rAF
+        // loop advances by (px/sec * frame delta) with sub-pixel accumulation for smooth motion, and
+        // naturally pauses while the WebView is backgrounded (no frames), resuming without a jump via
+        // the dt clamp. speed (1..10) maps to CSS px/sec.
+        val pxPerSec = speed * 20
+        evaluateJavascriptSafe(
+            """
+            (function() {
+                var s = window.__tdAutoScroll || (window.__tdAutoScroll = {});
+                s.pxPerSec = $pxPerSec;
+                if (s.running) return;
+                s.running = true;
+                s.last = null;
+                s.acc = 0;
+                function step(ts) {
+                    if (!s.running) return;
+                    if (s.last === null) s.last = ts;
+                    var dt = (ts - s.last) / 1000;
+                    s.last = ts;
+                    // Clamp so a long background gap (or first frame) can't jump the page.
+                    if (dt > 0.05) dt = 0.05;
+                    s.acc += s.pxPerSec * dt;
+                    var whole = Math.floor(s.acc);
+                    if (whole > 0) { window.scrollBy(0, whole); s.acc -= whole; }
+                    s.raf = requestAnimationFrame(step);
+                }
+                s.raf = requestAnimationFrame(step);
+            })();
+            """.trimIndent(),
+            null,
+        )
     }
 
     fun stopAutoScroll() {
         isAutoScrolling = false
         autoScrollJob?.cancel()
         autoScrollJob = null
+        evaluateJavascriptSafe(
+            """
+            (function() {
+                var s = window.__tdAutoScroll;
+                if (s) { s.running = false; if (s.raf) cancelAnimationFrame(s.raf); }
+            })();
+            """.trimIndent(),
+            null,
+        )
     }
 
     fun isAutoScrollActive(): Boolean = isAutoScrolling
