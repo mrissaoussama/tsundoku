@@ -435,7 +435,7 @@ class JsPluginManager(
                 logcat(LogPriority.DEBUG) {
                     "Found ${jsFiles.size} .js files and ${jsonFiles.size} .json files in plugins directory"
                 }
-                jsonFiles.forEach { f -> logcat(LogPriority.DEBUG) { "  JSON file: ${f.name}" } }
+                val jsonByName = jsonFiles.associateBy { it.name?.substringBeforeLast(".") }
 
                 val plugins = jsFiles.mapNotNull { file ->
                     try {
@@ -445,17 +445,10 @@ class JsPluginManager(
                             return@mapNotNull null
                         }
                         val nameWithoutExtension = file.name?.substringBeforeLast(".") ?: return@mapNotNull null
-                        val metadataFile = dir.findFile("$nameWithoutExtension.json")
-                        logcat(LogPriority.DEBUG) {
-                            "Looking for metadata: $nameWithoutExtension.json, found=${metadataFile != null}"
-                        }
-                        val plugin = if (metadataFile != null && metadataFile.exists()) {
+                        val metadataFile = jsonByName[nameWithoutExtension]
+                        val plugin = if (metadataFile != null) {
                             val metadataJson = metadataFile.openInputStream().bufferedReader().readText()
-                            logcat(LogPriority.DEBUG) {
-                                "Metadata content (len=${metadataJson.length}): ${metadataJson.take(100)}"
-                            }
                             if (metadataJson.isNotBlank() && metadataJson.trim().startsWith("{")) {
-                                logcat(LogPriority.DEBUG) { "Loading metadata for $nameWithoutExtension" }
                                 json.decodeFromString<JsPlugin>(metadataJson)
                             } else {
                                 logcat(LogPriority.DEBUG) {
@@ -562,9 +555,6 @@ class JsPluginManager(
         }
         logcat(LogPriority.INFO) {
             "JsPluginManager: rebuildSources() - emitting ${sources.size} sources to jsSources StateFlow"
-        }
-        sources.forEach { s ->
-            logcat(LogPriority.DEBUG) { "  JsSource: id=${s.id}, name=${s.name}, lang=${s.lang}" }
         }
         _jsSources.value = sources
         logcat(LogPriority.INFO) {
