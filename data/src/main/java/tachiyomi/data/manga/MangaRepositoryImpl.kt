@@ -13,9 +13,9 @@ import kotlinx.serialization.json.JsonObject
 import logcat.LogPriority
 import mihon.core.common.extensions.EMPTY
 import tachiyomi.core.common.util.system.logcat
+import tachiyomi.data.AlternativeTitlesColumnAdapter
 import tachiyomi.data.Database
 import tachiyomi.data.MemoColumnAdapter
-import tachiyomi.data.AlternativeTitlesColumnAdapter
 import tachiyomi.data.StringListColumnAdapter
 import tachiyomi.data.UpdateStrategyColumnAdapter
 import tachiyomi.data.subscribeToList

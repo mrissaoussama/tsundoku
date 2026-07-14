@@ -8,10 +8,9 @@ import eu.kanade.tachiyomi.data.backup.models.BackupChapter
 import eu.kanade.tachiyomi.data.backup.models.BackupHistory
 import eu.kanade.tachiyomi.data.backup.models.BackupManga
 import eu.kanade.tachiyomi.data.backup.models.BackupTracking
+import tachiyomi.data.AlternativeTitlesColumnAdapter
 import tachiyomi.data.Database
 import tachiyomi.data.MemoColumnAdapter
-import tachiyomi.data.AlternativeTitlesColumnAdapter
-import tachiyomi.data.StringListColumnAdapter
 import tachiyomi.data.UpdateStrategyColumnAdapter
 import tachiyomi.domain.category.interactor.GetCategories
 import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
