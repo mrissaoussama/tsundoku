@@ -152,6 +152,11 @@ fun EditMangaDialog(
                         onAltTitlesChange = { altTitles = it },
                         onSwapMainTitle = onSwapMainTitle?.let { swap ->
                             { newMain, updatedAlts ->
+                                // Title/alt-titles are persisted by swap() itself; other tabs'
+                                // edits are not, so save them explicitly before the guard below
+                                // skips the normal onDismissRequest save path.
+                                onSaveUrl(url)
+                                onSaveInfo(description, tags, author, artist, status)
                                 didSwapMainTitle = true
                                 swap(newMain, updatedAlts)
                                 onDismissRequest()
