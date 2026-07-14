@@ -385,8 +385,10 @@ private fun EditAltTitlesTab(
     // Reject a new alt title that duplicates the main title or an existing alt (case-insensitive),
     // matching the lower(trim(...)) comparison used by duplicate detection.
     val isDuplicate = trimmedNew.isNotEmpty() &&
-        (mainTitle.trim().equals(trimmedNew, ignoreCase = true) ||
-            altTitles.any { it.trim().equals(trimmedNew, ignoreCase = true) })
+        (
+            mainTitle.trim().equals(trimmedNew, ignoreCase = true) ||
+                altTitles.any { it.trim().equals(trimmedNew, ignoreCase = true) }
+            )
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
