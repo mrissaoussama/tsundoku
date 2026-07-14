@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.data.backup.restore
 import android.content.Context
 import android.net.Uri
 import eu.kanade.tachiyomi.data.backup.BackupNotifier
+import eu.kanade.tachiyomi.data.backup.BackupProtoMigration
 import eu.kanade.tachiyomi.data.backup.BackupProtoReader
 import eu.kanade.tachiyomi.data.backup.models.BackupCategory
 import eu.kanade.tachiyomi.data.backup.models.BackupExtensionStore
@@ -53,6 +54,7 @@ class BackupRestorer(
     private var restoreAmount = 0
     private val restoreProgress = AtomicInt(0)
     private val errors = CopyOnWriteArrayList<Pair<Date, String>>()
+    private val restoredMangaIds = CopyOnWriteArrayList<Long>()
 
     /**
      * Mapping of source ID to source name from backup data
@@ -64,7 +66,12 @@ class BackupRestorer(
 
         restoreFromFile(uri, options)
 
-        if (options.libraryEntries || options.categories) {
+        if (options.libraryEntries && restoredMangaIds.isNotEmpty()) {
+            try {
+                getLibraryManga.refreshForcedScoped(restoredMangaIds.distinct())
+            } catch (_: Exception) {
+            }
+        } else if (options.libraryEntries || options.categories) {
             try {
                 getLibraryManga.refreshForced()
             } catch (_: Exception) {
@@ -152,7 +159,12 @@ class BackupRestorer(
                 105 -> backupSourcePreferences.add(
                     parser.decodeFromByteArray(BackupSourcePreferences.serializer(), data),
                 )
-                106 -> backupExtensionStores.add(parser.decodeFromByteArray(BackupExtensionStore.serializer(), data))
+                106 -> backupExtensionStores.add(
+                    parser.decodeFromByteArray(
+                        BackupExtensionStore.serializer(),
+                        BackupProtoMigration.migrateExtensionStore(data),
+                    ),
+                )
             }
         }
 
@@ -176,18 +188,21 @@ class BackupRestorer(
             if (fieldNumber != 1) return@read
             ensureActive()
 
-            val backupManga = parser.decodeFromByteArray(BackupManga.serializer(), data)
+            val backupManga = parser.decodeFromByteArray(
+                BackupManga.serializer(),
+                BackupProtoMigration.migrateManga(data),
+            )
             if ((!backupManga.isNovel && options.includeManga) || (backupManga.isNovel && options.includeNovels)) {
                 try {
-                    mangaRestorer.restore(backupManga, backupCategories)
+                    restoredMangaIds.add(mangaRestorer.restore(backupManga, backupCategories))
                 } catch (e: Exception) {
                     val sourceName = sourceMapping[backupManga.source] ?: backupManga.source.toString()
                     errors.add(Date() to "${backupManga.title} [$sourceName]: ${e.message}")
                 }
             }
 
-            restoreProgress.incrementAndFetch()
-            notifier.showRestoreProgress(backupManga.title, restoreProgress.load(), restoreAmount, isSync)
+            val progress = restoreProgress.incrementAndFetch()
+            notifier.showRestoreProgress(backupManga.title, progress, restoreAmount, isSync)
         }
     }
 

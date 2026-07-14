@@ -880,6 +880,54 @@ SET
     )
 WHERE _id = :mangaId;
 
+recomputeAggregatesForMangas:
+UPDATE mangas
+SET
+    total_count = coalesce((
+        SELECT count(*)
+        FROM chapters
+        LEFT JOIN excluded_scanlators ON chapters.manga_id = excluded_scanlators.manga_id
+            AND chapters.scanlator = excluded_scanlators.scanlator
+        WHERE chapters.manga_id = mangas._id AND excluded_scanlators.scanlator IS NULL
+    ), 0),
+    read_count = coalesce((
+        SELECT sum(chapters.read)
+        FROM chapters
+        LEFT JOIN excluded_scanlators ON chapters.manga_id = excluded_scanlators.manga_id
+            AND chapters.scanlator = excluded_scanlators.scanlator
+        WHERE chapters.manga_id = mangas._id AND excluded_scanlators.scanlator IS NULL
+    ), 0),
+    latest_upload = coalesce((
+        SELECT max(chapters.date_upload)
+        FROM chapters
+        LEFT JOIN excluded_scanlators ON chapters.manga_id = excluded_scanlators.manga_id
+            AND chapters.scanlator = excluded_scanlators.scanlator
+        WHERE chapters.manga_id = mangas._id AND excluded_scanlators.scanlator IS NULL
+    ), 0),
+    chapter_fetched_at = coalesce((
+        SELECT max(chapters.date_fetch)
+        FROM chapters
+        LEFT JOIN excluded_scanlators ON chapters.manga_id = excluded_scanlators.manga_id
+            AND chapters.scanlator = excluded_scanlators.scanlator
+        WHERE chapters.manga_id = mangas._id AND excluded_scanlators.scanlator IS NULL
+    ), 0),
+    last_read = coalesce((
+        SELECT max(history.last_read)
+        FROM chapters
+        LEFT JOIN excluded_scanlators ON chapters.manga_id = excluded_scanlators.manga_id
+            AND chapters.scanlator = excluded_scanlators.scanlator
+        LEFT JOIN history ON chapters._id = history.chapter_id
+        WHERE chapters.manga_id = mangas._id AND excluded_scanlators.scanlator IS NULL
+    ), 0),
+    bookmark_count = coalesce((
+        SELECT sum(chapters.bookmark)
+        FROM chapters
+        LEFT JOIN excluded_scanlators ON chapters.manga_id = excluded_scanlators.manga_id
+            AND chapters.scanlator = excluded_scanlators.scanlator
+        WHERE chapters.manga_id = mangas._id AND excluded_scanlators.scanlator IS NULL
+    ), 0)
+WHERE _id IN :mangaIds;
+
 recomputeAllAggregates:
 UPDATE mangas
 SET

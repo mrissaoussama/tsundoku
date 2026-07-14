@@ -2010,6 +2010,16 @@ class MangaRepositoryImpl(
         }
     }
 
+    override suspend fun refreshLibraryCacheForMangas(mangaIds: List<Long>) {
+        if (mangaIds.isEmpty()) return
+        logcat(LogPriority.INFO) {
+            "MangaRepositoryImpl.refreshLibraryCacheForMangas: Recomputing aggregates for ${mangaIds.size} manga"
+        }
+        database.transaction {
+            database.mangasQueries.recomputeAggregatesForMangas(mangaIds)
+        }
+    }
+
     /**
      * Canonical tag normalization: split each entry on `,` / `;` (sources may merge tags), trim,
      * title-case each word, drop blanks, dedupe case-insensitively keeping first occurrence. Shared

@@ -31,7 +31,8 @@ class BackupFileValidator(
             reader.read(uri) { fieldNumber, data ->
                 when (fieldNumber) {
                     1 -> {
-                        val manga = parser.decodeFromByteArray(BackupManga.serializer(), data)
+                        val migrated = BackupProtoMigration.migrateManga(data)
+                        val manga = parser.decodeFromByteArray(BackupManga.serializer(), migrated)
                         manga.tracking.forEach { trackerIds.add(it.syncId.toLong()) }
                     }
                     101 -> {

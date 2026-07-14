@@ -30,6 +30,28 @@ internal object BackupProtoMigration {
         else -> null
     }
 
+    // For per-blob decode sites that bypass migrateLegacyIsNovel. Presence check first so a
+    // current-schema blob (the common case) skips the deep copy.
+    fun migrateManga(body: ByteArray): ByteArray = try {
+        if (!subMessageHasLegacyVarint(body, 0, body.size, MANGA_LEGACY_IS_NOVEL_FIELD)) {
+            body
+        } else {
+            migrateSubMessage(body, MANGA_LEGACY_IS_NOVEL_FIELD)
+        }
+    } catch (_: Exception) {
+        body
+    }
+
+    fun migrateExtensionStore(body: ByteArray): ByteArray = try {
+        if (!subMessageHasLegacyVarint(body, 0, body.size, EXTENSION_STORE_LEGACY_IS_NOVEL_FIELD)) {
+            body
+        } else {
+            migrateSubMessage(body, EXTENSION_STORE_LEGACY_IS_NOVEL_FIELD)
+        }
+    } catch (_: Exception) {
+        body
+    }
+
     fun migrateLegacyIsNovel(input: ByteArray): ByteArray {
         return try {
             if (!hasLegacyIsNovel(input)) return input

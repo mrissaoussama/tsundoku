@@ -135,6 +135,18 @@ class GetLibraryManga(
     }
 
     /**
+     * Like [refreshForced] but recomputes aggregates for only the given manga instead of the
+     * whole favorites table.
+     */
+    suspend fun refreshForcedScoped(mangaIds: List<Long>): List<LibraryManga> {
+        if (mangaIds.isNotEmpty()) {
+            mangaRepository.refreshLibraryCacheForMangas(mangaIds)
+        }
+        refreshInternal(force = true, recompute = false)
+        return _libraryState.value
+    }
+
+    /**
      * Apply category updates to the in-memory library list without a full DB refresh.
      * This keeps UI responsive for small, targeted changes.
      */
@@ -367,7 +379,7 @@ class GetLibraryManga(
         }
     }
 
-    private suspend fun refreshInternal(force: Boolean) {
+    private suspend fun refreshInternal(force: Boolean, recompute: Boolean = force) {
         mutex.withLock {
             val now = System.currentTimeMillis()
             if (!force && (now - lastRefreshTime) < minRefreshIntervalMs) {
@@ -381,7 +393,7 @@ class GetLibraryManga(
 
             val paginated = paginationEnabled
             if (!paginated) {
-                if (force) {
+                if (recompute) {
                     logcat(LogPriority.INFO) { "GetLibraryManga: Rebuilding library_cache table (forced)" }
                     mangaRepository.refreshLibraryCache()
                 } else {
