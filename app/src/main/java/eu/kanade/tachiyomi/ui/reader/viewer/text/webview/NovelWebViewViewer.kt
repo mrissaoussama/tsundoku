@@ -1709,7 +1709,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     if (handoffState.isIdle) {
                         scope.launch { preFetchNextChapterForTts() }
                     }
-                } else if (System.currentTimeMillis() - lastNextLoadFailedAt < NovelProgress.NEXT_LOAD_RETRY_COOLDOWN_MS) {
+                } else if (System.currentTimeMillis() - lastNextLoadFailedAt <
+                    NovelProgress.NEXT_LOAD_RETRY_COOLDOWN_MS
+                ) {
                     // Keep the JS load latch held (JS set it before this call) so it stops re-firing
                     // loadNextChapter every scroll frame during the cooldown; schedule a single
                     // release for when the cooldown expires so it can't become permanent.
