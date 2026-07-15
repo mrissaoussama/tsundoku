@@ -49,6 +49,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Correct import stats when app is restarted [@mrissaoussama](https://github.com/mrissaoussama) [#272](https://github.com/tsundoku-otaku/tsundoku/pull/272)
 - Fix download queue restart preference [@mrissaoussama](https://github.com/mrissaoussama) [#297](https://github.com/tsundoku-otaku/tsundoku/pull/297)
 - Pull to refresh spinner will be more patient [@mrissaoussama](https://github.com/mrissaoussama) [#321](https://github.com/tsundoku-otaku/tsundoku/pull/321)
+- Improve massimport - Notification dedupe,v erious fixes [@mrissaoussama](https://github.com/mrissaoussama) [#333](https://github.com/tsundoku-otaku/tsundoku/pull/333)
 - Deleage custom-source image fetch to base httpsource [@mrissaoussama](https://github.com/mrissaoussama) [#331](https://github.com/tsundoku-otaku/tsundoku/pull/331)
 - Disable text selection; fix textview crash on select spam [@mrissaoussama](https://github.com/mrissaoussama) [#311](https://github.com/tsundoku-otaku/tsundoku/pull/311)
 - Prevent issue where novel UI appeared in manga reader [@mrissaoussama](https://github.com/mrissaoussama) [#276](https://github.com/tsundoku-otaku/tsundoku/pull/276)
