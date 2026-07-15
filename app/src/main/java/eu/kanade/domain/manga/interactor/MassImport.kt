@@ -31,6 +31,22 @@ class MassImport(
 ) {
     private val missingSourceHostLogCache = ConcurrentHashMap<String, Boolean>()
 
+    companion object {
+        private val GLUE_REGEX = Regex("(?<=[^\\s])(?=https?://)")
+        private val SCHEME_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9+\\-.]*://")
+
+        // Shared tokenizer for every entry point so the "valid" count matches what the import
+        // walks. Splits on comma/semicolon/space/tab and de-glues separator-less URLs.
+        fun tokenizeLine(line: String): List<String> {
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) return emptyList()
+            return trimmed.replace(GLUE_REGEX, "\n")
+                .split('\n', ',', ';', ' ', '\t')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+        }
+    }
+
     suspend fun resolveMangaUrl(url: String, path: String, source: CatalogueSource): Manga {
         val inputUrl = normalizeSourcePath(source, path)
         // No search-by-URL or slash-toggle fallbacks here: they never resolved anything reliably
@@ -196,15 +212,11 @@ class MassImport(
     }
 
     fun parseUrls(text: String): List<String> {
-        val preprocessed = text
-            .replace(Regex("(?<=[^\\s])(?=https?://)"), "\n")
-            .replace(Regex("(?<!https?:)//+"), "/")
-
-        return preprocessed
-            .split("\n", ",", ";", " ")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && (it.startsWith("http://") || it.startsWith("https://")) }
+        return text.lineSequence()
+            .flatMap { tokenizeLine(it).asSequence() }
+            .filter { it.startsWith("http://") || it.startsWith("https://") }
             .distinctBy { urlDedupKey(it) }
+            .toList()
     }
 
     data class UrlAnalysisResult(
@@ -224,7 +236,7 @@ class MassImport(
             emptySet()
         }
 
-        val rawLines = text.split("\n", ",", ";", " ").map { it.trim() }.filter { it.isNotEmpty() }
+        val rawLines = text.lineSequence().flatMap { tokenizeLine(it).asSequence() }
         val validUrls = mutableListOf<String>()
         val invalidUrls = mutableListOf<Pair<String, String>>()
         val duplicateUrls = mutableListOf<String>()
@@ -261,10 +273,6 @@ class MassImport(
         UrlAnalysisResult(validUrls, invalidUrls, duplicateUrls, alreadyInLibrary)
     }
 
-    private fun stripScheme(url: String): String {
-        return url.trim().replace(Regex("^[a-zA-Z][a-zA-Z0-9+\\-.]*://"), "").lowercase()
-    }
-
     private fun urlDedupKey(url: String): String {
         return try {
             val uri = URI(url.trim())
@@ -275,7 +283,15 @@ class MassImport(
                 if (!q.isNullOrBlank()) append('?').append(q)
             }
         } catch (_: Exception) {
-            stripScheme(url).removeSuffix("/")
+            // Unparseable URL: lowercase only the host, preserve case-sensitive path.
+            val noScheme = url.trim().replace(SCHEME_REGEX, "")
+            val slash = noScheme.indexOf('/')
+            val key = if (slash < 0) {
+                noScheme.lowercase()
+            } else {
+                noScheme.substring(0, slash).lowercase() + noScheme.substring(slash)
+            }
+            key.removeSuffix("/")
         }
     }
 }
