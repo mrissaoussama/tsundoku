@@ -1477,6 +1477,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         val fmt = ErrorFormatter.format(error)
         logcat(LogPriority.ERROR) { "NovelWebViewViewer: Chapter load failed\n${fmt.stackTrace}" }
 
+        // No real chapter DOM is coming for this load, so the onPageFinished check for
+        // isLoadingRealChapter won't fire and webChapterContentReady would otherwise stay
+        // false forever, permanently blocking infinite-scroll appends after any load error.
+        isLoadingRealChapter = false
+        webChapterContentReady = true
+
         val theme = preferences.novelTheme.get()
         val backgroundColor = preferences.novelBackgroundColor.get()
         val fontColor = preferences.novelFontColor.get()
