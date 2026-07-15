@@ -256,6 +256,10 @@ private fun ColumnScope.FilterPage(
         pref = screenModel.libraryPreferences.searchChapterContent,
     )
     CheckboxItem(
+        label = "Search alternative titles",
+        pref = screenModel.libraryPreferences.searchAlternativeTitles,
+    )
+    CheckboxItem(
         label = "Search by URL",
         pref = screenModel.libraryPreferences.searchByUrl,
     )

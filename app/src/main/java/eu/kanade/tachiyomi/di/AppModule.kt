@@ -39,6 +39,7 @@ import nl.adaptivity.xmlutil.core.XmlVersion
 import nl.adaptivity.xmlutil.serialization.XML
 import tachiyomi.core.common.storage.AndroidStorageFolderProvider
 import tachiyomi.core.common.util.lang.launchIO
+import tachiyomi.data.AlternativeTitlesColumnAdapter
 import tachiyomi.data.Chapters
 import tachiyomi.data.Database
 import tachiyomi.data.DatabaseMaintenance
@@ -96,7 +97,7 @@ class AppModule(val app: Application) : InjektModule {
                 mangasAdapter = Mangas.Adapter(
                     genreAdapter = StringListColumnAdapter,
                     update_strategyAdapter = UpdateStrategyColumnAdapter,
-                    alternative_titlesAdapter = StringListColumnAdapter,
+                    alternative_titlesAdapter = AlternativeTitlesColumnAdapter,
                     memoAdapter = MemoColumnAdapter,
                 ),
                 chaptersAdapter = Chapters.Adapter(

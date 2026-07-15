@@ -18,6 +18,7 @@ class SearchMangaMetadata(
         val author: Set<Long> = emptySet(),
         val artist: Set<Long> = emptySet(),
         val description: Set<Long> = emptySet(),
+        val altTitle: Set<Long> = emptySet(),
     )
 
     /**
@@ -30,9 +31,10 @@ class SearchMangaMetadata(
         searchAuthor: Boolean,
         searchArtist: Boolean,
         searchDescription: Boolean,
+        searchAltTitle: Boolean = false,
     ): MatchIds {
         if (regex == null && term.isBlank()) return MatchIds()
-        if (!searchAuthor && !searchArtist && !searchDescription) return MatchIds()
+        if (!searchAuthor && !searchArtist && !searchDescription && !searchAltTitle) return MatchIds()
 
         val predicate: (String) -> Boolean = if (regex != null) {
             { regex.containsMatchIn(it) }
@@ -40,11 +42,17 @@ class SearchMangaMetadata(
             { it.contains(term, ignoreCase = true) }
         }
 
-        val (author, artist, description) = mangaRepository.findFavoriteIdsMatchingMetadata(
+        val matches = mangaRepository.findFavoriteIdsMatchingMetadata(
             matchAuthor = predicate.takeIf { searchAuthor },
             matchArtist = predicate.takeIf { searchArtist },
             matchDescription = predicate.takeIf { searchDescription },
+            matchAltTitle = ({ titles: List<String> -> titles.any(predicate) }).takeIf { searchAltTitle },
         )
-        return MatchIds(author = author, artist = artist, description = description)
+        return MatchIds(
+            author = matches.author,
+            artist = matches.artist,
+            description = matches.description,
+            altTitle = matches.altTitle,
+        )
     }
 }

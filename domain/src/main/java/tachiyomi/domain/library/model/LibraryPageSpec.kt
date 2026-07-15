@@ -26,6 +26,8 @@ data class LibraryPageSpec(
     val excludedSourceIds: List<Long> = emptyList(),
     // Default-field search term applied as a title/genre/url LIKE. Blank = no search.
     val searchTerm: String = "",
+    // When true, the search term also matches against the alternative_titles column.
+    val searchAlternativeTitles: Boolean = true,
     // Included-tag prefilter: U+001F-joined, lowercased ASCII tags. DB keeps rows whose genre
     // contains ANY of them (case-insensitive substring), a superset of the exact in-memory match,
     // so it only narrows and never drops a row. Blank = skip. Populated only when every tag is

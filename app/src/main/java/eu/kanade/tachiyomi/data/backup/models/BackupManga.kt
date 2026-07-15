@@ -48,6 +48,7 @@ class BackupManga(
     @ProtoNumber(112) var memo: ByteArray = JsonObjectEmptyBytes,
     // Fork fields use a reserved 8000+ ProtoNumber block so they never collide with new upstream fields.
     @ProtoNumber(8000) var isNovel: Boolean = false,
+    @ProtoNumber(8001) var alternativeTitles: List<String> = emptyList(),
 ) {
     fun getMangaImpl(): Manga {
         return Manga.create().copy(
@@ -57,6 +58,7 @@ class BackupManga(
             author = this@BackupManga.author,
             description = this@BackupManga.description,
             genre = this@BackupManga.genre,
+            alternativeTitles = this@BackupManga.alternativeTitles,
             status = this@BackupManga.status.toLong(),
             thumbnailUrl = this@BackupManga.thumbnailUrl,
             favorite = this@BackupManga.favorite,

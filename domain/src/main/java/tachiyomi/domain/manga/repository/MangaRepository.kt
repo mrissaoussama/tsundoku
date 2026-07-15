@@ -9,6 +9,13 @@ import tachiyomi.domain.manga.model.MangaSelectionMetric
 import tachiyomi.domain.manga.model.MangaUpdate
 import tachiyomi.domain.manga.model.MangaWithChapterCount
 
+data class FavoriteMetadataMatches(
+    val author: Set<Long> = emptySet(),
+    val artist: Set<Long> = emptySet(),
+    val description: Set<Long> = emptySet(),
+    val altTitle: Set<Long> = emptySet(),
+)
+
 data class DuplicateGroup(
     val normalizedTitle: String,
     val ids: List<Long>,
@@ -112,7 +119,11 @@ interface MangaRepository {
 
     fun getFavoritesBySourceId(sourceId: Long): Flow<List<Manga>>
 
-    suspend fun getDuplicateLibraryManga(id: Long, title: String): List<MangaWithChapterCount>
+    suspend fun getDuplicateLibraryManga(
+        id: Long,
+        title: String,
+        altTitles: List<String> = emptyList(),
+    ): List<MangaWithChapterCount>
 
     suspend fun findDuplicatesExact(): List<DuplicateGroup>
 
@@ -129,7 +140,8 @@ interface MangaRepository {
         matchAuthor: ((String) -> Boolean)?,
         matchArtist: ((String) -> Boolean)?,
         matchDescription: ((String) -> Boolean)?,
-    ): Triple<Set<Long>, Set<Long>, Set<Long>>
+        matchAltTitle: ((List<String>) -> Boolean)? = null,
+    ): FavoriteMetadataMatches
 
     /**
      * Get ID + title pairs for all favorites.

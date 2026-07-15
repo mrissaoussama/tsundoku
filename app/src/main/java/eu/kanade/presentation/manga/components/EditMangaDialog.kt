@@ -15,10 +15,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -30,6 +32,7 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +40,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import eu.kanade.presentation.components.TabTitle
@@ -75,6 +80,7 @@ fun EditMangaDialog(
     var author by remember { mutableStateOf(manga.author.orEmpty()) }
     var artist by remember { mutableStateOf(manga.artist.orEmpty()) }
     var status by remember { mutableStateOf(manga.status) }
+    var didSwapMainTitle by remember { mutableStateOf(false) }
 
     val tabTitles = listOf(
         TabTitle.Text(stringResource(MR.strings.pref_category_general)),
@@ -83,10 +89,12 @@ fun EditMangaDialog(
 
     TabbedDialog(
         onDismissRequest = {
-            onSaveTitle(title)
-            onSaveUrl(url)
-            onSaveAltTitles(altTitles)
-            onSaveInfo(description, tags, author, artist, status)
+            if (!didSwapMainTitle) {
+                onSaveTitle(title)
+                onSaveUrl(url)
+                onSaveAltTitles(altTitles)
+                onSaveInfo(description, tags, author, artist, status)
+            }
             onDismissRequest()
         },
         tabTitles = tabTitles,
@@ -139,11 +147,17 @@ fun EditMangaDialog(
                         onTagsChange = { tags = it },
                     )
                     EditAltTitlesTab(
-                        mainTitle = manga.title,
+                        mainTitle = title,
                         altTitles = altTitles,
                         onAltTitlesChange = { altTitles = it },
                         onSwapMainTitle = onSwapMainTitle?.let { swap ->
                             { newMain, updatedAlts ->
+                                // Title/alt-titles are persisted by swap() itself; other tabs'
+                                // edits are not, so save them explicitly before the guard below
+                                // skips the normal onDismissRequest save path.
+                                onSaveUrl(url)
+                                onSaveInfo(description, tags, author, artist, status)
+                                didSwapMainTitle = true
                                 swap(newMain, updatedAlts)
                                 onDismissRequest()
                             }
@@ -364,6 +378,17 @@ private fun EditAltTitlesTab(
     onSwapMainTitle: ((String, List<String>) -> Unit)? = null,
 ) {
     var newTitle by remember { mutableStateOf("") }
+    var pendingDelete by remember { mutableStateOf<Int?>(null) }
+    val clipboardManager = LocalClipboardManager.current
+
+    val trimmedNew = newTitle.trim()
+    // Reject a new alt title that duplicates the main title or an existing alt (case-insensitive),
+    // matching the lower(trim(...)) comparison used by duplicate detection.
+    val isDuplicate = trimmedNew.isNotEmpty() &&
+        (
+            mainTitle.trim().equals(trimmedNew, ignoreCase = true) ||
+                altTitles.any { it.trim().equals(trimmedNew, ignoreCase = true) }
+            )
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -376,15 +401,21 @@ private fun EditAltTitlesTab(
                 modifier = Modifier.weight(1f),
                 label = { Text("New title") },
                 singleLine = true,
+                isError = isDuplicate,
+                supportingText = if (isDuplicate) {
+                    { Text("Title already exists") }
+                } else {
+                    null
+                },
             )
             IconButton(
                 onClick = {
-                    if (newTitle.isNotBlank()) {
-                        onAltTitlesChange(altTitles + newTitle.trim())
+                    if (trimmedNew.isNotEmpty() && !isDuplicate) {
+                        onAltTitlesChange(altTitles + trimmedNew)
                         newTitle = ""
                     }
                 },
-                enabled = newTitle.isNotBlank(),
+                enabled = trimmedNew.isNotEmpty() && !isDuplicate,
             ) {
                 Icon(Icons.Outlined.Add, contentDescription = "Add")
             }
@@ -410,6 +441,14 @@ private fun EditAltTitlesTab(
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                    IconButton(
+                        onClick = { clipboardManager.setText(AnnotatedString(title)) },
+                    ) {
+                        Icon(
+                            Icons.Outlined.ContentCopy,
+                            contentDescription = stringResource(MR.strings.action_copy_to_clipboard),
+                        )
+                    }
                     if (onSwapMainTitle != null && mainTitle.isNotEmpty()) {
                         IconButton(
                             onClick = {
@@ -428,9 +467,7 @@ private fun EditAltTitlesTab(
                         }
                     }
                     IconButton(
-                        onClick = {
-                            onAltTitlesChange(altTitles.toMutableList().apply { removeAt(index) })
-                        },
+                        onClick = { pendingDelete = index },
                     ) {
                         Icon(
                             Icons.Outlined.Delete,
@@ -441,5 +478,33 @@ private fun EditAltTitlesTab(
                 }
             }
         }
+    }
+
+    pendingDelete?.let { index ->
+        val title = altTitles.getOrNull(index)
+        if (title == null) {
+            pendingDelete = null
+            return@let
+        }
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(stringResource(MR.strings.action_delete)) },
+            text = { Text(title) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onAltTitlesChange(altTitles.toMutableList().apply { removeAt(index) })
+                        pendingDelete = null
+                    },
+                ) {
+                    Text(stringResource(MR.strings.action_ok))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(MR.strings.action_cancel))
+                }
+            },
+        )
     }
 }

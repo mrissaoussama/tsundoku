@@ -108,12 +108,51 @@ class FindDuplicateNovels(
     suspend fun findGroupedByIds(ids: List<Long>): Map<String, List<MangaWithChapterCount>> {
         if (ids.isEmpty()) return emptyMap()
 
-        val grouped = LinkedHashMap<String, MutableList<MangaWithChapterCount>>()
-        getMangaWithCountsLight(ids).forEach { item ->
-            val key = item.manga.title.trim().lowercase().ifBlank { item.manga.id.toString() }
-            grouped.getOrPut(key) { mutableListOf() }.add(item)
+        val items = getMangaWithCountsLight(ids)
+        if (items.isEmpty()) return emptyMap()
+
+        // A manga's match keys are its normalized title plus each normalized alternative title.
+        // Two manga that share ANY key are duplicates, so union them (title-A == alt-title-B counts).
+        val keyToItems = HashMap<String, MutableList<Int>>()
+        items.forEachIndexed { idx, item ->
+            val keys = buildSet {
+                item.manga.title.trim().lowercase().takeIf { it.isNotBlank() }?.let { add(it) }
+                item.manga.alternativeTitles.forEach { alt ->
+                    alt.trim().lowercase().takeIf { it.isNotBlank() }?.let { add(it) }
+                }
+            }
+            keys.forEach { keyToItems.getOrPut(it) { mutableListOf() }.add(idx) }
         }
-        return grouped.mapValues { (_, list) -> list.sortedByDescending { it.chapterCount } }
+
+        val parent = IntArray(items.size) { it }
+        fun find(x: Int): Int {
+            var root = x
+            while (parent[root] != root) root = parent[root]
+            var cur = x
+            while (parent[cur] != cur) {
+                val next = parent[cur]
+                parent[cur] = root
+                cur = next
+            }
+            return root
+        }
+        keyToItems.values.forEach { shared ->
+            for (k in 1 until shared.size) {
+                val ra = find(shared[0])
+                val rb = find(shared[k])
+                if (ra != rb) parent[ra] = rb
+            }
+        }
+
+        val groupsByRoot = LinkedHashMap<Int, MutableList<MangaWithChapterCount>>()
+        items.indices.forEach { i -> groupsByRoot.getOrPut(find(i)) { mutableListOf() }.add(items[i]) }
+
+        val result = LinkedHashMap<String, List<MangaWithChapterCount>>()
+        groupsByRoot.values.forEach { members ->
+            val key = members.first().manga.title.trim().lowercase().ifBlank { members.first().manga.id.toString() }
+            result[key] = members.sortedByDescending { it.chapterCount }
+        }
+        return result
     }
 
     /**

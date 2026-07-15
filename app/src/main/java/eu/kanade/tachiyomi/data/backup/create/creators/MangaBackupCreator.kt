@@ -115,6 +115,7 @@ private fun Manga.toBackupManga() =
         author = this.author,
         description = this.description,
         genre = this.genre.orEmpty(),
+        alternativeTitles = this.alternativeTitles,
         status = this.status.toInt(),
         thumbnailUrl = this.thumbnailUrl,
         favorite = this.favorite,

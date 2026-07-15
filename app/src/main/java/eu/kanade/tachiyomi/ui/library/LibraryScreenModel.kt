@@ -199,7 +199,8 @@ class LibraryScreenModel(
                 searchQueryFlow,
                 libraryPreferences.searchChapterContent.changes(),
                 libraryPreferences.useRegexSearch.changes(),
-            ) { query, searchContent, useRegex ->
+                libraryPreferences.searchAlternativeTitles.changes(),
+            ) { query, searchContent, useRegex, searchAltTitles ->
                 if (query.isNullOrEmpty()) {
                     MetadataMatchIds()
                 } else {
@@ -208,6 +209,7 @@ class LibraryScreenModel(
                         author: Boolean = false,
                         artist: Boolean = false,
                         description: Boolean = false,
+                        altTitle: Boolean = false,
                     ): MetadataMatchIds {
                         val matches = withIOContext {
                             searchMangaMetadata.await(
@@ -216,12 +218,14 @@ class LibraryScreenModel(
                                 searchAuthor = author,
                                 searchArtist = artist,
                                 searchDescription = description,
+                                searchAltTitle = altTitle,
                             )
                         }
                         return MetadataMatchIds(
                             author = matches.author,
                             artist = matches.artist,
                             description = matches.description,
+                            altTitle = matches.altTitle,
                         )
                     }
                     when (parsed.field) {
@@ -232,7 +236,7 @@ class LibraryScreenModel(
                         // default (non-prefixed) search, where it adds an expensive full-text scan.
                         LibrarySearchSpec.Field.DESCRIPTION -> ids(description = true)
                         LibrarySearchSpec.Field.DEFAULT ->
-                            ids(author = true, artist = true, description = searchContent)
+                            ids(author = true, artist = true, description = searchContent, altTitle = searchAltTitles)
                         else -> MetadataMatchIds()
                     }
                 }
@@ -1247,6 +1251,7 @@ class LibraryScreenModel(
             filterChapterCountThreshold = prefs.filterChapterCountThreshold,
             excludedSourceIds = prefs.excludedExtensions.mapNotNull { it.toLongOrNull() },
             searchTerm = term,
+            searchAlternativeTitles = libraryPreferences.searchAlternativeTitles.get(),
             includedTagsCsv = includedTagsCsvFor(prefs),
         )
         val map = HashMap<Pair<Long, Boolean>, LibraryPageSpec>()
@@ -2071,6 +2076,7 @@ class LibraryScreenModel(
         val author: Set<Long> = emptySet(),
         val artist: Set<Long> = emptySet(),
         val description: Set<Long> = emptySet(),
+        val altTitle: Set<Long> = emptySet(),
     )
 
     @Immutable
