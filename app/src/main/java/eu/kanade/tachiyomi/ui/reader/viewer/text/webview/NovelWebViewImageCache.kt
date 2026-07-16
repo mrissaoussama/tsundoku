@@ -133,13 +133,28 @@ internal class NovelWebViewImageCache(
     }
 
     private fun guessMimeType(imagePath: String): String =
-        when (imagePath.substringAfterLast('.', "").lowercase()) {
+        when (imagePath.substringBefore('?').substringAfterLast('.', "").lowercase()) {
             "png" -> "image/png"
             "jpg", "jpeg" -> "image/jpeg"
             "gif" -> "image/gif"
             "svg" -> "image/svg+xml"
             "webp" -> "image/webp"
             "avif" -> "image/avif"
+            "bmp" -> "image/bmp"
+            "ico" -> "image/x-icon"
+            "css" -> "text/css"
+            "js", "mjs" -> "text/javascript"
+            "woff" -> "font/woff"
+            "woff2" -> "font/woff2"
+            "ttf" -> "font/ttf"
+            "otf" -> "font/otf"
+            "mp4" -> "video/mp4"
+            "webm" -> "video/webm"
+            "ogg", "ogv" -> "video/ogg"
+            "mp3" -> "audio/mpeg"
+            "wav" -> "audio/wav"
+            "m4a" -> "audio/mp4"
+            "vtt" -> "text/vtt"
             else -> "image/jpeg"
         }
 
