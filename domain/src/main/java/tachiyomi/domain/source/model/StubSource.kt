@@ -37,8 +37,14 @@ class StubSource(
     override suspend fun getPageList(chapter: SChapter): List<Page> =
         throw SourceNotInstalledException()
 
-    override fun toString(): String =
-        if (!isInvalid) "$name (${lang.uppercase()})" else id.toString()
+    // Must match JsSource.toString() so quotes/translations resolve to the same on-disk directory
+    // whether a source is currently loaded (JsSource) or stubbed (plugin not yet loaded). Novel
+    // sources are JS plugins here, which render as "Name (LANG) (JS)".
+    override fun toString(): String = when {
+        isInvalid -> id.toString()
+        isNovelSource -> "$name (${lang.uppercase()}) (JS)"
+        else -> "$name (${lang.uppercase()})"
+    }
 
     companion object {
         fun from(source: Source): StubSource {
