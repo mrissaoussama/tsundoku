@@ -14,6 +14,7 @@ import tachiyomi.domain.translation.model.TranslatedChapter
 import tachiyomi.domain.translation.model.TranslationLocator
 import tachiyomi.domain.translation.repository.TranslatedChapterRepository
 import java.io.File
+import java.io.IOException
 
 /**
  * Filesystem-only implementation of [TranslatedChapterRepository].
@@ -260,7 +261,8 @@ class TranslatedChapterRepositoryImpl(
         chapters: Collection<ChapterRef>,
     ): Set<Long> = withContext(Dispatchers.IO) {
         if (chapters.isEmpty()) return@withContext emptySet()
-        val langDir = findNovelDir(sourceName, novelTitle)?.findFile(langDirName(targetLanguage)) ?: return@withContext emptySet()
+        val langDir =
+            findNovelDir(sourceName, novelTitle)?.findFile(langDirName(targetLanguage)) ?: return@withContext emptySet()
         val present = langDir.listFiles()
             ?.mapNotNull { it.name }
             ?.filterTo(HashSet()) { it.endsWith(".html") && !it.endsWith(".html.tmp") }
@@ -385,7 +387,9 @@ class TranslatedChapterRepositoryImpl(
             if (existing != null) {
                 // Deny if a non-empty dir already holds translations; only reclaim an empty one.
                 if (!existing.isDirectory || !existing.listFiles().isNullOrEmpty()) {
-                    logcat(LogPriority.WARN) { "Translation dir '$newName' exists and is not empty; not renaming '$oldName'" }
+                    logcat(LogPriority.WARN) {
+                        "Translation dir '$newName' exists and is not empty; not renaming '$oldName'"
+                    }
                     return@withContext
                 }
                 existing.delete()
@@ -415,7 +419,9 @@ class TranslatedChapterRepositoryImpl(
         val existing = newSrcDir.findFile(newNovel)
         if (existing != null) {
             if (!existing.isDirectory || !existing.listFiles().isNullOrEmpty()) {
-                logcat(LogPriority.WARN) { "Translation dir '$newSrcName/$newNovel' exists and is not empty; not moving" }
+                logcat(LogPriority.WARN) {
+                    "Translation dir '$newSrcName/$newNovel' exists and is not empty; not moving"
+                }
                 return@withContext
             }
             existing.delete()
@@ -430,22 +436,47 @@ class TranslatedChapterRepositoryImpl(
         }
 
         val destDir = newSrcDir.createDirectory(newNovel) ?: return@withContext
-        copyContentsRecursive(oldDir, destDir)
-        deleteRecursive(oldDir)
+        if (copyContentsRecursive(oldDir, destDir)) {
+            deleteRecursive(oldDir)
+        } else {
+            // Deleting the source after a partial copy would lose the un-copied translations.
+            // Keep it so the move can be retried; the half-written dest is denied on retry by the
+            // non-empty-existing guard above (or reclaimed once empty).
+            logcat(LogPriority.ERROR) {
+                "Copy incomplete moving '$oldSrcName/$oldNovel' -> '$newSrcName/$newNovel'; keeping source"
+            }
+        }
         Unit
     }
 
     // SAF renameTo only renames within the same parent, so a cross-source move is copy-then-delete.
-    private fun copyContentsRecursive(src: UniFile, dest: UniFile) {
+    // Returns true only if every child copied; a false result must prevent deleting the source.
+    private fun copyContentsRecursive(src: UniFile, dest: UniFile): Boolean {
+        var ok = true
         src.listFiles()?.forEach { child ->
-            val name = child.name ?: return@forEach
+            val name = child.name
+            if (name == null) {
+                ok = false
+                return@forEach
+            }
             if (child.isDirectory) {
-                dest.findChildDir(name)?.let { copyContentsRecursive(child, it) }
+                val destChild = dest.findChildDir(name)
+                if (destChild == null || !copyContentsRecursive(child, destChild)) ok = false
             } else {
-                val out = dest.createFile(name) ?: return@forEach
-                child.openInputStream().use { input -> out.openOutputStream().use { input.copyTo(it) } }
+                val out = dest.createFile(name)
+                if (out == null) {
+                    ok = false
+                } else {
+                    try {
+                        child.openInputStream().use { input -> out.openOutputStream().use { input.copyTo(it) } }
+                    } catch (e: IOException) {
+                        logcat(LogPriority.ERROR) { "Failed to copy translation '$name': ${e.message}" }
+                        ok = false
+                    }
+                }
             }
         }
+        return ok
     }
 
     override suspend fun deleteAll() = withContext(Dispatchers.IO) {

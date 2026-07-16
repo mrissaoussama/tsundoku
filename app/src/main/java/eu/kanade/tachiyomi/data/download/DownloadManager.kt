@@ -31,6 +31,7 @@ import tachiyomi.i18n.MR
 import tachiyomi.source.local.isLocalNovel
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.io.IOException
 
 /**
  * This class is used to manage chapter downloads in the application. It must be instantiated once
@@ -455,22 +456,45 @@ class DownloadManager(
             logcat(LogPriority.ERROR, it) { "Failed to create destination download folder for ${manga.title}" }
             return false
         }
-        copyContentsRecursive(oldFolder, destFolder)
+        if (!copyContentsRecursive(oldFolder, destFolder)) {
+            // Deleting the source after a partial copy would lose the un-copied chapters. Keep it so
+            // the move can be retried; the non-empty-destination guard above blocks a re-copy.
+            logcat(LogPriority.ERROR) { "Copy incomplete moving downloads for ${manga.title}; keeping source" }
+            cache.invalidateCache()
+            return false
+        }
         deleteRecursive(oldFolder)
         cache.invalidateCache()
         return true
     }
 
-    private fun copyContentsRecursive(src: UniFile, dest: UniFile) {
+    // Returns true only if every child copied; a false result must prevent deleting the source.
+    private fun copyContentsRecursive(src: UniFile, dest: UniFile): Boolean {
+        var ok = true
         src.listFiles()?.forEach { child ->
-            val name = child.name ?: return@forEach
+            val name = child.name
+            if (name == null) {
+                ok = false
+                return@forEach
+            }
             if (child.isDirectory) {
-                dest.createDirectory(name)?.let { copyContentsRecursive(child, it) }
+                val destChild = dest.findFile(name)?.takeIf { it.isDirectory } ?: dest.createDirectory(name)
+                if (destChild == null || !copyContentsRecursive(child, destChild)) ok = false
             } else {
-                val out = dest.createFile(name) ?: return@forEach
-                child.openInputStream().use { input -> out.openOutputStream().use { input.copyTo(it) } }
+                val out = dest.createFile(name)
+                if (out == null) {
+                    ok = false
+                } else {
+                    try {
+                        child.openInputStream().use { input -> out.openOutputStream().use { input.copyTo(it) } }
+                    } catch (e: IOException) {
+                        logcat(LogPriority.ERROR) { "Failed to copy download '$name': ${e.message}" }
+                        ok = false
+                    }
+                }
             }
         }
+        return ok
     }
 
     private fun deleteRecursive(file: UniFile) {

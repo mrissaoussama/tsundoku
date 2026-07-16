@@ -11,6 +11,7 @@ import tachiyomi.domain.storage.service.StorageManager
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Manager for handling quote storage and retrieval.
@@ -32,6 +33,15 @@ class QuoteManager(private val context: Context) {
 
     private val quotesDir: UniFile? by lazy {
         storageManager.getQuotesDirectory()
+    }
+
+    // A fresh QuoteManager is handed out per Context access, so the write lock has to be
+    // process-wide, not per-instance. Serialize load-modify-save mutators on a per-novel monitor
+    // so concurrent add/remove/update/rename can't lose each other's writes.
+    private fun <T> withNovelLock(sourceName: String, novelTitle: String, block: () -> T): T {
+        val key = "${getSourceDirName(sourceName)}/${getNovelFileName(novelTitle)}"
+        val lock = novelLocks.computeIfAbsent(key) { Any() }
+        return synchronized(lock) { block() }
     }
 
     private fun getSourceDirName(sourceName: String): String =
@@ -131,7 +141,7 @@ class QuoteManager(private val context: Context) {
     /**
      * Add a new quote for a novel
      */
-    fun addQuote(sourceName: String, novelTitle: String, quote: Quote) {
+    fun addQuote(sourceName: String, novelTitle: String, quote: Quote) = withNovelLock(sourceName, novelTitle) {
         val existingQuotes = loadQuotes(sourceName, novelTitle).toMutableList()
         existingQuotes.add(quote)
         saveQuotes(sourceName, novelTitle, existingQuotes)
@@ -140,7 +150,7 @@ class QuoteManager(private val context: Context) {
     /**
      * Remove a quote by ID
      */
-    fun removeQuote(sourceName: String, novelTitle: String, quoteId: String) {
+    fun removeQuote(sourceName: String, novelTitle: String, quoteId: String) = withNovelLock(sourceName, novelTitle) {
         val existingQuotes = loadQuotes(sourceName, novelTitle).toMutableList()
         existingQuotes.removeAll { it.id == quoteId }
         saveQuotes(sourceName, novelTitle, existingQuotes)
@@ -149,7 +159,11 @@ class QuoteManager(private val context: Context) {
     /**
      * Update an existing quote
      */
-    fun updateQuote(sourceName: String, novelTitle: String, updatedQuote: Quote) {
+    fun updateQuote(
+        sourceName: String,
+        novelTitle: String,
+        updatedQuote: Quote,
+    ) = withNovelLock(sourceName, novelTitle) {
         val existingQuotes = loadQuotes(sourceName, novelTitle).toMutableList()
         val index = existingQuotes.indexOfFirst { it.id == updatedQuote.id }
         if (index >= 0) {
@@ -168,11 +182,12 @@ class QuoteManager(private val context: Context) {
     /**
      * Clear all quotes for a novel
      */
-    fun clearQuotes(sourceName: String, novelTitle: String) {
+    fun clearQuotes(sourceName: String, novelTitle: String) = withNovelLock(sourceName, novelTitle) {
         val file = getQuotesFile(sourceName, novelTitle)
         if (file?.exists() == true) {
             file.delete()
         }
+        Unit
     }
 
     /**
@@ -185,7 +200,11 @@ class QuoteManager(private val context: Context) {
     /**
      * Reorder quotes for a novel
      */
-    fun reorderQuotes(sourceName: String, novelTitle: String, quotes: List<Quote>) {
+    fun reorderQuotes(
+        sourceName: String,
+        novelTitle: String,
+        quotes: List<Quote>,
+    ) = withNovelLock(sourceName, novelTitle) {
         saveQuotes(sourceName, novelTitle, quotes)
         logcat(LogPriority.DEBUG) { "Quotes reordered for $sourceName/$novelTitle: ${quotes.size} quotes" }
     }
@@ -231,8 +250,15 @@ class QuoteManager(private val context: Context) {
             true
         } catch (e: IOException) {
             logcat(LogPriority.ERROR) { "Failed to move quotes for $oldTitle: ${e.message}" }
+            // A partially written destination is worse than none; loadQuotes would parse a
+            // truncated file. Drop it so the source remains the single source of truth.
+            newDir.findFile(newName)?.takeIf { it.exists() }?.delete()
             false
         }
+    }
+
+    companion object {
+        private val novelLocks = ConcurrentHashMap<String, Any>()
     }
 }
 
