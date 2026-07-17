@@ -1431,14 +1431,14 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                 return true
             }
             KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                if (preferences.novelVolumeKeysScroll.get()) {
+                if (preferences.novelVolumeKeysScroll.get() && !activity.viewModel.state.value.menuVisible) {
                     if (!isUp) webView.evaluateJavascript("window.scrollBy(0, $scrollAmount);", null)
                     return true
                 }
                 return false
             }
             KeyEvent.KEYCODE_VOLUME_UP -> {
-                if (preferences.novelVolumeKeysScroll.get()) {
+                if (preferences.novelVolumeKeysScroll.get() && !activity.viewModel.state.value.menuVisible) {
                     if (!isUp) webView.evaluateJavascript("window.scrollBy(0, -$scrollAmount);", null)
                     return true
                 }

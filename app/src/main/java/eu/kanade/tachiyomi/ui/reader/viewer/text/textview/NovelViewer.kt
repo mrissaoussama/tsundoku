@@ -1980,14 +1980,14 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
                 return true
             }
             KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                if (preferences.novelVolumeKeysScroll.get()) {
+                if (preferences.novelVolumeKeysScroll.get() && !activity.viewModel.state.value.menuVisible) {
                     if (!isUp) scrollView.pageScroll(View.FOCUS_DOWN)
                     return true
                 }
                 return false
             }
             KeyEvent.KEYCODE_VOLUME_UP -> {
-                if (preferences.novelVolumeKeysScroll.get()) {
+                if (preferences.novelVolumeKeysScroll.get() && !activity.viewModel.state.value.menuVisible) {
                     if (!isUp) scrollView.pageScroll(View.FOCUS_UP)
                     return true
                 }
