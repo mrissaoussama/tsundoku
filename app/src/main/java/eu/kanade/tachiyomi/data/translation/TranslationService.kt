@@ -940,7 +940,6 @@ class TranslationService(
                     translatedHtml = TranslationHtmlUtils.reinsertImages(translatedHtml, preservedImages)
                 }
 
-                // Persist translation for future use
                 if (locator != null) {
                     val engine = translationEngineManager.getEngine()
                     val translatedChapter = TranslatedChapter(

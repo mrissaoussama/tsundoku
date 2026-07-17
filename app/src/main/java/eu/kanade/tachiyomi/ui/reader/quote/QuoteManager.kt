@@ -82,6 +82,7 @@ class QuoteManager(private val context: Context) {
 
             if (quotes.isEmpty()) {
                 getQuotesFile(sourceName, novelTitle)?.takeIf { it.exists() }?.delete()
+                deletePendingTmp(sourceName, novelTitle)
                 return true
             }
 
@@ -187,7 +188,13 @@ class QuoteManager(private val context: Context) {
         if (file?.exists() == true) {
             file.delete()
         }
+        deletePendingTmp(sourceName, novelTitle)
         Unit
+    }
+
+    private fun deletePendingTmp(sourceName: String, novelTitle: String) {
+        val dir = findSourceDir(sourceName) ?: return
+        dir.findFile("${getNovelFileName(novelTitle)}.tmp")?.takeIf { it.exists() }?.delete()
     }
 
     /**

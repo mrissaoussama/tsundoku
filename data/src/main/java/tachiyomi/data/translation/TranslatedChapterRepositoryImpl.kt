@@ -326,12 +326,14 @@ class TranslatedChapterRepositoryImpl(
         toTranslatedChapter(meta, targetLanguage)
     }
 
-    // ── Delete operations ─────────────────────────────────────────────
+    // Delete operations
 
     override suspend fun deleteTranslation(locator: TranslationLocator, targetLanguage: String) =
         withContext(Dispatchers.IO) {
             findLangDir(locator, targetLanguage)?.let { dir ->
-                dir.findFile(fileName(locator))?.delete()
+                val name = fileName(locator)
+                dir.findFile(name)?.delete()
+                dir.findFile("$name.saving")?.delete()
                 dir.findFile(tmpFileName(locator))?.delete()
             }
             Unit
@@ -345,6 +347,7 @@ class TranslatedChapterRepositoryImpl(
             ?.filter { it.isDirectory }
             ?.forEach { langDir ->
                 langDir.findFile(target)?.delete()
+                langDir.findFile("$target.saving")?.delete()
                 langDir.findFile(tmp)?.delete()
             }
         Unit
@@ -359,7 +362,7 @@ class TranslatedChapterRepositoryImpl(
         val novelDir = findNovelDir(sourceName, novelTitle) ?: return@withContext
         val wanted = chapters.flatMapTo(HashSet()) {
             val base = chapterFileBase(it.name, it.url)
-            listOf("$base.html", "$base.html.tmp")
+            listOf("$base.html", "$base.html.saving", "$base.html.tmp")
         }
         novelDir.listFiles()
             ?.filter { it.isDirectory }
