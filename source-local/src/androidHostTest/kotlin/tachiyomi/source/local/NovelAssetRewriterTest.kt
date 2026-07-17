@@ -133,17 +133,4 @@ class NovelAssetRewriterTest {
         val encoded = out.substringAfter(NovelAssetRewriter.SCHEME).substringBefore('"')
         assertEquals("Saved Page (Complete)_files/x.png", URLDecoder.decode(encoded, "UTF-8"))
     }
-
-    @Test
-    fun `isRelativeRef classification`() {
-        assertTrue(NovelAssetRewriter.isRelativeRef("images/x.png"))
-        assertTrue(NovelAssetRewriter.isRelativeRef("../x.png"))
-        assertFalse(NovelAssetRewriter.isRelativeRef("http://x/y"))
-        assertFalse(NovelAssetRewriter.isRelativeRef("https://x/y"))
-        assertFalse(NovelAssetRewriter.isRelativeRef("//cdn/x"))
-        assertFalse(NovelAssetRewriter.isRelativeRef("/root/x"))
-        assertFalse(NovelAssetRewriter.isRelativeRef("data:x"))
-        assertFalse(NovelAssetRewriter.isRelativeRef("#frag"))
-        assertFalse(NovelAssetRewriter.isRelativeRef(""))
-    }
 }

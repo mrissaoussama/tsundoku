@@ -596,11 +596,19 @@ actual class LocalNovelSource : CatalogueSource, UnmeteredSource {
 
     private fun resolveRelativeFile(base: UniFile, path: String): UniFile? {
         var current: UniFile? = base
+        var depth = 0
         for (segment in path.split('/')) {
             current = when (segment) {
                 "", "." -> current
-                ".." -> current?.parentFile
-                else -> current?.findFile(segment)
+                ".." -> {
+                    if (depth == 0) return null
+                    depth--
+                    current?.parentFile
+                }
+                else -> {
+                    depth++
+                    current?.findFile(segment)
+                }
             } ?: return null
         }
         return current?.takeIf { it.isFile }

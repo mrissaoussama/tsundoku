@@ -66,17 +66,8 @@ internal object NovelAssetRewriter {
         }
     }
 
-    fun isRelativeRef(ref: String): Boolean {
-        val v = ref.trim()
-        if (v.isEmpty()) return false
-        if (v.startsWith("#") || v.startsWith("/")) return false
-        return !ABSOLUTE_SCHEME_REGEX.containsMatchIn(v)
-    }
-
-    // Resolvable = document-relative (images/x.png, ../x.png) OR root-absolute (/forks/x.png).
     // Root-absolute refs in a saved site point at the site root, which for a local novel is the
-    // chapter's own base directory, so they resolve the same way once the leading slash is dropped.
-    // Protocol-relative (//cdn), absolute schemes, and pure fragments stay untouched.
+    // chapter's own base directory, so they resolve like relative refs once the leading slash is dropped.
     fun isResolvableRef(ref: String): Boolean {
         val v = ref.trim()
         if (v.isEmpty()) return false
@@ -96,7 +87,6 @@ internal object NovelAssetRewriter {
         val v = ref.trim()
         if (!isResolvableRef(v)) return null
         val decoded = decodePath(v.substringBefore('#'))
-        // A root-absolute ref resolves from the archive root, not the entry's directory.
         val effectiveBase = if (decoded.startsWith("/")) "" else baseDir
         val path = resolveArchivePath(effectiveBase, decoded)
         if (path.isBlank()) return null
