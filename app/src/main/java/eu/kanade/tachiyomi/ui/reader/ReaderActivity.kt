@@ -192,6 +192,7 @@ class ReaderActivity : BaseActivity() {
             true
         } catch (e: Exception) {
             webViewFileChooserCallback = null
+            callback.onReceiveValue(null)
             false
         }
     }

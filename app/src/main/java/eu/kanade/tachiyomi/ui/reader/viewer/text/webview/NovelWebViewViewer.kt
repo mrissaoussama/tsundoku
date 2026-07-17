@@ -197,6 +197,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     // onPageFinished lands, since that load bypasses the isLoadingRealChapter re-arm path.
     private var rearmAutoScrollOnErrorPage = false
 
+    // Tracked so a JS dialog still on screen at teardown is dismissed instead of leaking the window.
+    private var activeJsDialog: AlertDialog? = null
+
     private val config = NovelConfig(scope)
     private val navigator get() = config.navigator
 
@@ -653,6 +656,13 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     super.onPageFinished(view, url)
                     hideLoadingIndicator()
 
+                    // The error page is a fresh document; re-arm autoscroll before the real-chapter
+                    // gate below, which the error load (isLoadingRealChapter=false) would skip.
+                    if (rearmAutoScrollOnErrorPage) {
+                        rearmAutoScrollOnErrorPage = false
+                        if (isAutoScrolling) startAutoScroll()
+                    }
+
                     // Loading/error loads also fire onPageFinished(about:blank), and some WebView
                     // builds fire twice per navigation; gate the whole body so scripts/snippets
                     // inject only on the first genuine chapter load.
@@ -707,10 +717,11 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                             result.cancel()
                             return true
                         }
-                        AlertDialog.Builder(activity)
+                        activeJsDialog = AlertDialog.Builder(activity)
                             .setMessage(message)
                             .setPositiveButton(android.R.string.ok) { _, _ -> result.confirm() }
                             .setOnCancelListener { result.cancel() }
+                            .setOnDismissListener { activeJsDialog = null }
                             .show()
                         return true
                     }
@@ -720,11 +731,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                             result.cancel()
                             return true
                         }
-                        AlertDialog.Builder(activity)
+                        activeJsDialog = AlertDialog.Builder(activity)
                             .setMessage(message)
                             .setPositiveButton(android.R.string.ok) { _, _ -> result.confirm() }
                             .setNegativeButton(android.R.string.cancel) { _, _ -> result.cancel() }
                             .setOnCancelListener { result.cancel() }
+                            .setOnDismissListener { activeJsDialog = null }
                             .show()
                         return true
                     }
@@ -741,12 +753,13 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                             return true
                         }
                         val input = EditText(activity).apply { setText(defaultValue.orEmpty()) }
-                        AlertDialog.Builder(activity)
+                        activeJsDialog = AlertDialog.Builder(activity)
                             .setMessage(message)
                             .setView(input)
                             .setPositiveButton(android.R.string.ok) { _, _ -> result.confirm(input.text.toString()) }
                             .setNegativeButton(android.R.string.cancel) { _, _ -> result.cancel() }
                             .setOnCancelListener { result.cancel() }
+                            .setOnDismissListener { activeJsDialog = null }
                             .show()
                         return true
                     }
@@ -758,10 +771,6 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     ): Boolean {
                         if (filePathCallback == null || fileChooserParams == null) return false
                         return activity.launchWebViewFileChooser(filePathCallback, fileChooserParams)
-                    }
-                    if (rearmAutoScrollOnErrorPage) {
-                        rearmAutoScrollOnErrorPage = false
-                        if (isAutoScrolling) startAutoScroll()
                     }
                 }
             }
@@ -918,6 +927,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
         attachListener?.let(container::removeOnAttachStateChangeListener)
         attachListener = null
+
+        activeJsDialog?.dismiss()
+        activeJsDialog = null
 
         container.removeView(webView)
         webView.stopLoading()
