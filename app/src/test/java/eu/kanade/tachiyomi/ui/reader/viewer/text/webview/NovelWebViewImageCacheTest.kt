@@ -118,6 +118,7 @@ class NovelWebViewImageCacheTest {
         val imageBytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte())
         val loader = fakeLoader("img.jpg" to imageBytes)
         val cache = makeCache(tempDir.toFile())
+        cache.schedulePrefetch(content = "", chapterId = 42L, loader = loader)
 
         val response = cache.intercept(
             url = "tsundoku-novel-image://42/img.jpg",
@@ -138,6 +139,8 @@ class NovelWebViewImageCacheTest {
         val loader3 = fakeLoader("image_0.jpg" to ch3Bytes)
         val loader4 = fakeLoader("image_0.jpg" to ch4Bytes)
         val cache = makeCache(tempDir.toFile())
+        cache.schedulePrefetch(content = "", chapterId = 3L, loader = loader3)
+        cache.schedulePrefetch(content = "", chapterId = 4L, loader = loader4)
 
         val r3 = cache.intercept("tsundoku-novel-image://3/image_0.jpg", null, loader3)
         val r4 = cache.intercept("tsundoku-novel-image://4/image_0.jpg", null, loader4)
