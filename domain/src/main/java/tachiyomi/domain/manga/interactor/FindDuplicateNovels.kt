@@ -149,7 +149,12 @@ class FindDuplicateNovels(
 
         val result = LinkedHashMap<String, List<MangaWithChapterCount>>()
         groupsByRoot.values.forEach { members ->
-            val key = members.first().manga.title.trim().lowercase().ifBlank { members.first().manga.id.toString() }
+            val representativeId = members.first().manga.id
+            val baseKey = members.first().manga.title.trim().lowercase().ifBlank { representativeId.toString() }
+            // Two distinct groups can share a base key (e.g. one group's blank-title fallback
+            // equals another group's literal title); disambiguate rather than silently
+            // overwriting and losing a whole duplicate group from the result.
+            val key = if (result.containsKey(baseKey)) "$baseKey#$representativeId" else baseKey
             result[key] = members.sortedByDescending { it.chapterCount }
         }
         return result
