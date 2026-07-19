@@ -37,33 +37,28 @@ class StubSource(
     override suspend fun getPageList(chapter: SChapter): List<Page> =
         throw SourceNotInstalledException()
 
-    // Must match JsSource.toString() so quotes/translations resolve to the same on-disk directory
-    // whether a source is currently loaded (JsSource) or stubbed (plugin not yet loaded). Novel
-    // sources are JS plugins here, which render as "Name (LANG) (JS)".
+    // Must match the loaded source's toString() so quotes/translations resolve to the same on-disk
+    // directory whether the source is currently loaded or only stubbed (plugin not yet loaded).
+    // Installed novel sources are JS plugins, rendering as "Name (LANG) (JS)"; the built-in local
+    // sources (ids 0/1) override toString() to their bare name with no lang/marker.
     override fun toString(): String = when {
         isInvalid -> id.toString()
+        id == LOCAL_SOURCE_ID || id == LOCAL_NOVEL_SOURCE_ID -> name
         isNovelSource -> "$name (${lang.uppercase()}) (JS)"
         else -> "$name (${lang.uppercase()})"
     }
 
     companion object {
+        // Kept in sync with LocalSource.ID (0) / LocalNovelSource.ID (1) in :source-local, which
+        // :domain cannot depend on. Their toString() is the bare name, unlike installed sources.
+        private const val LOCAL_SOURCE_ID = 0L
+        private const val LOCAL_NOVEL_SOURCE_ID = 1L
+
         fun from(source: Source): StubSource {
             return StubSource(
                 id = source.id,
                 lang = source.lang,
                 name = source.name,
-                isNovelSource = source.isNovelSource(),
-            )
-        }
-
-        /**
-         * Create a StubSource that preserves the full display name (including markers like "(JS)")
-         */
-        fun fromWithDisplayName(source: Source, displayName: String): StubSource {
-            return StubSource(
-                id = source.id,
-                lang = source.lang,
-                name = displayName,
                 isNovelSource = source.isNovelSource(),
             )
         }
