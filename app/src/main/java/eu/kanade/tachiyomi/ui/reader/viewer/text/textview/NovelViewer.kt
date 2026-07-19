@@ -549,7 +549,10 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             "NovelViewer: loadNext starting from anchor=${anchor.chapter.id}/${anchor.chapter.name}"
         }
 
-        val retry = { lastNextLoadFailedAt = 0L; loadNextChapterIfAvailable() }
+        val retry = {
+            lastNextLoadFailedAt = 0L
+            loadNextChapterIfAvailable()
+        }
         var loadFailed = false
 
         scope.launch {

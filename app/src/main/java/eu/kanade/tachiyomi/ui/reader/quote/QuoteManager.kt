@@ -280,7 +280,9 @@ class QuoteManager(private val context: Context) {
             val newDir = getOrCreateSourceDir(newSourceName) ?: return@withNovelLocks false
             val newName = getNovelFileName(newTitle)
             if (newDir.findFile(newName)?.exists() == true) {
-                logcat(LogPriority.WARN) { "Quotes already exist at destination for $newSourceName/$newTitle; not moving" }
+                logcat(LogPriority.WARN) {
+                    "Quotes already exist at destination for $newSourceName/$newTitle; not moving"
+                }
                 return@withNovelLocks false
             }
             try {

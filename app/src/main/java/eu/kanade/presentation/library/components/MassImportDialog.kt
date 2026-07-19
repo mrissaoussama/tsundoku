@@ -102,7 +102,10 @@ private const val CLIPBOARD_COPY_LIMIT = 5_000
 // one more source without materializing it alongside the staged files.
 private fun writeTempUrlsFile(context: Context, text: String): File {
     val file = File(context.cacheDir, "mass_import_typed_${System.nanoTime()}.txt")
-    file.bufferedWriter().use { it.write(text); it.write("\n") }
+    file.bufferedWriter().use {
+        it.write(text)
+        it.write("\n")
+    }
     return file
 }
 
@@ -877,7 +880,15 @@ fun MassImportDialog(
                                         // Not separating files, but splitting by domain: fold
                                         // everything into one file, then split it below.
                                         if (staged.isNotEmpty() || combinedRawText.isNotBlank()) {
-                                            listOf(joinUrlFiles(context, staged, combinedRawText.takeIf { it.isNotBlank() }))
+                                            listOf(
+                                                joinUrlFiles(
+                                                    context,
+                                                    staged,
+                                                    combinedRawText.takeIf {
+                                                        it.isNotBlank()
+                                                    },
+                                                ),
+                                            )
                                         } else {
                                             emptyList()
                                         }
@@ -925,7 +936,11 @@ fun MassImportDialog(
                         } else {
                             val uniqueUrls = withContext(Dispatchers.Default) {
                                 val set = LinkedHashSet<String>()
-                                if (combinedRawText.isNotBlank()) set.addAll(massImportNovels.parseUrls(combinedRawText))
+                                if (combinedRawText.isNotBlank()) {
+                                    set.addAll(
+                                        massImportNovels.parseUrls(combinedRawText),
+                                    )
+                                }
                                 set.toList()
                             }
 
