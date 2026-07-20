@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.data.download
 
 import android.content.Context
+import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.data.download.model.Download
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.Page
@@ -30,6 +31,7 @@ import tachiyomi.i18n.MR
 import tachiyomi.source.local.isLocalNovel
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.io.IOException
 
 /**
  * This class is used to manage chapter downloads in the application. It must be instantiated once
@@ -430,6 +432,75 @@ class DownloadManager(
         } else {
             logcat(LogPriority.ERROR) { "Failed to rename manga download folder: ${oldFolder.name}" }
         }
+    }
+
+    /**
+     * Moves a manga's downloads from one source folder to another (e.g. on migration). SAF renameTo
+     * only renames within the same parent, so this copies the tree then deletes the original. Denies
+     * the move if the destination already holds downloads.
+     *
+     * @return true if the move succeeded or there was nothing to move.
+     */
+    suspend fun moveMangaToNewSource(manga: Manga, oldSource: Source, newSource: Source): Boolean {
+        if (oldSource.id == newSource.id) return true
+        val oldFolder = provider.findMangaDir(manga.title, oldSource) ?: return true
+
+        val existingNew = provider.findMangaDir(manga.title, newSource)
+        if (existingNew != null && !existingNew.listFiles().isNullOrEmpty()) {
+            logcat(LogPriority.WARN) { "Downloads already exist for ${manga.title} under new source; not moving" }
+            return false
+        }
+
+        downloader.removeFromQueue(manga)
+        val destFolder = provider.getMangaDir(manga.title, newSource).getOrElse {
+            logcat(LogPriority.ERROR, it) { "Failed to create destination download folder for ${manga.title}" }
+            return false
+        }
+        if (!copyContentsRecursive(oldFolder, destFolder)) {
+            // Keep the source (it still holds every chapter) but drop the half-copied destination,
+            // otherwise the non-empty-destination guard above would block every future retry.
+            logcat(LogPriority.ERROR) { "Copy incomplete moving downloads for ${manga.title}; reverting" }
+            deleteRecursive(destFolder)
+            cache.invalidateCache()
+            return false
+        }
+        deleteRecursive(oldFolder)
+        cache.invalidateCache()
+        return true
+    }
+
+    // Returns true only if every child copied; a false result must prevent deleting the source.
+    private fun copyContentsRecursive(src: UniFile, dest: UniFile): Boolean {
+        var ok = true
+        src.listFiles()?.forEach { child ->
+            val name = child.name
+            if (name == null) {
+                ok = false
+                return@forEach
+            }
+            if (child.isDirectory) {
+                val destChild = dest.findFile(name)?.takeIf { it.isDirectory } ?: dest.createDirectory(name)
+                if (destChild == null || !copyContentsRecursive(child, destChild)) ok = false
+            } else {
+                val out = dest.createFile(name)
+                if (out == null) {
+                    ok = false
+                } else {
+                    try {
+                        child.openInputStream().use { input -> out.openOutputStream().use { input.copyTo(it) } }
+                    } catch (e: IOException) {
+                        logcat(LogPriority.ERROR) { "Failed to copy download '$name': ${e.message}" }
+                        ok = false
+                    }
+                }
+            }
+        }
+        return ok
+    }
+
+    private fun deleteRecursive(file: UniFile) {
+        if (file.isDirectory) file.listFiles()?.forEach { deleteRecursive(it) }
+        file.delete()
     }
 
     /**

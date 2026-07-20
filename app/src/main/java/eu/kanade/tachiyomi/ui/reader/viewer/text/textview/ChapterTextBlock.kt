@@ -81,6 +81,29 @@ internal class ChapterTextBlock(
         return view.text.subSequence(start, end).toString()
     }
 
+    /**
+     * 0-based index of the paragraph the current selection starts in, using the same
+     * single-\n split as TTS so quote paragraph indexes align with playback positions.
+     */
+    fun selectedParagraphIndex(): Int? {
+        val chunkIndex = chunkViews.indexOfFirst { it.hasSelection() }
+        if (chunkIndex < 0) return null
+        val start = chunkViews[chunkIndex].selectionStart
+        if (start < 0) return null
+        val text = fullText ?: return null
+        if (text.isBlank()) return null
+        val absoluteOffset = ((chunkStarts.getOrNull(chunkIndex) ?: 0) + start)
+            .coerceIn(0, text.length)
+
+        // Count the non-blank lines that end before the selection, mirroring the WebView
+        // plain-text path (setEnd at the selection, split on \n, count non-blank lines
+        // excluding the partial current line) so quote indexes align across viewers.
+        return text.substring(0, absoluteOffset)
+            .split("\n")
+            .dropLast(1)
+            .count { it.isNotBlank() }
+    }
+
     fun clearSelections() {
         chunkViews.forEach { NovelTextRenderer.clearTextViewSelection(it) }
     }

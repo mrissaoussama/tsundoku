@@ -9,20 +9,25 @@ import java.util.UUID
 @Serializable
 data class Quote(
     val id: String = UUID.randomUUID().toString(),
-    val novelName: String,
     val chapterName: String,
     val content: String,
     val timestamp: Long = System.currentTimeMillis(),
+    /** 0-based index of the paragraph the selection starts in, or null if unknown. */
+    val paragraphIndex: Int? = null,
 ) {
     companion object {
         /**
          * Create a new quote with the given parameters
          */
-        fun create(novelName: String, chapterName: String, content: String): Quote {
+        fun create(
+            chapterName: String,
+            content: String,
+            paragraphIndex: Int? = null,
+        ): Quote {
             return Quote(
-                novelName = novelName,
                 chapterName = chapterName,
                 content = content.trim(),
+                paragraphIndex = paragraphIndex,
             )
         }
     }
@@ -33,6 +38,5 @@ data class Quote(
  */
 @Serializable
 data class NovelQuotes(
-    val novelId: Long,
     val quotes: List<Quote> = emptyList(),
 )

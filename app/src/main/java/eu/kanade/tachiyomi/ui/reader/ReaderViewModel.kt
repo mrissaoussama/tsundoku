@@ -97,6 +97,7 @@ import tachiyomi.domain.manga.interactor.GetLibraryManga
 import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.translation.model.TranslationLocator
 import tachiyomi.domain.translation.service.TranslationPreferences
 import tachiyomi.source.local.isLocal
 import tachiyomi.source.local.isLocalNovel
@@ -592,10 +593,15 @@ class ReaderViewModel @JvmOverloads constructor(
             translationPreferences.translationEnabled().get() &&
             translationPreferences.smartAutoTranslate().get()
         ) {
-            val chapterId = chapter.chapter.id ?: return
+            val locator = TranslationLocator(
+                sourceName = sourceManager.getOrStub(currentManga.source).toString(),
+                novelTitle = currentManga.title,
+                chapterName = chapter.chapter.name,
+                chapterUrl = chapter.chapter.url,
+            )
             viewModelScope.launchIO {
                 // Already cached for this chapter+lang: the viewer serves it, no API call.
-                if (translationService.hasTranslation(chapterId)) return@launchIO
+                if (translationService.hasTranslation(locator)) return@launchIO
                 translationService.enqueue(
                     manga = currentManga,
                     chapter = chapter.chapter.toDomainChapter()!!,
@@ -1155,7 +1161,25 @@ class ReaderViewModel @JvmOverloads constructor(
 
     /** Whether a cached translation exists for [chapterId] in the current target language. */
     suspend fun hasCachedTranslation(chapterId: Long): Boolean {
-        return translationService.hasTranslation(chapterId)
+        val locator = buildTranslationLocator(chapterId) ?: return false
+        return translationService.hasTranslation(locator)
+    }
+
+    /**
+     * Build a portable [TranslationLocator] for [chapterId] (or the current chapter when null),
+     * resolving the chapter from the loaded list plus the current manga and source.
+     */
+    private fun buildTranslationLocator(chapterId: Long?): TranslationLocator? {
+        val currentManga = manga ?: return null
+        val chapter = chapterId?.let { id -> chapterList.firstOrNull { it.chapter.id == id }?.chapter }
+            ?: getCurrentChapter()?.chapter
+            ?: return null
+        return TranslationLocator(
+            sourceName = sourceManager.getOrStub(currentManga.source).toString(),
+            novelTitle = currentManga.title,
+            chapterName = chapter.name,
+            chapterUrl = chapter.url,
+        )
     }
 
     /**
@@ -1181,8 +1205,7 @@ class ReaderViewModel @JvmOverloads constructor(
         }
         return translationService.translateChapterContent(
             content = content,
-            chapterId = chapterId,
-            mangaId = mangaId,
+            locator = buildTranslationLocator(chapterId),
         )
     }
 
@@ -1685,36 +1708,45 @@ class ReaderViewModel @JvmOverloads constructor(
     }
 
     // Quotes functionality
+    private fun quoteSourceName(): String? = getSource()?.toString()
+
     fun getQuotes(): List<Quote> {
         val manga = manga ?: return emptyList()
-        return quoteManager.getQuotes(manga.id)
+        val sourceName = quoteSourceName() ?: return emptyList()
+        return quoteManager.getQuotes(sourceName, manga.title)
     }
 
-    fun saveQuote(text: String, chapterName: String) {
+    fun saveQuote(text: String, chapterName: String, paragraphIndex: Int? = null) {
         val manga = manga ?: return
-        val chapter = getCurrentChapter()?.chapter ?: return
+        val sourceName = quoteSourceName() ?: return
+        // A manually added quote arrives with no chapter label; anchor it to the open chapter so the
+        // list doesn't render a blank line.
+        val resolvedChapterName = chapterName.ifBlank { getCurrentChapter()?.chapter?.name.orEmpty() }
         val quote = Quote(
-            novelName = manga.title,
-            chapterName = chapterName,
+            chapterName = resolvedChapterName,
             content = text,
             timestamp = System.currentTimeMillis(),
+            paragraphIndex = paragraphIndex,
         )
-        quoteManager.addQuote(manga.id, quote)
+        quoteManager.addQuote(sourceName, manga.title, quote)
     }
 
     fun deleteQuote(quote: Quote) {
         val manga = manga ?: return
-        quoteManager.removeQuote(manga.id, quote.id)
+        val sourceName = quoteSourceName() ?: return
+        quoteManager.removeQuote(sourceName, manga.title, quote.id)
     }
 
     fun updateQuote(quote: Quote) {
         val manga = manga ?: return
-        quoteManager.updateQuote(manga.id, quote)
+        val sourceName = quoteSourceName() ?: return
+        quoteManager.updateQuote(sourceName, manga.title, quote)
     }
 
     fun reorderQuotes(quotes: List<Quote>) {
         val manga = manga ?: return
-        quoteManager.reorderQuotes(manga.id, quotes)
+        val sourceName = quoteSourceName() ?: return
+        quoteManager.reorderQuotes(sourceName, manga.title, quotes)
     }
 
     sealed interface Dialog {

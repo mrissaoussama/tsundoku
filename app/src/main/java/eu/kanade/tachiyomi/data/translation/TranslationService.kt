@@ -36,6 +36,7 @@ import tachiyomi.domain.manga.interactor.GetManga
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.translation.model.TranslatedChapter
+import tachiyomi.domain.translation.model.TranslationLocator
 import tachiyomi.domain.translation.model.TranslationProgress
 import tachiyomi.domain.translation.model.TranslationResult
 import tachiyomi.domain.translation.model.TranslationStatus
@@ -397,12 +398,19 @@ class TranslationService(
         val source = sourceManager.get(manga.source)
             ?: throw IllegalStateException("Source ${manga.source} not found")
 
+        val locator = TranslationLocator(
+            sourceName = sourceManager.getOrStub(manga.source).toString(),
+            novelTitle = manga.title,
+            chapterName = chapter.name,
+            chapterUrl = chapter.url,
+        )
+
         logcat(LogPriority.DEBUG) { "Starting translation for chapter: ${chapter.name}" }
 
         // Check if already translated (skip unless forceRetranslate)
         if (!task.forceRetranslate) {
             val existingTranslation = translatedChapterRepository.getTranslatedChapter(
-                task.chapterId,
+                locator,
                 task.targetLanguage,
             )
             if (existingTranslation != null) {
@@ -459,7 +467,7 @@ class TranslationService(
 
         // Check for existing partial translation to resume from
         val existingTmpParagraphs = run {
-            val tmp = translatedChapterRepository.getTmpTranslation(task.chapterId, task.targetLanguage)
+            val tmp = translatedChapterRepository.getTmpTranslation(locator, task.targetLanguage)
             if (tmp != null) {
                 TranslationHtmlUtils.splitParagraphsPreserving(
                     TranslationHtmlUtils.extractTextFromHtml(tmp.translatedContent),
@@ -544,7 +552,7 @@ class TranslationService(
 
             // Check for cancellation
             if (_progressState.value.isCancelling) {
-                savePartialTranslation(task, engine.id.toString(), allTranslated, translatedTitle)
+                savePartialTranslation(locator, task, engine.id.toString(), allTranslated, translatedTitle)
                 throw CancellationException("Translation cancelled by user")
             }
 
@@ -598,7 +606,7 @@ class TranslationService(
                     }
                     break
                 } catch (e: CancellationException) {
-                    savePartialTranslation(task, engine.id.toString(), allTranslated, translatedTitle)
+                    savePartialTranslation(locator, task, engine.id.toString(), allTranslated, translatedTitle)
                     throw e
                 } catch (e: Exception) {
                     logcat(LogPriority.ERROR, e) {
@@ -637,7 +645,7 @@ class TranslationService(
         if (failedChunkIndex >= 0) {
             // Save partial translation as .tmp for resume
             if (allTranslated.isNotEmpty()) {
-                savePartialTranslation(task, engine.id.toString(), allTranslated, translatedTitle)
+                savePartialTranslation(locator, task, engine.id.toString(), allTranslated, translatedTitle)
                 logcat(LogPriority.WARN) {
                     "Saved partial translation (${allTranslated.size} paragraphs) for chapter ${chapter.name}"
                 }
@@ -662,7 +670,7 @@ class TranslationService(
             translatedContent = translatedHtml,
             dateTranslated = System.currentTimeMillis(),
         )
-        translatedChapterRepository.upsertTranslation(translatedChapter)
+        translatedChapterRepository.upsertTranslation(locator, translatedChapter)
 
         logcat(LogPriority.DEBUG) { "Successfully translated and saved chapter ${chapter.name}" }
 
@@ -697,6 +705,7 @@ class TranslationService(
      * Uses [TranslationHtmlUtils.buildTranslatedHtml] (fix DRY 2.1).
      */
     private suspend fun savePartialTranslation(
+        locator: TranslationLocator,
         task: TranslationTask,
         engineId: String,
         translatedParagraphs: List<String>,
@@ -715,7 +724,7 @@ class TranslationService(
             dateTranslated = System.currentTimeMillis(),
         )
         try {
-            translatedChapterRepository.upsertTmpTranslation(partial)
+            translatedChapterRepository.upsertTmpTranslation(locator, partial)
         } catch (e: Exception) {
             logcat(LogPriority.ERROR, e) { "Failed to save partial translation" }
         }
@@ -885,8 +894,7 @@ class TranslationService(
      */
     suspend fun translateChapterContent(
         content: String,
-        chapterId: Long? = null,
-        mangaId: Long? = null,
+        locator: TranslationLocator? = null,
         sourceLanguage: String? = null,
         targetLanguage: String? = null,
     ): String {
@@ -902,10 +910,10 @@ class TranslationService(
             return content
         }
 
-        if (chapterId != null) {
-            val existingTranslation = translatedChapterRepository.getTranslatedChapter(chapterId, tgtLang)
+        if (locator != null) {
+            val existingTranslation = translatedChapterRepository.getTranslatedChapter(locator, tgtLang)
             if (TranslationCachePolicy.shouldServeCached(existingTranslation)) {
-                logcat(LogPriority.DEBUG) { "Using cached translation for chapter $chapterId (lang: $tgtLang)" }
+                logcat(LogPriority.DEBUG) { "Using cached translation for ${locator.chapterName} (lang: $tgtLang)" }
                 return existingTranslation!!.translatedContent
             }
         }
@@ -917,7 +925,8 @@ class TranslationService(
         val plainText = TranslationHtmlUtils.extractTextFromHtml(contentWithoutImages)
 
         logcat(LogPriority.DEBUG) {
-            "translateChapterContent: chapterId=$chapterId srcLang=$srcLang tgtLang=$tgtLang plainText=${plainText.length} chars"
+            "translateChapterContent: chapter=${locator?.chapterName} srcLang=$srcLang tgtLang=$tgtLang " +
+                "plainText=${plainText.length} chars"
         }
 
         // Translate the plain text
@@ -931,25 +940,24 @@ class TranslationService(
                     translatedHtml = TranslationHtmlUtils.reinsertImages(translatedHtml, preservedImages)
                 }
 
-                // Save translation to database
-                if (chapterId != null && mangaId != null) {
+                if (locator != null) {
                     val engine = translationEngineManager.getEngine()
                     val translatedChapter = TranslatedChapter(
-                        chapterId = chapterId,
-                        mangaId = mangaId,
+                        chapterId = 0,
+                        mangaId = 0,
                         targetLanguage = tgtLang,
                         engineId = engine?.id?.toString() ?: "unknown",
                         translatedContent = translatedHtml,
                         dateTranslated = System.currentTimeMillis(),
                     )
                     try {
-                        translatedChapterRepository.upsertTranslation(translatedChapter)
-                        logcat(LogPriority.DEBUG) { "Saved translation for chapter $chapterId (lang: $tgtLang)" }
+                        translatedChapterRepository.upsertTranslation(locator, translatedChapter)
+                        logcat(LogPriority.DEBUG) { "Saved translation for ${locator.chapterName} (lang: $tgtLang)" }
                     } catch (e: CancellationException) {
-                        logcat(LogPriority.DEBUG) { "Translation save was cancelled for chapter $chapterId" }
+                        logcat(LogPriority.DEBUG) { "Translation save was cancelled for ${locator.chapterName}" }
                         throw e
                     } catch (e: Exception) {
-                        logcat(LogPriority.ERROR, e) { "Failed to save translation to database" }
+                        logcat(LogPriority.ERROR, e) { "Failed to save translation" }
                     }
                 }
 
@@ -963,39 +971,14 @@ class TranslationService(
     }
 
     /**
-     * Get translated content from database if available.
-     */
-    suspend fun getTranslatedContent(
-        chapterId: Long,
-        targetLanguage: String? = null,
-    ): String? {
-        val tgtLang = targetLanguage ?: translationPreferences.targetLanguage().get()
-        return translatedChapterRepository.getTranslatedChapter(chapterId, tgtLang)?.translatedContent
-    }
-
-    /**
-     * Check if a translation exists for a chapter.
+     * Check if a translation exists for a chapter locator in the given (or default) language.
      */
     suspend fun hasTranslation(
-        chapterId: Long,
+        locator: TranslationLocator,
         targetLanguage: String? = null,
     ): Boolean {
         val tgtLang = targetLanguage ?: translationPreferences.targetLanguage().get()
-        return translatedChapterRepository.hasTranslation(chapterId, tgtLang)
-    }
-
-    /**
-     * Get all available translation languages for a manga.
-     */
-    suspend fun getTranslatedLanguages(chapterIds: Collection<Long>): List<String> {
-        return translatedChapterRepository.getTranslatedLanguagesForChapters(chapterIds)
-    }
-
-    /**
-     * Delete a translation.
-     */
-    suspend fun deleteTranslation(chapterId: Long, targetLanguage: String) {
-        translatedChapterRepository.deleteTranslation(chapterId, targetLanguage)
+        return translatedChapterRepository.hasTranslation(locator, tgtLang)
     }
 
     /**

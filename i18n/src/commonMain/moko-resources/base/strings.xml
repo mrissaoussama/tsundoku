@@ -1211,6 +1211,12 @@
     <string name="pref_delete_all_translations_subtitle">Deletes all downloaded translations</string>
     <string name="pref_delete_all_translations_confirm">Are you sure you want to delete all downloaded translations? This cannot be undone.</string>
     <string name="pref_all_translations_deleted">All translations deleted</string>
+    <string name="pref_migrate_quotes_portable">Migrate quotes to portable storage</string>
+    <string name="pref_migrate_quotes_portable_subtitle">Move id-based quote files to the source/title layout</string>
+    <string name="pref_migrate_translations_portable">Migrate translations to portable storage</string>
+    <string name="pref_migrate_translations_portable_subtitle">Move id-based translation files to the source/novel/language layout</string>
+    <string name="pref_portable_migration_done">Migrated %d file(s)</string>
+    <string name="pref_portable_migration_error">Migration failed</string>
     <string name="pref_clear_temp_files">Clear temp files</string>
     <string name="pref_clear_temp_files_subtitle">Clears temporary files from app cache (epub exports, network cache, etc.)</string>
     <string name="pref_temp_files_cleared">Cleared %s of temp files</string>

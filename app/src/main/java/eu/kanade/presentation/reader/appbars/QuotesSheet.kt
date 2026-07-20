@@ -66,6 +66,7 @@ import tachiyomi.presentation.core.i18n.stringResource
 @Composable
 fun QuotesSheet(
     quotes: List<Quote>,
+    novelTitle: String,
     onDismiss: () -> Unit,
     onQuoteClick: (Quote) -> Unit,
     onQuoteDelete: (Quote) -> Unit,
@@ -187,7 +188,7 @@ fun QuotesSheet(
                         onClick = {
                             val quote = selectedQuote.value
                             if (quote != null) {
-                                val textToCopy = "\"${quote.content}\"\n\n- ${quote.novelName}, ${quote.chapterName}"
+                                val textToCopy = "\"${quote.content}\"\n\n- $novelTitle, ${quote.chapterName}"
                                 clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(textToCopy))
                             }
                             selectedQuote.value = null
@@ -688,7 +689,9 @@ private fun QuoteItem(
                 )
             }
             Text(
-                text = quote.chapterName,
+                text = quote.paragraphIndex
+                    ?.let { "${quote.chapterName}  ·  ¶${it + 1}" }
+                    ?: quote.chapterName,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f),

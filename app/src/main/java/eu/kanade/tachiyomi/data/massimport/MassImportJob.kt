@@ -1130,10 +1130,20 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
     // Per-batch ids so concurrent batches don't clobber each other's notification. Two disjoint
     // positive bands 100M apart (progress vs completion); 24-bit spread makes collisions negligible.
     private fun progressNotificationId(batchId: String): Int =
-        if (batchId.isEmpty()) Notifications.ID_MASS_IMPORT_PROGRESS else 600_000_000 + (batchId.hashCode() and 0xFFFFFF)
+        if (batchId.isEmpty()) {
+            Notifications.ID_MASS_IMPORT_PROGRESS
+        } else {
+            600_000_000 +
+                (batchId.hashCode() and 0xFFFFFF)
+        }
 
     private fun completionNotificationId(batchId: String): Int =
-        if (batchId.isEmpty()) Notifications.ID_MASS_IMPORT_COMPLETE else 700_000_000 + (batchId.hashCode() and 0xFFFFFF)
+        if (batchId.isEmpty()) {
+            Notifications.ID_MASS_IMPORT_COMPLETE
+        } else {
+            700_000_000 +
+                (batchId.hashCode() and 0xFFFFFF)
+        }
 
     private fun showCompletionNotification(batchId: String, added: Int, skipped: Int, errored: Int, message: String?) {
         val text = message ?: "Added: $added, Skipped: $skipped, Errors: $errored"

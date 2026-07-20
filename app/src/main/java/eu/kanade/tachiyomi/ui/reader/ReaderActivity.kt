@@ -545,6 +545,7 @@ class ReaderActivity : BaseActivity() {
         if (showQuotesState.value) {
             QuotesSheet(
                 quotes = quotesState.value,
+                novelTitle = state.manga?.title.orEmpty(),
                 onDismiss = {
                     showQuotesSheet = false
                 },
@@ -1738,6 +1739,11 @@ class ReaderActivity : BaseActivity() {
             is NovelWebViewViewer -> viewer.pendingSelectedText ?: viewer.getSelectedText()
             else -> null
         }
+        val paragraphIndex = when (val viewer = viewModel.state.value.viewer) {
+            is NovelViewer -> viewer.getSelectedParagraphIndex()
+            is NovelWebViewViewer -> viewer.pendingParagraphIndex
+            else -> null
+        }
         val chapterName = when (val viewer = viewModel.state.value.viewer) {
             is NovelViewer -> viewer.getCurrentChapterName()
             is NovelWebViewViewer -> viewer.getCurrentChapterName()
@@ -1745,11 +1751,15 @@ class ReaderActivity : BaseActivity() {
         }
 
         if (selectedText != null && chapterName != null) {
-            viewModel.saveQuote(selectedText, chapterName)
+            viewModel.saveQuote(selectedText, chapterName, paragraphIndex)
             // Clear selection after adding quote
             when (val viewer = viewModel.state.value.viewer) {
                 is NovelViewer -> viewer.clearTextSelection()
-                is NovelWebViewViewer -> viewer.clearTextSelection()
+                is NovelWebViewViewer -> {
+                    viewer.clearTextSelection()
+                    viewer.pendingSelectedText = null
+                    viewer.pendingParagraphIndex = null
+                }
             }
             toast("Quote saved!")
         } else {

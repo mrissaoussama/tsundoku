@@ -40,6 +40,11 @@ class MigrateMangaScreenModel(
     private val sourceTrackerDispatcher: SourceTrackerDispatcher = Injekt.get(),
     private val trackPreferences: TrackPreferences = Injekt.get(),
     private val getManga: tachiyomi.domain.manga.interactor.GetManga = Injekt.get(),
+    private val downloadManager: eu.kanade.tachiyomi.data.download.DownloadManager = Injekt.get(),
+    private val translatedChapterRepository: tachiyomi.domain.translation.repository.TranslatedChapterRepository =
+        Injekt.get(),
+    private val quoteManager: eu.kanade.tachiyomi.ui.reader.quote.QuoteManager =
+        eu.kanade.tachiyomi.ui.reader.quote.QuoteManager(Injekt.get<android.app.Application>()),
 ) : StateScreenModel<MigrateMangaScreenModel.State>(State()) {
 
     private val _events: Channel<MigrationMangaEvent> = Channel()
@@ -139,6 +144,44 @@ class MigrateMangaScreenModel(
                 val migratedIds = mutableListOf<Long>()
                 for ((manga, newUrl) in quickMigrateTargets(selectedManga, targetFavoriteUrls)) {
                     try {
+                        val oldSource = sourceManager.getOrStub(manga.source)
+                        val newSource = sourceManager.getOrStub(targetSourceId)
+                        // Relocate source-keyed data (downloads/translations/quotes) BEFORE flipping the
+                        // DB source, so a crash in between can't leave files under the old source name
+                        // while the DB already points at the new one (orphaned data). Only preserves
+                        // data for same-URL migrations (e.g. JS->KT); different-site moves change
+                        // chapter URLs and won't line up.
+                        // moveMangaToNewSource reports non-crash failures (destination collision,
+                        // partial copy) via a false return, not an exception, so branch on the value:
+                        // leave the manga on its old source rather than flipping the DB onto downloads
+                        // that never moved. It can be retried once the conflict is resolved.
+                        val downloadsMoved = runCatching {
+                            downloadManager.moveMangaToNewSource(manga, oldSource, newSource)
+                        }.onFailure {
+                            logcat(LogPriority.ERROR, it) { "Failed to move downloads on quick migrate" }
+                        }.getOrDefault(false)
+                        if (!downloadsMoved) {
+                            logcat(LogPriority.WARN) {
+                                "Skipping quick migrate for ${manga.title}: download relocation did not complete"
+                            }
+                            continue
+                        }
+                        runCatching {
+                            translatedChapterRepository.moveNovel(
+                                oldSource.toString(),
+                                manga.title,
+                                newSource.toString(),
+                                manga.title,
+                            )
+                        }.onFailure { logcat(LogPriority.ERROR, it) { "Failed to move translations on quick migrate" } }
+                        runCatching {
+                            quoteManager.moveNovel(
+                                oldSource.toString(),
+                                manga.title,
+                                newSource.toString(),
+                                manga.title,
+                            )
+                        }.onFailure { logcat(LogPriority.ERROR, it) { "Failed to move quotes on quick migrate" } }
                         updateManga.await(MangaUpdate(id = manga.id, source = targetSourceId, url = newUrl))
                         migratedIds.add(manga.id)
                     } catch (_: Exception) {

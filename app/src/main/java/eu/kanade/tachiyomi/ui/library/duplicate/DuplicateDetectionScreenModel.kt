@@ -806,8 +806,10 @@ class DuplicateDetectionScreenModel(
 
             if (deleteTranslations) {
                 selectedManga.forEach { manga ->
-                    val chapters = getChaptersByMangaId.await(manga.id)
-                    translatedChapterRepository.deleteAllForChapters(chapters.map { it.id })
+                    translatedChapterRepository.deleteAllForManga(
+                        sourceManager.getOrStub(manga.source).toString(),
+                        manga.title,
+                    )
                 }
             }
 

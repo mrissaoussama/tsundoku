@@ -1,6 +1,28 @@
 package tachiyomi.domain.translation.model
 
 /**
+ * Locates a translated chapter on disk using portable, human-readable identifiers
+ * (mirrors the download layout: source name / novel title / language / chapter).
+ * This is what makes translation files moveable between installs.
+ */
+data class TranslationLocator(
+    val sourceName: String,
+    val novelTitle: String,
+    val chapterName: String,
+    val chapterUrl: String,
+)
+
+/**
+ * Minimal chapter identity used for bulk translation lookups/deletes without pulling
+ * the full [tachiyomi.domain.chapter.model.Chapter].
+ */
+data class ChapterRef(
+    val id: Long,
+    val name: String,
+    val url: String,
+)
+
+/**
  * Represents a translated chapter stored on the filesystem.
  */
 data class TranslatedChapter(

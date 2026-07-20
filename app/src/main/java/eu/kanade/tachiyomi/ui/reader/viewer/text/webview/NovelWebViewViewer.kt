@@ -216,6 +216,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     }
 
     var pendingSelectedText: String? = null
+    var pendingParagraphIndex: Int? = null
 
     private val gestureDetector = GestureDetector(
         activity,
@@ -1709,7 +1710,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     if (handoffState.isIdle) {
                         scope.launch { preFetchNextChapterForTts() }
                     }
-                } else if (System.currentTimeMillis() - lastNextLoadFailedAt < NovelProgress.NEXT_LOAD_RETRY_COOLDOWN_MS) {
+                } else if (System.currentTimeMillis() - lastNextLoadFailedAt <
+                    NovelProgress.NEXT_LOAD_RETRY_COOLDOWN_MS
+                ) {
                     // Keep the JS load latch held (JS set it before this call) so it stops re-firing
                     // loadNextChapter every scroll frame during the cooldown; schedule a single
                     // release for when the cooldown expires so it can't become permanent.
@@ -2343,20 +2346,59 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         evaluateJavascriptSafe(
             """
         (function() {
-            var selection = window.getSelection();
-            if (selection && selection.toString().trim()) {
-                return selection.toString().trim();
+            var sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0) return null;
+            var text = sel.toString().trim();
+            if (!text) return null;
+            var range = sel.getRangeAt(0);
+            var node = range.startContainer;
+            if (node && node.nodeType === 3) node = node.parentNode;
+            var para = -1;
+            try {
+                var chapterEl = (node && node.closest) ? node.closest('tsundoku-chapter') : null;
+                if (chapterEl) {
+                    var plain = chapterEl.querySelector('[data-tsundoku-plain-text]');
+                    if (plain) {
+                        var pre = document.createRange();
+                        pre.selectNodeContents(plain);
+                        pre.setEnd(range.startContainer, range.startOffset);
+                        var lines = pre.toString().split('\n');
+                        var count = 0;
+                        for (var i = 0; i < lines.length - 1; i++) {
+                            if (lines[i].trim().length > 0) count++;
+                        }
+                        para = count;
+                    } else {
+                        var blocks = chapterEl.querySelectorAll('p, li, blockquote, h1, h2, h3, h4, h5, h6, pre');
+                        for (var j = 0; j < blocks.length; j++) {
+                            if (blocks[j].contains(node)) { para = j; break; }
+                        }
+                    }
+                }
+            } catch (e) {
+                para = -1;
             }
-            return null;
+            return para + '\n' + text;
         })();
             """.trimIndent(),
         ) { result ->
             activity.runOnUiThread {
                 actionMode?.finish() // finish AFTER JS has read the selection
-                val selectedText = if (result != "null") unescapeJsResult(result).ifEmpty { null } else null
+                val raw = if (result != "null") unescapeJsResult(result) else null
+                val newlineIdx = raw?.indexOf('\n') ?: -1
+                val paragraphIndex = raw?.takeIf { newlineIdx >= 0 }
+                    ?.substring(0, newlineIdx)
+                    ?.toIntOrNull()
+                    ?.takeIf { it >= 0 }
+                val selectedText = when {
+                    raw == null -> null
+                    newlineIdx >= 0 -> raw.substring(newlineIdx + 1).trim().ifEmpty { null }
+                    else -> raw.trim().ifEmpty { null }
+                }
 
                 if (!selectedText.isNullOrBlank()) {
                     pendingSelectedText = selectedText
+                    pendingParagraphIndex = paragraphIndex
                     activity.onRememberSelectedText()
                     clearTextSelection()
                 } else {

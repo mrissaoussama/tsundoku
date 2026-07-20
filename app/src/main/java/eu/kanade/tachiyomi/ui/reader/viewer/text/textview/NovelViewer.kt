@@ -549,7 +549,10 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             "NovelViewer: loadNext starting from anchor=${anchor.chapter.id}/${anchor.chapter.name}"
         }
 
-        val retry = { lastNextLoadFailedAt = 0L; loadNextChapterIfAvailable() }
+        val retry = {
+            lastNextLoadFailedAt = 0L
+            loadNextChapterIfAvailable()
+        }
         var loadFailed = false
 
         scope.launch {
@@ -2022,6 +2025,11 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
     fun getSelectedText(): String? {
         val loaded = loadedChapters.getOrNull(currentChapterIndex) ?: return null
         return loaded.block.selectedText()
+    }
+
+    fun getSelectedParagraphIndex(): Int? {
+        val loaded = loadedChapters.getOrNull(currentChapterIndex) ?: return null
+        return loaded.block.selectedParagraphIndex()
     }
 
     fun getCurrentChapterName(): String? {

@@ -5,6 +5,7 @@ import tachiyomi.core.common.util.lang.withNonCancellableContext
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.service.SourceManager
+import tachiyomi.domain.translation.model.TranslationLocator
 import tachiyomi.domain.translation.repository.TranslatedChapterRepository
 
 class DeleteDownload(
@@ -17,8 +18,11 @@ class DeleteDownload(
         sourceManager.get(manga.source)?.let { source ->
             downloadManager.deleteChapters(chapters.toList(), manga, source)
         }
+        val sourceName = sourceManager.getOrStub(manga.source).toString()
         chapters.forEach { chapter ->
-            translatedChapterRepository.deleteAllForChapter(chapter.id)
+            translatedChapterRepository.deleteAllForChapter(
+                TranslationLocator(sourceName, manga.title, chapter.name, chapter.url),
+            )
         }
     }
 }

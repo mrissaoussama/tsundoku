@@ -21,6 +21,7 @@ import tachiyomi.domain.chapter.repository.ChapterRepository
 import tachiyomi.domain.chapter.service.ChapterRecognition
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.translation.repository.TranslatedChapterRepository
 import tachiyomi.source.local.isLocal
 import java.lang.Long.max
 import java.time.ZonedDateTime
@@ -36,6 +37,7 @@ class SyncChaptersWithSource(
     private val getChaptersByMangaId: GetChaptersByMangaId,
     private val getExcludedScanlators: GetExcludedScanlators,
     private val libraryPreferences: LibraryPreferences,
+    private val translatedChapterRepository: TranslatedChapterRepository,
 ) {
 
     /**
@@ -129,6 +131,15 @@ class SyncChaptersWithSource(
 
                     if (shouldRenameChapter) {
                         downloadManager.renameChapter(source, manga, dbChapter, chapter)
+                    }
+                    if (dbChapter.name != chapter.name) {
+                        translatedChapterRepository.renameChapter(
+                            source.toString(),
+                            manga.title,
+                            dbChapter.name,
+                            chapter.name,
+                            chapter.url,
+                        )
                     }
 
                     var toChangeChapter = dbChapter.copy(
