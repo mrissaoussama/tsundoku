@@ -287,6 +287,13 @@ class ReaderViewModel @JvmOverloads constructor(
     /** Serializes novel progress saves to prevent concurrent saves racing each other. */
     private val novelProgressMutex = Mutex()
 
+    /**
+     * Serializes history writes so the read+clear of [chapterReadStartTime] is atomic. A pause flush
+     * and a chapter-change flush can fire concurrently; without this both read the same start time
+     * before either clears it, double-counting the session's read duration.
+     */
+    private val historyMutex = Mutex()
+
     init {
         // To save state
         state.map { it.viewerChapters?.currChapter }
@@ -1010,8 +1017,8 @@ class ReaderViewModel @JvmOverloads constructor(
     /**
      * Saves the chapter last read history if incognito mode isn't on.
      */
-    private suspend fun updateHistory(readerChapter: ReaderChapter) {
-        if (incognitoMode) return
+    private suspend fun updateHistory(readerChapter: ReaderChapter) = historyMutex.withLock {
+        if (incognitoMode) return@withLock
 
         val chapterId = readerChapter.chapter.id!!
         val endTime = Date()

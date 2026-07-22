@@ -439,6 +439,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
     /** True when TTS autoplay is speaking the chapter currently on screen. */
     private fun isTtsDrivingVisibleChapter(): Boolean =
         ttsController.isTtsAutoPlay &&
+            !ttsController.ttsPaused &&
             ttsController.ttsPlaybackChapterId != null &&
             loadedChapters.getOrNull(currentChapterIndex)?.chapter?.chapter?.id == ttsController.ttsPlaybackChapterId
 
