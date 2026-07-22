@@ -285,6 +285,13 @@ object SettingsLibraryScreen : SearchableSettings {
                     title = stringResource(MR.strings.pref_hide_missing_chapter_indicators),
                 ),
             )
+            add(
+                Preference.PreferenceItem.SwitchPreference(
+                    preference = libraryPreferences.checkDuplicateEntryOnAdd,
+                    title = "Check for existing entries when adding to library",
+                    subtitle = "Warn about possible duplicates already in your library before adding",
+                ),
+            )
             if (!isJoined) {
                 add(
                     Preference.PreferenceItem.SwitchPreference(

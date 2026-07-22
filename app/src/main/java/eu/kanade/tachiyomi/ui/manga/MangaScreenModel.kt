@@ -419,8 +419,8 @@ class MangaScreenModel(
                 }
             } else {
                 // Add to library
-                // First, check if duplicate exists if callback is provided
-                if (checkDuplicate) {
+                // First, check if duplicate exists if enabled by pref and not bypassed by caller
+                if (checkDuplicate && libraryPreferences.checkDuplicateEntryOnAdd.get()) {
                     val duplicates = getDuplicateLibraryManga(manga)
 
                     if (duplicates.isNotEmpty()) {
@@ -1437,7 +1437,16 @@ class MangaScreenModel(
 
     fun showMigrateDialog(duplicate: Manga) {
         val manga = successState?.manga ?: return
-        updateSuccessState { it.copy(dialog = Dialog.Migrate(target = manga, current = duplicate)) }
+        // Roles decide which entry is replaced (current) vs kept (target) on "Migrate".
+        val dialog = if (manga.favorite) {
+            // Viewing a library entry and picking another (Find duplicates / Similar novels): migrate
+            // the viewed entry into the picked one, keeping the entry the user picked.
+            Dialog.Migrate(current = manga, target = duplicate)
+        } else {
+            // Adding a new entry that duplicates a library one: keep the new, replace the existing.
+            Dialog.Migrate(current = duplicate, target = manga)
+        }
+        updateSuccessState { it.copy(dialog = dialog) }
     }
 
     /**

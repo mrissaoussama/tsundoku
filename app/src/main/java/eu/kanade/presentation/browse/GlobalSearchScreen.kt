@@ -4,19 +4,25 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import eu.kanade.presentation.browse.components.GlobalSearchCardRow
 import eu.kanade.presentation.browse.components.GlobalSearchErrorResultItem
 import eu.kanade.presentation.browse.components.GlobalSearchLoadingResultItem
 import eu.kanade.presentation.browse.components.GlobalSearchResultItem
 import eu.kanade.presentation.browse.components.GlobalSearchToolbar
+import eu.kanade.tachiyomi.jsplugin.source.JsSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SearchItemResult
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SearchScreenModel
 import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SourceFilter
 import eu.kanade.tachiyomi.util.system.LocaleHelper
 import tachiyomi.domain.manga.model.Manga
+import tachiyomi.domain.source.model.StubSource
+import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.presentation.core.components.material.Scaffold
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 
 @Composable
 fun GlobalSearchScreen(
@@ -75,10 +81,15 @@ internal fun GlobalSearchContent(
     ) {
         items.forEach { (source, result) ->
             item(key = source.id) {
+                val isJsSource = remember(source.id) {
+                    val resolved = Injekt.get<SourceManager>().get(source.id)
+                    resolved is JsSource || (resolved is StubSource && resolved.name.contains("(JS)"))
+                }
+                val baseName = fromSourceId?.let {
+                    "▶ ${source.name}".takeIf { source.id == fromSourceId }
+                } ?: source.name
                 GlobalSearchResultItem(
-                    title = fromSourceId?.let {
-                        "▶ ${source.name}".takeIf { source.id == fromSourceId }
-                    } ?: source.name,
+                    title = if (isJsSource) "$baseName (JS)" else baseName,
                     subtitle = LocaleHelper.getLocalizedDisplayName(source.lang),
                     onClick = { onClickSource(source) },
                     modifier = Modifier.animateItem(),
