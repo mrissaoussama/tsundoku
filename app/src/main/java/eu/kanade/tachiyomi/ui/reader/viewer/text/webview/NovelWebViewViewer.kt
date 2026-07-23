@@ -196,7 +196,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     private var autoScrollStartAttempt = 0
 
     // The error page is a fresh document that drops the autoscroll rAF loop; re-arm it once its
-    // onPageFinished lands, since that load bypasses the isLoadingRealChapter re-arm path.
+    // onPageFinished lands, since that load never enters DocState.LOADING_REAL so the re-arm path
+    // in the real-chapter gate is skipped.
     private var rearmAutoScrollOnErrorPage = false
 
     // Tracked so a JS dialog still on screen at teardown is dismissed instead of leaking the window.
@@ -212,19 +213,23 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     // Survives ttsController.stop() - set when TTS triggers a non-inf-scroll chapter load.
     private var pendingTtsAutoStartOnLoad = false
 
-    // True only while loadHtmlContent() has called loadDataWithBaseURL for real chapter content
-    // (not the loading-indicator page). Lets onPageFinished distinguish real vs loading loads.
-    private var isLoadingRealChapter = false
+    // Single source of truth for the loaded document's lifecycle, replacing three hand-synced
+    // booleans (isLoadingRealChapter/webChapterContentReady/webChapterIsError) that had to be flipped
+    // together on every load/error/finish. Only these four combinations were ever legal; the enum
+    // makes the illegal ones unrepresentable.
+    //   LOADING       loading-indicator page up, or a base load queued but not yet issued
+    //   LOADING_REAL  real-chapter loadDataWithBaseURL issued, awaiting its onPageFinished
+    //   READY         real content committed; TTS may read the body and appends may splice onto it
+    //   ERROR         error placeholder committed; body counts as ready but has no DOM to append onto
+    private enum class DocState { LOADING, LOADING_REAL, READY, ERROR }
+    private var docState = DocState.LOADING
 
-    // False while the loading indicator is up or real content is still loading; true once real
-    // chapter content has finished rendering. Guards TTS from reading the loading placeholder.
-    private var webChapterContentReady = false
+    // Real content or an error placeholder is committed. Error counts as ready so a failed load
+    // can't block infinite-scroll appends forever; webChapterIsError then suppresses the append.
+    private val webChapterContentReady get() = docState == DocState.READY || docState == DocState.ERROR
 
-    // True while the current DOM is an error placeholder rather than real chapter content.
-    // webChapterContentReady is force-set true on error (so appends aren't blocked forever), but
-    // there's no valid base DOM to append onto, so this suppresses infinite-scroll appends until a
-    // real chapter renders.
-    private var webChapterIsError = false
+    // Current DOM is an error placeholder, so there is no valid base to append the next chapter onto.
+    private val webChapterIsError get() = docState == DocState.ERROR
 
     private val ttsController: TtsController
 
@@ -659,7 +664,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     hideLoadingIndicator()
 
                     // The error page is a fresh document; re-arm autoscroll before the real-chapter
-                    // gate below, which the error load (isLoadingRealChapter=false) would skip.
+                    // gate below, which the error load (docState=ERROR, not LOADING_REAL) would skip.
                     if (rearmAutoScrollOnErrorPage) {
                         rearmAutoScrollOnErrorPage = false
                         if (isAutoScrolling) startAutoScroll()
@@ -668,8 +673,8 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     // Loading/error loads also fire onPageFinished(about:blank), and some WebView
                     // builds fire twice per navigation; gate the whole body so scripts/snippets
                     // inject only on the first genuine chapter load.
-                    if (!isLoadingRealChapter) return
-                    isLoadingRealChapter = false
+                    if (docState != DocState.LOADING_REAL) return
+                    docState = DocState.READY
 
                     styler.injectScript { buildTsundokuScript() }
                     styler.injectScrollTracking()
@@ -681,8 +686,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                     if (isEditingMode) {
                         toggleEditMode(true)
                     }
-                    // Real content rendered; TTS may now read the body.
-                    webChapterContentReady = true
+                    // Real content rendered (docState = READY above); TTS may now read the body.
                     dispatchLoadingChapter(false)
                     if (pendingTtsAutoStartOnLoad) {
                         pendingTtsAutoStartOnLoad = false
@@ -1182,9 +1186,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
             // avoids splicing a stale chapter's content onto the newly loaded one when it resumes.
             appendJob?.cancel()
             // Gate infinite-scroll appends until this base chapter's DOM is committed (onPageFinished
-            // flips it back true). Otherwise an early append (JS scroll threshold) is wiped by the
+            // sets READY). Otherwise an early append (JS scroll threshold) is wiped by the
             // clear()+loadHtmlContent this job runs, which re-appends and duplicates the chapter.
-            webChapterContentReady = false
+            docState = DocState.LOADING
         }
         val job = scope.launch {
             if (!isAppendOrPrepend && translator != null) {
@@ -1433,8 +1437,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
         // Signal to onPageFinished that the next callback is for real chapter content, not
         // the loading-indicator page (which also fires onPageFinished with url="about:blank").
-        isLoadingRealChapter = true
-        webChapterContentReady = false
+        docState = DocState.LOADING_REAL
         dispatchLoadingChapter(true)
         // New document: hold scroll callbacks and clear the baseline so a stale flush can't write
         // the previous chapter's percent here, restoreScrollPosition seeds the real value.
@@ -1592,8 +1595,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
             </html>
         """.trimIndent()
 
-        isLoadingRealChapter = false
-        webChapterContentReady = false
+        docState = DocState.LOADING
         webView.loadDataWithBaseURL(null, loadingHtml, "text/html", "UTF-8", null)
     }
 
@@ -1604,12 +1606,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         val fmt = ErrorFormatter.format(error)
         logcat(LogPriority.ERROR) { "NovelWebViewViewer: Chapter load failed\n${fmt.stackTrace}" }
 
-        // No real chapter DOM is coming for this load, so the onPageFinished check for
-        // isLoadingRealChapter won't fire and webChapterContentReady would otherwise stay
-        // false forever, permanently blocking infinite-scroll appends after any load error.
-        isLoadingRealChapter = false
-        webChapterContentReady = true
-        webChapterIsError = true
+        // No real chapter DOM is coming for this load, so onPageFinished won't reach the READY
+        // transition. ERROR keeps webChapterContentReady true (so a failed load can't block
+        // infinite-scroll appends forever) while marking the body un-appendable.
+        docState = DocState.ERROR
 
         val theme = preferences.novelTheme.get()
         val backgroundColor = preferences.novelBackgroundColor.get()
@@ -2535,7 +2535,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
             "TTS (WebView): stopTts called ts=${System.currentTimeMillis()} currentChapterIndex=$currentChapterIndex, ttsCurrentChunkIndex=${ttsController.ttsCurrentChunkIndex}, ttsResumeChunkIndex=${ttsController.ttsResumeChunkIndex}, ttsPlaybackChapterIndex=${ttsController.ttsPlaybackChapterIndex}, ttsPlaybackChapterId=${ttsController.ttsPlaybackChapterId}"
         }
         pendingTtsAutoStartOnLoad = false
-        isLoadingRealChapter = false
+        // Drop a pending real-load signal so a stale onPageFinished after stop can't inject; leave a
+        // committed READY/ERROR document intact.
+        if (docState == DocState.LOADING_REAL) docState = DocState.LOADING
         ttsController.stop()
         handoffState = TtsHandoffState.Idle
         dispatchTtsState()
