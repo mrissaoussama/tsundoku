@@ -44,6 +44,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Customsource improvements and url build fixes [@mrissaoussama](https://github.com/mrissaoussama) [#322](https://github.com/tsundoku-otaku/tsundoku/pull/322)
 - Prevent duplicate custom sources [@mrissaoussama](https://github.com/mrissaoussama) [#294](https://github.com/tsundoku-otaku/tsundoku/pull/294)
 - Added novel extension repos entry into browse settings [@mrissaoussama](https://github.com/mrissaoussama) [#304](https://github.com/tsundoku-otaku/tsundoku/pull/304)
+- Empty chapters no longer qualify as downloads [@mrissaoussama](https://github.com/mrissaoussama) [#351](https://github.com/tsundoku-otaku/tsundoku/pull/351)
 - Added bulk import/export, block duplicate imports [@mrissaoussama](https://github.com/mrissaoussama) [#303](https://github.com/tsundoku-otaku/tsundoku/pull/303)
 - Tons of adjustments to novelprogress and scroll tracking [@mrissaoussama](https://github.com/mrissaoussama) [#332](https://github.com/tsundoku-otaku/tsundoku/pull/332)
 
