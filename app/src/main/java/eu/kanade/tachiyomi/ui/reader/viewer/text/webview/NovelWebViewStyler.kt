@@ -253,6 +253,7 @@ internal class NovelWebViewStyler(
                 "INFINITE_SCROLL_ENABLED" to preferences.novelInfiniteScroll.get().toString(),
                 "LOAD_THRESHOLD" to effectiveThreshold.toString(),
                 "DONE_THRESHOLD" to NovelProgress.DONE_THRESHOLD.toString(),
+                "PROGRESS_EVENT" to NovelWebViewChapterMeta.EVENT_PROGRESS,
             ),
         )
         evaluateJs(js)
