@@ -1158,8 +1158,19 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                         if (!isPrepend) activity.viewModel.setNovelVisibleChapter(page.chapter.chapter)
                     }
                     is Page.State.Error -> {
-                        if (!isPrepend) hideLoadingIndicator()
-                        displayError(state.error)
+                        if (isPrepend) {
+                            // A prepend fetch failing must not replace the whole multi-chapter DOM
+                            // (and scroll position) with a full-page error; surface it inline and
+                            // leave the document (and docState) intact.
+                            inlineFeedback.hideInlineLoading(isPrepend = true)
+                            inlineFeedback.showInlineError(
+                                ErrorFormatter.format(state.error).summary,
+                                isPrepend = true,
+                            )
+                        } else {
+                            hideLoadingIndicator()
+                            displayError(state.error)
+                        }
                     }
                     else -> {}
                 }
