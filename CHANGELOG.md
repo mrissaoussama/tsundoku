@@ -74,6 +74,7 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 - Fetch json parse failrues (jsplugin) [@mrissaoussama](https://github.com/mrissaoussama) [#295](https://github.com/tsundoku-otaku/tsundoku/pull/295)
 - Fix a rare translation queue exception [@mrissaoussama](https://github.com/mrissaoussama) [#286](https://github.com/tsundoku-otaku/tsundoku/pull/286)
 - Fix some repositories not being registered properly [@mrissaoussama](https://github.com/mrissaoussama) [#330](https://github.com/tsundoku-otaku/tsundoku/pull/330)
+- Added missing proguard rule to fix zstd requests [@mrissaoussama](https://github.com/mrissaoussama) [#353](https://github.com/tsundoku-otaku/tsundoku/pull/353)
 
 ### Other
 - Deprecate RefreshContext for 1.6 [@Rojikku](https://github.com/Rojikku) [#325](https://github.com/tsundoku-otaku/tsundoku/pull/325)
