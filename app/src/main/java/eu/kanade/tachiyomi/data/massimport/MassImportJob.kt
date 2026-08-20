@@ -699,8 +699,22 @@ class MassImportJob(private val context: Context, workerParams: WorkerParameters
                                     return@flow
                                 }
                             }
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
-                            if (e is CancellationException) throw e
+                            sourceConsecutiveFailures[source.id]?.incrementAndGet()
+                            logcat(LogPriority.ERROR, e) { "Error importing $url" }
+                            if (shouldCount) {
+                                erroredCount.incrementAndGet()
+                                erroredThisUrl = true
+                                recordError(url, e.message ?: "Unknown error")
+                            }
+                        } catch (e: LinkageError) {
+                            // Outdated/incompatible extensions throw LinkageError subtypes
+                            // (NoClassDefFoundError, NoSuchMethodError, etc.) rather than
+                            // Exception. LinkageError specifically, not Throwable/Error:
+                            // OutOfMemoryError/StackOverflowError must still propagate instead
+                            // of being swallowed mid-batch.
                             sourceConsecutiveFailures[source.id]?.incrementAndGet()
                             logcat(LogPriority.ERROR, e) { "Error importing $url" }
                             if (shouldCount) {
