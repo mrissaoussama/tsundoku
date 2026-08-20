@@ -38,9 +38,9 @@ class SourceRateLimitPolicyTest {
     )
 
     @Test
-    fun `unknown host falls back to the global default spec`() {
+    fun `unknown host is not throttled`() {
         val result = policy().specFor("unknown.example.com")
-        result shouldBe RateLimitResolver(NovelDownloadPreferences(InMemoryPreferenceStore())).resolveDefault()
+        result shouldBe RateLimitSpec.NONE
     }
 
     @Test
@@ -74,7 +74,7 @@ class SourceRateLimitPolicyTest {
     fun `unrelated domain is not matched by an unrelated source's baseUrl`() {
         val candidate = novelCandidate("example.com")
         val result = policy(candidate).specFor("totally-unrelated.org")
-        result shouldBe RateLimitResolver(NovelDownloadPreferences(InMemoryPreferenceStore())).resolveDefault()
+        result shouldBe RateLimitSpec.NONE
     }
 
     @Test
@@ -84,7 +84,7 @@ class SourceRateLimitPolicyTest {
         // tenant's spec (e.g. NONE) silently exempt a completely unrelated host.
         val candidate = novelCandidate("alice.github.io", isUnmetered = true)
         val result = policy(candidate).specFor("bob.github.io")
-        result shouldBe RateLimitResolver(NovelDownloadPreferences(InMemoryPreferenceStore())).resolveDefault()
+        result shouldBe RateLimitSpec.NONE
     }
 
     @Test
@@ -102,7 +102,7 @@ class SourceRateLimitPolicyTest {
         // on any home LAN) would otherwise be wrongly grouped together.
         val candidate = novelCandidate("192.168.1.50", isUnmetered = true)
         val result = policy(candidate).specFor("10.0.1.50")
-        result shouldBe RateLimitResolver(NovelDownloadPreferences(InMemoryPreferenceStore())).resolveDefault()
+        result shouldBe RateLimitSpec.NONE
     }
 
     @Test

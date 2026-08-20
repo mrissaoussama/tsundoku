@@ -39,13 +39,15 @@ class SourceRateLimitPolicy(
             // the literal host string), so this is a separate limit that happens to share the
             // source's configured delay/jitter/permits, not a merged one.
             ?: byDomain[normalized.topPrivateDomainOrNull()]
-            // No installed source claims this host at all - fall back to the global default
-            // spec rather than exempting it. An unrecognized host used by an installed
-            // extension (e.g. a CDN on an unrelated domain) is still a real, unknown site that
-            // deserves conservative pacing by default.
+            // No installed source claims this host at all. Throttling targets novel sources by
+            // default (see below), and an unattributed host is far more often a manga source's
+            // image/cover CDN on a separate domain than a novel source's offshoot - defaulting
+            // this to the conservative novel-scale spec was pacing manga traffic as if it were
+            // novel traffic. Exempt it instead; a novel source whose own CDN needs pacing should
+            // declare that host explicitly rather than relying on an unattributed-host guess.
             ?: run {
                 logWouldThrottle(normalized, resolver.resolveDefaultIgnoringToggle())
-                return resolver.resolveDefault()
+                return RateLimitSpec.NONE
             }
 
         // A source explicitly declaring it doesn't need traffic considerations (e.g. a
