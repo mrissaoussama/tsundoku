@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -974,7 +975,7 @@ fun MassImportDialog(
             title = { Text(stringResource(TDMR.strings.mass_import_confirm_clear_completed_title)) },
             text = { Text(stringResource(TDMR.strings.mass_import_confirm_clear_completed_message)) },
             confirmButton = {
-                Row {
+                FlowRow(horizontalArrangement = Arrangement.End) {
                     TextButton(
                         onClick = {
                             MassImportJob.clearCompleted(context, onlyWithoutErrors = true)
