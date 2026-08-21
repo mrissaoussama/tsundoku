@@ -974,13 +974,23 @@ fun MassImportDialog(
             title = { Text(stringResource(TDMR.strings.mass_import_confirm_clear_completed_title)) },
             text = { Text(stringResource(TDMR.strings.mass_import_confirm_clear_completed_message)) },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        MassImportJob.clearCompleted(context)
-                        showClearCompletedConfirm = false
-                    },
-                ) {
-                    Text(stringResource(TDMR.strings.mass_import_button_clear))
+                Row {
+                    TextButton(
+                        onClick = {
+                            MassImportJob.clearCompleted(context, onlyWithoutErrors = true)
+                            showClearCompletedConfirm = false
+                        },
+                    ) {
+                        Text(stringResource(TDMR.strings.mass_import_button_clear_no_errors))
+                    }
+                    TextButton(
+                        onClick = {
+                            MassImportJob.clearCompleted(context)
+                            showClearCompletedConfirm = false
+                        },
+                    ) {
+                        Text(stringResource(TDMR.strings.mass_import_button_clear))
+                    }
                 }
             },
             dismissButton = {
