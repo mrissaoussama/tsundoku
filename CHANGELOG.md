@@ -12,6 +12,8 @@ The format is a modified version of [Keep a Changelog](https://keepachangelog.co
 
 ## [Unreleased]
 
+### Fixed
+- Library sort by last read now updates after reading [@mrissaoussama](https://github.com/mrissaoussama) [#40](https://github.com/tsundoku-otaku/tsundoku/pull/400)
 
 ## [v0.3.2] - 2026-08-14
 ### Improved
