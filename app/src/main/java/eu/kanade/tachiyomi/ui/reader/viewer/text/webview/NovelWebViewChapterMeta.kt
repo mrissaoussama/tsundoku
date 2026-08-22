@@ -109,6 +109,8 @@ internal object NovelWebViewChapterMeta {
                     'r' -> { sb.append('\r'); i += 2 }
                     '"' -> { sb.append('"'); i += 2 }
                     '/' -> { sb.append('/'); i += 2 }
+                    'b' -> { sb.append('\b'); i += 2 }
+                    'f' -> { sb.append('\u000C'); i += 2 }
                     'u' -> {
                         val hex = inner.substring(i + 2, minOf(i + 6, inner.length))
                         val code = hex.takeIf { it.length == 4 }?.toIntOrNull(16)
