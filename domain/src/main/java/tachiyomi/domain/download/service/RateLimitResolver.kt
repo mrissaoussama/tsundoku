@@ -34,19 +34,6 @@ class RateLimitResolver(
     }
 
     /**
-     * The spec applied to a host that isn't recognized as any installed source's baseUrl or a
-     * domain-suffix match of one - e.g. a host an extension calls that [SourceRateLimitPolicy]
-     * can't attribute to a specific source. Falls back to the same global defaults a source
-     * without an override would get, rather than [RateLimitSpec.NONE] - an unrecognized host is
-     * an unknown risk, not a known-safe one, so it shouldn't be exempt from throttling by default.
-     */
-    fun resolveDefault(): RateLimitSpec {
-        if (!prefs.enableRequestThrottling().get()) return RateLimitSpec.NONE
-
-        return resolveDefaultIgnoringToggle()
-    }
-
-    /**
      * Same as [resolve], but ignoring [NovelDownloadPreferences.enableRequestThrottling] - the
      * spec [sourceId] would get if throttling were on. Exists purely for
      * [SourceRateLimitPolicy]'s diagnostic logging: the toggle being off makes every real request
@@ -72,13 +59,6 @@ class RateLimitResolver(
             permits = permits.coerceAtLeast(1),
         )
     }
-
-    /** Toggle-ignoring twin of [resolveDefault] - see [resolveIgnoringToggle]. */
-    fun resolveDefaultIgnoringToggle(): RateLimitSpec = RateLimitSpec(
-        delayMillis = prefs.requestDelay().get().toLong(),
-        jitterMillis = prefs.requestJitter().get().toLong(),
-        permits = prefs.requestPermits().get().coerceAtLeast(1),
-    )
 
     /** Whether the user currently has request throttling enabled at all. */
     fun isThrottlingEnabled(): Boolean = prefs.enableRequestThrottling().get()

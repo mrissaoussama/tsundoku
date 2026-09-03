@@ -43,10 +43,9 @@ class SourceRateLimitPolicy(
             // default (see below), and an unattributed host is far more often a manga source's
             // image/cover CDN on a separate domain than a novel source's offshoot - defaulting
             // this to the conservative novel-scale spec was pacing manga traffic as if it were
-            // novel traffic. Exempt it instead; a novel source whose own CDN needs pacing should
-            // declare that host explicitly rather than relying on an unattributed-host guess.
+            // novel traffic. Exempt it instead.
             ?: run {
-                logWouldThrottle(normalized, resolver.resolveDefaultIgnoringToggle())
+                logcat(LogPriority.VERBOSE) { "rate-limit: $normalized has no attributed source - exempt" }
                 return RateLimitSpec.NONE
             }
 

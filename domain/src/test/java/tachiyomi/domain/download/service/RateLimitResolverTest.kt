@@ -115,15 +115,6 @@ class RateLimitResolverTest {
     }
 
     @Test
-    fun `resolveDefaultIgnoringToggle still returns a real spec when throttling is disabled`() {
-        val (prefs, resolver) = resolver()
-        prefs.enableRequestThrottling().set(false)
-        prefs.requestDelay().set(2000)
-
-        resolver.resolveDefaultIgnoringToggle().delayMillis shouldBe 2000L
-    }
-
-    @Test
     fun `isThrottlingEnabled reflects the current toggle`() {
         val (prefs, resolver) = resolver()
         resolver.isThrottlingEnabled() shouldBe true
