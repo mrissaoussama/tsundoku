@@ -1673,6 +1673,10 @@ class LibraryViewModel(
                 val curMangaIndex = items.indexOf(manga.id)
 
                 val selectionRange = when {
+                    lastMangaIndex < 0 || curMangaIndex < 0 -> {
+                        list.add(manga.id)
+                        return@mutate
+                    }
                     lastMangaIndex < curMangaIndex -> lastMangaIndex..curMangaIndex
                     curMangaIndex < lastMangaIndex -> curMangaIndex..lastMangaIndex
                     // We shouldn't reach this point
