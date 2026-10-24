@@ -124,7 +124,7 @@
         var lineHeight = parseFloat(contentLineHeight());
         if (lineHeight > 0) {
             var lines = Math.floor(available / lineHeight);
-            if (lines > 0) available = lines * lineHeight;
+            if (lines > 0) available = Math.ceil(lines * lineHeight);
         }
         document.body.style.height = Math.floor(available) + 'px';
     }
