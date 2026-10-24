@@ -1,5 +1,6 @@
 package tachiyomi.domain.translation.service
 
+import tachiyomi.core.common.preference.Preference
 import tachiyomi.core.common.preference.PreferenceStore
 
 /**
@@ -103,7 +104,7 @@ class TranslationPreferences(
      * OpenAI API key.
      */
     fun openAiApiKey() = preferenceStore.getString(
-        "translation_openai_api_key",
+        Preference.privateKey("translation_openai_api_key"),
         "",
     )
 
@@ -119,7 +120,7 @@ class TranslationPreferences(
      * NVIDIA NIM API key (optional).
      */
     fun nvidiaNimApiKey() = preferenceStore.getString(
-        "translation_nvidia_nim_api_key",
+        Preference.privateKey("translation_nvidia_nim_api_key"),
         "",
     )
 
@@ -153,7 +154,7 @@ class TranslationPreferences(
      * DeepSeek API key.
      */
     fun deepSeekApiKey() = preferenceStore.getString(
-        "translation_deepseek_api_key",
+        Preference.privateKey("translation_deepseek_api_key"),
         "",
     )
 
@@ -187,7 +188,7 @@ class TranslationPreferences(
      * LibreTranslate API key (optional).
      */
     fun libreTranslateApiKey() = preferenceStore.getString(
-        "translation_libretranslate_api_key",
+        Preference.privateKey("translation_libretranslate_api_key"),
         "",
     )
 
@@ -195,7 +196,7 @@ class TranslationPreferences(
      * SYSTRAN API key.
      */
     fun systranApiKey() = preferenceStore.getString(
-        "translation_systran_api_key",
+        Preference.privateKey("translation_systran_api_key"),
         "",
     )
 
@@ -203,7 +204,7 @@ class TranslationPreferences(
      * DeepL API key.
      */
     fun deepLApiKey() = preferenceStore.getString(
-        "translation_deepl_api_key",
+        Preference.privateKey("translation_deepl_api_key"),
         "",
     )
 
@@ -211,7 +212,7 @@ class TranslationPreferences(
      * Google Cloud Translation API key.
      */
     fun googleApiKey() = preferenceStore.getString(
-        "translation_google_api_key",
+        Preference.privateKey("translation_google_api_key"),
         "",
     )
 
@@ -326,7 +327,7 @@ class TranslationPreferences(
      * Should accept POST requests with JSON body.
      */
     fun customHttpUrl() = preferenceStore.getString(
-        "translation_custom_http_url",
+        Preference.privateKey("translation_custom_http_url"),
         "",
     )
 
@@ -334,7 +335,7 @@ class TranslationPreferences(
      * Custom HTTP API key (sent in Authorization header).
      */
     fun customHttpApiKey() = preferenceStore.getString(
-        "translation_custom_http_api_key",
+        Preference.privateKey("translation_custom_http_api_key"),
         "",
     )
 
@@ -354,7 +355,7 @@ class TranslationPreferences(
      * Example: x-api-key: {apiKey}; Accept: application/json
      */
     fun customHttpHeaders() = preferenceStore.getString(
-        "translation_custom_http_headers",
+        Preference.privateKey("translation_custom_http_headers"),
         "",
     )
 
@@ -407,7 +408,7 @@ class TranslationPreferences(
     // Gemini (Google AI)
 
     fun geminiApiKey() = preferenceStore.getString(
-        "translation_gemini_api_key",
+        Preference.privateKey("translation_gemini_api_key"),
         "",
     )
 
@@ -424,4 +425,21 @@ class TranslationPreferences(
         "translation_gemini_prompt",
         "",
     )
+
+    companion object {
+        // Stored as private prefs so backups include them only with "Include sensitive settings".
+        val SECRET_KEYS = listOf(
+            "translation_openai_api_key",
+            "translation_nvidia_nim_api_key",
+            "translation_deepseek_api_key",
+            "translation_libretranslate_api_key",
+            "translation_systran_api_key",
+            "translation_deepl_api_key",
+            "translation_google_api_key",
+            "translation_custom_http_url",
+            "translation_custom_http_api_key",
+            "translation_custom_http_headers",
+            "translation_gemini_api_key",
+        )
+    }
 }

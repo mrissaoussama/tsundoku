@@ -59,6 +59,7 @@ import logcat.LogPriority
 import logcat.LogcatLogger
 import mihon.core.migration.Migrator
 import mihon.core.migration.migrations.migrations
+import mihon.core.migration.migrations.moveTranslationSecrets
 import org.conscrypt.Conscrypt
 import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.preference.Preference
@@ -220,6 +221,7 @@ class App : Application(), DefaultLifecycleObserver, SingletonImageLoader.Factor
                 preference.set(BuildConfig.VERSION_CODE)
             },
         )
+        moveTranslationSecrets(preferenceStore)
     }
 
     override fun newImageLoader(context: Context): ImageLoader {
