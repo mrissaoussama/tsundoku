@@ -100,6 +100,11 @@
 
     function applyColumnLayout() {
         var el = container();
+        // A fractional body box wider than the whole-px column lets the next column's first pixel
+        // show at the clip edge, so pin the box to the column width.
+        document.body.style.boxSizing = 'border-box';
+        document.body.style.width = '';
+        document.body.style.width = Math.floor(document.body.getBoundingClientRect().width) + 'px';
         var w = pageWidth();
         el.style.columnWidth = w + 'px';
         el.style.MozColumnWidth = w + 'px';
@@ -110,11 +115,24 @@
         // those turned every menu toggle into a repagination + ResizeObserver feedback loop.
         var cs = window.getComputedStyle(document.body);
         var vMargin = (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
-        document.body.style.boxSizing = 'border-box';
         // Explicit floored px height, not `calc(100vh - Npx)`: fractional rounding there let the
         // last line's descenders clip past the overflow:hidden edge. 1px safety buffer for the rest.
         var innerH = window.innerHeight || document.documentElement.clientHeight;
-        document.body.style.height = Math.floor(innerH - vMargin - 1) + 'px';
+        var available = innerH - vMargin - 1;
+        // Snap to whole lines so the column break never lands mid-line. Read line-height from the
+        // content, not body (source CSS may override it).
+        var lineHeight = parseFloat(contentLineHeight());
+        if (lineHeight > 0) {
+            var lines = Math.floor(available / lineHeight);
+            if (lines > 0) available = lines * lineHeight;
+        }
+        document.body.style.height = Math.floor(available) + 'px';
+    }
+
+    function contentLineHeight() {
+        var el = container();
+        var sample = el.querySelector('p, div, li, blockquote') || el;
+        return window.getComputedStyle(sample).lineHeight;
     }
 
     function computePageCount() {
@@ -412,6 +430,10 @@
         }
     };
 
+    function isSuspended() {
+        return !document.documentElement.classList.contains(PAGED_CLASS);
+    }
+
     // Edit mode has its own keyboard-clearance bottom padding on body that assumes normal
     // document flow (see NovelWebViewViewer's toggleEditMode script) - that has no room to work
     // within paged mode's fixed 100vh clip, so pagination is suspended (plain scrollable flow,
@@ -421,6 +443,7 @@
         if (suspended) {
             document.documentElement.classList.remove(PAGED_CLASS);
             container().style.transform = '';
+            document.body.style.width = '';
         } else {
             document.documentElement.classList.add(PAGED_CLASS);
             repaginate();
@@ -526,7 +549,7 @@
 
     if (typeof ResizeObserver === 'function') {
         var containerResizeObserver = new ResizeObserver(function () {
-            if (!p.restored) return;
+            if (!p.restored || isSuspended()) return;
             repaginate();
         });
         containerResizeObserver.observe(container());
@@ -535,8 +558,30 @@
 
     var resizeDebounce = null;
     window.addEventListener('resize', function () {
-        if (!p.restored) return;
+        if (!p.restored || isSuspended()) return;
         clearTimeout(resizeDebounce);
         resizeDebounce = setTimeout(function () { repaginate(); }, 100);
     });
+
+    // Added content (snippets, late images, fonts) overflows into more columns without resizing the
+    // container, so the ResizeObserver above never sees it. Event-driven, debounced like resize;
+    // attribute changes (TTS highlight, this script's transforms) are deliberately not observed.
+    var reflowDebounce = null;
+    function scheduleReflowCheck() {
+        if (!p.restored) return;
+        clearTimeout(reflowDebounce);
+        reflowDebounce = setTimeout(function () {
+            if (isSuspended()) return;
+            if (computePageCount() !== p.pageCount) repaginate();
+        }, 100);
+    }
+    if (typeof MutationObserver === 'function') {
+        new MutationObserver(scheduleReflowCheck)
+            .observe(container(), { childList: true, characterData: true, subtree: true });
+    }
+    container().addEventListener('load', scheduleReflowCheck, true);
+    container().addEventListener('error', scheduleReflowCheck, true);
+    if (document.fonts && document.fonts.addEventListener) {
+        document.fonts.addEventListener('loadingdone', scheduleReflowCheck);
+    }
 })();
