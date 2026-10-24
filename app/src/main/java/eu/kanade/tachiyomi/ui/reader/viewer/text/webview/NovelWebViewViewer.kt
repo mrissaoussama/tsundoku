@@ -1919,7 +1919,12 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         return false
     }
 
-    fun toggleEditMode(isEditing: Boolean, save: Boolean = true) {
+    fun toggleEditMode(isEditing: Boolean, save: Boolean = true): Boolean {
+        if (isEditing && docState == DocState.ERROR) {
+            activity.toast(activity.stringResource(TDMR.strings.error_cant_edit_error_page))
+            return false
+        }
+
         if (!isEditing && !save) {
             this.isEditingMode = false
             webView.evaluateJavascript(
@@ -1933,7 +1938,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
             // Reload chapter to discard edits
             chapterQueue.clear()
             activity.viewModel.reloadChapter(fromSource = false)
-            return
+            return true
         }
 
         this.isEditingMode = isEditing
@@ -2049,15 +2054,10 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
                         var contents = [];
                         var nodes = document.querySelectorAll('${CHAPTER_TAG_NAME}');
-                        if (nodes.length > 0) {
-                            for (var i = 0; i < nodes.length; i++) {
-                                var html = nodes[i].innerHTML;
-                                var chapterId = nodes[i].getAttribute('${CHAPTER_ID_ATTR}');
-                                contents.push({id: chapterId, content: html});
-                            }
-                        } else if (document.body) {
-                            var currentId = '${currentChapters?.currChapter?.chapter?.id ?: -1}';
-                            contents.push({id: currentId, content: document.body.innerHTML});
+                        for (var i = 0; i < nodes.length; i++) {
+                            var html = nodes[i].innerHTML;
+                            var chapterId = nodes[i].getAttribute('${CHAPTER_ID_ATTR}');
+                            contents.push({id: chapterId, content: html});
                         }
                         if (window.Android && window.Android.onSaveEditedContent) {
                             window.Android.onSaveEditedContent(JSON.stringify(contents));
@@ -2074,6 +2074,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         """.trimIndent()
 
         webView.evaluateJavascript(script, null)
+        return true
     }
 
     override fun handleGenericMotionEvent(event: MotionEvent): Boolean = false
@@ -2323,7 +2324,16 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
         @JavascriptInterface
         fun retryChapterLoad() {
-            activity.runOnUiThread { activity.viewModel.reloadChapter(fromSource = false) }
+            activity.runOnUiThread {
+                val page = currentPage
+                val chapters = currentChapters
+                if (page != null && chapters != null && page.status is Page.State.Error) {
+                    // reloadChapter() no-ops here (chapter is Loaded); setChapters re-queues the failed page
+                    setChapters(chapters)
+                } else {
+                    activity.viewModel.reloadChapter(fromSource = false)
+                }
+            }
         }
 
         @JavascriptInterface
