@@ -1,10 +1,4 @@
-// In-page "#id" links within a chapter. Installed once per load via
-// NovelWebViewStyler.injectFragmentLinks().
-//
-// Replaces:
-//   __TSUNDOKU_OBJECT_NAME__: global runtime object, for actions.goToElement (paged-aware)
-//   __CHAPTER_TAG_NAME__: per-chapter wrapper element, so ids repeated across appended chapters
-//   resolve inside the chapter the link sits in
+// In-page "#id" links within a chapter.
 
 (function () {
     if (window.__tdFragmentLinksInstalled) return;
@@ -24,11 +18,11 @@
         if (!anchor) return;
         var id = decode(anchor.getAttribute('href').substring(1));
         if (!id) return;
-        e.preventDefault();
         var selector = '[id="' + cssEscape(id) + '"], a[name="' + cssEscape(id) + '"]';
         var chapter = anchor.closest('__CHAPTER_TAG_NAME__');
         var target = (chapter && chapter.querySelector(selector)) || document.querySelector(selector);
         if (!target) return;
+        e.preventDefault();
         e.stopPropagation();
         var t = window.__TSUNDOKU_OBJECT_NAME__;
         if (t && t.actions && t.actions.goToElement) t.actions.goToElement(target);
