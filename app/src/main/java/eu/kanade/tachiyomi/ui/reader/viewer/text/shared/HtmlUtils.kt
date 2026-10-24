@@ -8,6 +8,7 @@ import logcat.logcat
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.html.HtmlGenerator
 import org.intellij.markdown.parser.MarkdownParser
+import org.jsoup.Jsoup
 
 object HtmlUtils {
 
@@ -60,14 +61,6 @@ object HtmlUtils {
     private val lazyLoadingAttrRegex =
         Regex("""(?<![\w-])loading\s*=\s*(?:"lazy"|'lazy'|lazy(?![\w-]))""", RegexOption.IGNORE_CASE)
     private val lazyTagRegex = Regex("""<(?:img|iframe)\b(?:"[^"]*"|'[^']*'|[^>"'])*>""", RegexOption.IGNORE_CASE)
-    private val anyTagRegex = Regex("""<[a-zA-Z][^\s>/]*(?:"[^"]*"|'[^']*'|[^>"'])*>""")
-    private val eventHandlerAttrRegex =
-        Regex("""\s+on[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)""", RegexOption.IGNORE_CASE)
-    private val javascriptUrlAttrRegex = Regex(
-        """\s+[a-zA-Z:-]+\s*=\s*(?:"[\s\u0000-\u001f]*javascript:[^"]*"|'[\s\u0000-\u001f]*javascript:[^']*'|""" +
-            """[\s\u0000-\u001f]*javascript:[^\s>]*)""",
-        RegexOption.IGNORE_CASE,
-    )
 
     @Suppress("ktlint:standard:max-line-length")
     private val videoTagRegex =
@@ -247,7 +240,7 @@ object HtmlUtils {
                 result = result.replace(linkStylesheetRegex1, "")
                 result = result.replace(linkStylesheetRegex2, "")
                 try {
-                    val doc = org.jsoup.Jsoup.parseBodyFragment(result)
+                    val doc = Jsoup.parseBodyFragment(result)
                     doc.body().select("*").removeAttr("style")
                     result = doc.body().html()
                 } catch (_: Exception) {
@@ -269,10 +262,22 @@ object HtmlUtils {
         return result
     }
 
-    internal fun stripInlineScriptVectors(html: String): String =
-        html.replace(anyTagRegex) { tag ->
-            tag.value.replace(eventHandlerAttrRegex, "").replace(javascriptUrlAttrRegex, "")
+    // Re-serializes only when something was removed, so clean chapters keep their markup verbatim.
+    internal fun stripInlineScriptVectors(html: String): String {
+        val doc = Jsoup.parseBodyFragment(html)
+        doc.outputSettings().prettyPrint(false)
+        var changed = false
+        doc.body().allElements.forEach { element ->
+            val unsafe = element.attributes().asList()
+                .filter { it.key.startsWith("on", ignoreCase = true) || isJavascriptUrl(it.value) }
+            unsafe.forEach { element.removeAttr(it.key) }
+            if (unsafe.isNotEmpty()) changed = true
         }
+        return if (changed) doc.body().html() else html
+    }
+
+    private fun isJavascriptUrl(value: String): Boolean =
+        value.filterNot { it.isWhitespace() || it.isISOControl() }.startsWith("javascript:", ignoreCase = true)
 
     fun stripMediaTags(content: String): String {
         return content

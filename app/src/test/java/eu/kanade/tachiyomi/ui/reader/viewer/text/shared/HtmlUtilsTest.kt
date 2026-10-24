@@ -472,4 +472,22 @@ class HtmlUtilsTest {
         val out = webView("<iframe src=\"https://example.com/v\" loading=\"lazy\"></iframe>", true)
         assertTrue(out.contains("loading=\"eager\""))
     }
+
+    @Test
+    fun `sanitizeForRender strips slash separated and entity encoded vectors when js is off`() {
+        val out = webView(
+            "<svg/onload=a()><img src=x onerror=alert(1)><a href=\"jav&#x61;script:x()\">a</a>" +
+                "<a href=\"java&#9;script:y()\">b</a>",
+            keepJs = false,
+        )
+        assertFalse(out.contains("onerror", ignoreCase = true))
+        assertFalse(out.contains("onload", ignoreCase = true))
+        assertFalse(out.contains("script:", ignoreCase = true))
+    }
+
+    @Test
+    fun `sanitizeForRender keeps handler-like text inside attribute values when js is off`() {
+        val out = webView("<img src=\"/a.jpg\" alt=\"press onclick=x to go\">", keepJs = false)
+        assertTrue(out.contains("alt=\"press onclick=x to go\""))
+    }
 }
