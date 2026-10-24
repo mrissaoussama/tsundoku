@@ -47,4 +47,16 @@ class TranslationSecretsPrivateMigrationTest {
         )
         assertFalse(store.getString(urlKey, "").isSet())
     }
+
+    @Test
+    fun `a restored plain key replaces the private value when restoredWins is set`() {
+        val store = InMemoryPreferenceStore()
+        store.getString(Preference.privateKey(key), "").set("current")
+        store.getString(key, "").set("restored")
+
+        moveTranslationSecrets(store, restoredWins = true)
+
+        assertEquals("restored", store.getString(Preference.privateKey(key), "").get())
+        assertFalse(store.getString(key, "").isSet())
+    }
 }

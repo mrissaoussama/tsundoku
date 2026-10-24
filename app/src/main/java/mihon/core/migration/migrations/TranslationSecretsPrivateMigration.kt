@@ -16,12 +16,12 @@ class TranslationSecretsPrivateMigration : Migration {
     }
 }
 
-internal fun moveTranslationSecrets(preferenceStore: PreferenceStore) {
+internal fun moveTranslationSecrets(preferenceStore: PreferenceStore, restoredWins: Boolean = false) {
     TranslationPreferences.SECRET_KEYS.forEach { key ->
         val legacy = preferenceStore.getString(key, "")
         if (!legacy.isSet()) return@forEach
         val secret = preferenceStore.getString(Preference.privateKey(key), "")
-        if (secret.get().isEmpty()) secret.set(legacy.get())
+        if (restoredWins || secret.get().isEmpty()) secret.set(legacy.get())
         legacy.delete()
     }
 }

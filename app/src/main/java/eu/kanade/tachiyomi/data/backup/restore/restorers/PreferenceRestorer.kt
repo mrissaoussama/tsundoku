@@ -39,7 +39,7 @@ class PreferenceRestorer(
             preferenceStore,
             backupCategories,
         )
-        moveTranslationSecrets(preferenceStore)
+        moveTranslationSecrets(preferenceStore, restoredWins = true)
 
         LibraryUpdateJob.setupTask(context)
         BackupCreateJob.setupTask(context)
