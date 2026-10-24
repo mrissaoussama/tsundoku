@@ -162,6 +162,45 @@ class HtmlUtilsTest {
     }
 
     @Test
+    fun `sanitizeForRender WEB_VIEW forces eager loading on lazy images`() {
+        val out = HtmlUtils.sanitizeForRender(
+            "<figure><img src=\"/uploads/x.jpg\" loading=\"lazy\" width=\"1024\" height=\"1024\"></figure>",
+            target = RenderTarget.WEB_VIEW,
+            keepEmbeddedCss = true,
+            keepEmbeddedJs = true,
+            blockMedia = false,
+        )
+        assertFalse(out.contains("loading=\"lazy\""))
+        assertTrue(out.contains("loading=\"eager\""))
+    }
+
+    @Test
+    fun `sanitizeForRender lazy rewrite only touches img and iframe tags`() {
+        val out = HtmlUtils.sanitizeForRender(
+            "<pre>loading=\"lazy\"</pre><p data-loading=\"lazy\">x</p><iframe src=\"/f\" loading='lazy'></iframe>",
+            target = RenderTarget.WEB_VIEW,
+            keepEmbeddedCss = true,
+            keepEmbeddedJs = true,
+            blockMedia = false,
+        )
+        assertTrue(out.contains("<pre>loading=\"lazy\"</pre>"))
+        assertTrue(out.contains("data-loading=\"lazy\""))
+        assertTrue(out.contains("<iframe src=\"/f\" loading=\"eager\">"))
+    }
+
+    @Test
+    fun `sanitizeForRender TEXT_VIEW leaves lazy loading attribute untouched`() {
+        val out = HtmlUtils.sanitizeForRender(
+            "<img src=\"/uploads/x.jpg\" loading=\"lazy\">",
+            target = RenderTarget.TEXT_VIEW,
+            keepEmbeddedCss = true,
+            keepEmbeddedJs = true,
+            blockMedia = false,
+        )
+        assertTrue(out.contains("loading=\"lazy\""))
+    }
+
+    @Test
     fun `sanitizeForRender strips HTML comments and entity-encoded ad markers`() {
         val out = HtmlUtils.sanitizeForRender(
             "<p>Body <!-- ad --> &lt;!--ad2--&gt;</p>",
@@ -361,5 +400,76 @@ class HtmlUtilsTest {
         val content = "<p>$preamble</p><h1>Chapter 1</h1><p>Body</p>"
         val out = HtmlUtils.stripChapterTitle(content, "Chapter 1")
         assertTrue(out.contains("<h1>Chapter 1</h1>"), "heading beyond search limit must be preserved")
+    }
+
+    @Test
+    fun `sanitizeForRender WEB_VIEW also rewrites unquoted and single-quoted lazy loading`() {
+        val out = HtmlUtils.sanitizeForRender(
+            "<img src=\"/a.jpg\" loading=lazy><img src='/b.jpg' loading='lazy'>",
+            target = RenderTarget.WEB_VIEW,
+            keepEmbeddedCss = true,
+            keepEmbeddedJs = true,
+            blockMedia = false,
+        )
+        assertFalse(out.contains("lazy"))
+    }
+
+    private fun webView(html: String, keepJs: Boolean) = HtmlUtils.sanitizeForRender(
+        html,
+        target = RenderTarget.WEB_VIEW,
+        keepEmbeddedCss = true,
+        keepEmbeddedJs = keepJs,
+        blockMedia = false,
+    )
+
+    @Test
+    fun `sanitizeForRender strips inline event handlers when js is off`() {
+        val out = webView(
+            "<img src=\"/x.jpg\" onerror=\"alert(1)\"><p onclick='a()' class=\"c\">t</p><b ONLOAD=a()>b</b>",
+            keepJs = false,
+        )
+        assertFalse(out.contains("onerror", ignoreCase = true))
+        assertFalse(out.contains("onclick", ignoreCase = true))
+        assertFalse(out.contains("onload", ignoreCase = true))
+        assertTrue(out.contains("src=\"/x.jpg\""))
+        assertTrue(out.contains("class=\"c\""))
+    }
+
+    @Test
+    fun `sanitizeForRender strips javascript urls when js is off`() {
+        val out = webView(
+            "<a href=\"javascript:alert(1)\">a</a><a href=' JavaScript:x()'>b</a><a href=\"https://example.com\">c</a>",
+            keepJs = false,
+        )
+        assertFalse(out.contains("javascript:", ignoreCase = true))
+        assertTrue(out.contains("href=\"https://example.com\""))
+    }
+
+    @Test
+    fun `sanitizeForRender keeps handlers and javascript urls when js is on`() {
+        val html = "<img src=\"/x.jpg\" onerror=\"a()\"><a href=\"javascript:b()\">a</a>"
+        val out = webView(html, keepJs = true)
+        assertTrue(out.contains("onerror=\"a()\""))
+        assertTrue(out.contains("javascript:b()"))
+    }
+
+    @Test
+    fun `sanitizeForRender leaves text that looks like a handler untouched`() {
+        val out = webView("<p>use onclick=\"x\" in html</p>", keepJs = false)
+        assertTrue(out.contains("use onclick=\"x\" in html"))
+    }
+
+    @Test
+    fun `sanitizeForRender lazy rewrite does not touch pre or script text`() {
+        val out = webView("<pre>loading=\"lazy\"</pre><img src=\"/x.jpg\" data-loading=\"lazy\" loading=lazy>", true)
+        assertTrue(out.contains("<pre>loading=\"lazy\"</pre>"))
+        assertTrue(out.contains("data-loading=\"lazy\""))
+        assertTrue(out.contains("loading=\"eager\""))
+    }
+
+    @Test
+    fun `sanitizeForRender lazy rewrite covers iframes`() {
+        val out = webView("<iframe src=\"https://example.com/v\" loading=\"lazy\"></iframe>", true)
+        assertTrue(out.contains("loading=\"eager\""))
     }
 }

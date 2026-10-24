@@ -57,6 +57,17 @@ object HtmlUtils {
 
     private val imgTagRegex = Regex("<img[^>]*>", RegexOption.IGNORE_CASE)
     private val imageTagRegex = Regex("</?image[^>]*>", RegexOption.IGNORE_CASE)
+    private val lazyLoadingAttrRegex =
+        Regex("""(?<![\w-])loading\s*=\s*(?:"lazy"|'lazy'|lazy(?![\w-]))""", RegexOption.IGNORE_CASE)
+    private val lazyTagRegex = Regex("""<(?:img|iframe)\b(?:"[^"]*"|'[^']*'|[^>"'])*>""", RegexOption.IGNORE_CASE)
+    private val anyTagRegex = Regex("""<[a-zA-Z][^\s>/]*(?:"[^"]*"|'[^']*'|[^>"'])*>""")
+    private val eventHandlerAttrRegex =
+        Regex("""\s+on[a-zA-Z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)""", RegexOption.IGNORE_CASE)
+    private val javascriptUrlAttrRegex = Regex(
+        """\s+[a-zA-Z:-]+\s*=\s*(?:"[\s\u0000-\u001f]*javascript:[^"]*"|'[\s\u0000-\u001f]*javascript:[^']*'|""" +
+            """[\s\u0000-\u001f]*javascript:[^\s>]*)""",
+        RegexOption.IGNORE_CASE,
+    )
 
     @Suppress("ktlint:standard:max-line-length")
     private val videoTagRegex =
@@ -226,6 +237,7 @@ object HtmlUtils {
         if (stripJs) {
             result = result.replace(scriptTagRegex, "")
             result = result.replace(scriptSelfClosingRegex, "")
+            result = stripInlineScriptVectors(result)
         }
 
         if (stripCss) {
@@ -248,9 +260,19 @@ object HtmlUtils {
         result = result.replace(htmlCommentRegex, "")
         result = result.replace(encodedCommentRegex, "")
 
+        // Native loading="lazy" never fires inside the custom scroll/paged-transform containers.
+        if (target == RenderTarget.WEB_VIEW) {
+            result = result.replace(lazyTagRegex) { it.value.replace(lazyLoadingAttrRegex, "loading=\"eager\"") }
+        }
+
         if (blockMedia) result = stripMediaTags(result)
         return result
     }
+
+    internal fun stripInlineScriptVectors(html: String): String =
+        html.replace(anyTagRegex) { tag ->
+            tag.value.replace(eventHandlerAttrRegex, "").replace(javascriptUrlAttrRegex, "")
+        }
 
     fun stripMediaTags(content: String): String {
         return content
