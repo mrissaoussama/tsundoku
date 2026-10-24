@@ -125,7 +125,7 @@ internal class NovelWebViewImageCache(
                     val stream = loader.getPageDataStream(imagePath) ?: return@withPermit
                     val cachedFile = makeCachedFile(cacheKey, imagePath)
                     stream.use { input -> writeAtomically(cachedFile, input) }
-                    if (isActive) cache[cacheKey] = cachedFile
+                    if (isActive) cache[cacheKey] = cachedFile else runCatching { cachedFile.delete() }
                 }
             } catch (e: CancellationException) {
                 throw e
