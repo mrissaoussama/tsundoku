@@ -1,5 +1,7 @@
 package eu.kanade.domain.manga.model
 
+import eu.kanade.tachiyomi.util.chapter.HtmlTextScanner
+
 /**
  * Word statistics for the downloaded chapters of a novel.
  *
@@ -29,12 +31,6 @@ data class WordDensity(
         /** Each tier spans this many average words per chapter. */
         const val TIER_STEP_WORDS = 500L
 
-        private val SKIPPED_ELEMENTS = setOf("script", "style", "title", "head")
-        private val INLINE_ELEMENTS = setOf(
-            "a", "b", "i", "u", "em", "strong", "span", "small", "sup", "sub", "font", "mark", "s", "ruby", "rt", "rp",
-        )
-        private val SPACE_ENTITIES = setOf("nbsp", "#160", "#xa0", "ensp", "emsp", "thinsp", "#8203", "#x200b")
-
         /**
          * Maps an average chapter length onto a tier: 1-500 words is 1, 501-1000 is 2,
          * 1001-1500 is 3, and so on without an upper bound.
@@ -50,72 +46,25 @@ data class WordDensity(
         /** Highest average word count that lands in [tier]. */
         fun tierMaxWords(tier: Int): Long = tier.coerceAtLeast(1) * TIER_STEP_WORDS
 
-        /**
-         * Counts whitespace-separated words in chapter HTML or plain text in a single pass.
-         * Markup, comments, scripts and styles are skipped, block-level tags and `&nbsp;`
-         * style entities separate words, and other entities count as a word character.
-         */
+        /** Counts whitespace-separated words in chapter HTML or plain text. Markup, scripts and styles are skipped. */
         fun countWords(content: String): Int {
-            val length = content.length
             var words = 0
             var inWord = false
-            var i = 0
-            while (i < length) {
-                val char = content[i]
-                when {
-                    char == '<' && i + 1 < length && isTagStart(content[i + 1]) -> {
-                        if (content.startsWith("<!--", i)) {
-                            val end = content.indexOf("-->", i + 4)
-                            i = if (end < 0) length else end + 3
-                            inWord = false
-                            continue
-                        }
-                        val end = content.indexOf('>', i)
-                        if (end < 0) break
-                        var nameStart = i + 1
-                        val closing = content[nameStart] == '/'
-                        if (closing) nameStart++
-                        var nameEnd = nameStart
-                        while (nameEnd < end && content[nameEnd].isLetterOrDigit()) nameEnd++
-                        val name = content.substring(nameStart, nameEnd).lowercase()
-                        i = end + 1
-                        if (!closing && name in SKIPPED_ELEMENTS && content[end - 1] != '/') {
-                            val close = content.indexOf("</$name", i, ignoreCase = true)
-                            i = if (close < 0) {
-                                length
-                            } else {
-                                content.indexOf('>', close).let { if (it < 0) length else it + 1 }
-                            }
-                        }
-                        if (name !in INLINE_ELEMENTS) inWord = false
-                    }
-                    char == '&' -> {
-                        val semi = content.indexOf(';', i + 1)
-                        val entity = if (semi in (i + 2)..(i + 9)) content.substring(i + 1, semi).lowercase() else null
-                        if (entity != null && entity in SPACE_ENTITIES) {
-                            inWord = false
-                            i = semi + 1
-                        } else {
-                            if (!inWord) words++
-                            inWord = true
-                            i = if (entity != null) semi + 1 else i + 1
-                        }
-                    }
-                    // isSpaceChar also covers no-break spaces
-                    char.isWhitespace() || Character.isSpaceChar(char) -> {
+            HtmlTextScanner.scan(
+                content,
+                onChar = { char ->
+                    if (char.isWhitespace() || Character.isSpaceChar(char) || char == ZERO_WIDTH_SPACE) {
                         inWord = false
-                        i++
-                    }
-                    else -> {
+                    } else {
                         if (!inWord) words++
                         inWord = true
-                        i++
                     }
-                }
-            }
+                },
+                onBreak = { inWord = false },
+            )
             return words
         }
 
-        private fun isTagStart(char: Char) = char.isLetter() || char == '/' || char == '!' || char == '?'
+        private const val ZERO_WIDTH_SPACE = '​'
     }
 }

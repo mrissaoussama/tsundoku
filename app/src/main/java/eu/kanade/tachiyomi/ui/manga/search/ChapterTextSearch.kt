@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.manga.search
 
 import androidx.compose.runtime.Immutable
+import eu.kanade.tachiyomi.util.chapter.HtmlTextScanner
 import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
 import kotlin.coroutines.cancellation.CancellationException
@@ -42,26 +43,6 @@ object ChapterTextSearch {
     private const val MAX_SNIPPET_MATCH_LENGTH = 200
     private const val WORD_CHAR = "[\\p{L}\\p{N}_]"
 
-    private val SKIPPED_ELEMENTS = setOf("script", "style", "title", "head")
-    private val INLINE_ELEMENTS = setOf(
-        "a", "b", "i", "u", "em", "strong", "span", "small", "sup", "sub", "font", "mark", "s", "ruby", "rt", "rp",
-    )
-    private val NAMED_ENTITIES = mapOf(
-        "amp" to '&',
-        "lt" to '<',
-        "gt" to '>',
-        "quot" to '"',
-        "apos" to '\'',
-        "nbsp" to ' ',
-        "hellip" to '…',
-        "mdash" to '—',
-        "ndash" to '–',
-        "lsquo" to '‘',
-        "rsquo" to '’',
-        "ldquo" to '“',
-        "rdquo" to '”',
-    )
-
     /**
      * Builds the regex for [query]. Plain queries are matched literally.
      *
@@ -78,78 +59,22 @@ object ChapterTextSearch {
      * Reduces chapter HTML (or plain text) to whitespace-normalized visible text.
      */
     fun toPlainText(content: String): String {
-        val length = content.length
-        val out = StringBuilder(length)
+        val out = StringBuilder(content.length)
         var pendingSpace = false
-        var i = 0
-
-        fun appendChar(char: Char) {
-            if (char.isWhitespace() || Character.isSpaceChar(char)) {
-                pendingSpace = out.isNotEmpty()
-            } else {
-                if (pendingSpace) out.append(' ')
-                pendingSpace = false
-                out.append(char)
-            }
-        }
-
-        while (i < length) {
-            val char = content[i]
-            if (char == '<' && i + 1 < length && isTagStart(content[i + 1])) {
-                if (content.startsWith("<!--", i)) {
-                    val end = content.indexOf("-->", i + 4)
-                    i = if (end < 0) length else end + 3
+        HtmlTextScanner.scan(
+            content,
+            onChar = { char ->
+                if (char.isWhitespace() || Character.isSpaceChar(char)) {
                     pendingSpace = out.isNotEmpty()
-                    continue
-                }
-                val end = content.indexOf('>', i)
-                if (end < 0) break
-                var nameStart = i + 1
-                val closing = content[nameStart] == '/'
-                if (closing) nameStart++
-                var nameEnd = nameStart
-                while (nameEnd < end && content[nameEnd].isLetterOrDigit()) nameEnd++
-                val name = content.substring(nameStart, nameEnd).lowercase()
-                i = end + 1
-                if (!closing && name in SKIPPED_ELEMENTS && content[end - 1] != '/') {
-                    val close = content.indexOf("</$name", i, ignoreCase = true)
-                    i = if (close < 0) {
-                        length
-                    } else {
-                        content.indexOf('>', close).let { if (it < 0) length else it + 1 }
-                    }
-                }
-                if (name !in INLINE_ELEMENTS) pendingSpace = out.isNotEmpty()
-            } else if (char == '&') {
-                val semi = content.indexOf(';', i + 1)
-                val decoded = if (semi in (i + 2)..(i + 10)) decodeEntity(content.substring(i + 1, semi)) else null
-                if (decoded != null) {
-                    appendChar(decoded)
-                    i = semi + 1
                 } else {
-                    appendChar(char)
-                    i++
+                    if (pendingSpace) out.append(' ')
+                    pendingSpace = false
+                    out.append(char)
                 }
-            } else {
-                appendChar(char)
-                i++
-            }
-        }
+            },
+            onBreak = { pendingSpace = out.isNotEmpty() },
+        )
         return out.toString()
-    }
-
-    private fun isTagStart(char: Char) = char.isLetter() || char == '/' || char == '!' || char == '?'
-
-    private fun decodeEntity(name: String): Char? {
-        if (name.startsWith("#")) {
-            val code = if (name.length > 1 && (name[1] == 'x' || name[1] == 'X')) {
-                name.substring(2).toIntOrNull(16)
-            } else {
-                name.substring(1).toIntOrNull()
-            }
-            return code?.takeIf { it in 1..0xFFFF }?.toChar()
-        }
-        return NAMED_ENTITIES[name]
     }
 
     /** Plain query equivalent of [findMatches] without the regex engine. */
