@@ -37,7 +37,6 @@ object ChapterTextSearch {
 
     const val SNIPPET_CONTEXT = 60
 
-    /** Snippets shown before a result is expanded. */
     const val COLLAPSED_SNIPPETS = 3
     const val MAX_SNIPPETS_PER_CHAPTER = 50
     private const val MAX_SNIPPET_MATCH_LENGTH = 200
@@ -153,10 +152,7 @@ object ChapterTextSearch {
         return NAMED_ENTITIES[name]
     }
 
-    /**
-     * Finds [query] literally, which is much cheaper than running it through the regex engine.
-     * Equivalent to [findMatches] for a plain, not whole-word query.
-     */
+    /** Plain query equivalent of [findMatches] without the regex engine. */
     fun findLiteralMatches(
         text: String,
         query: String,

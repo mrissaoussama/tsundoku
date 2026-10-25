@@ -164,10 +164,7 @@ class ReaderViewModel @JvmOverloads constructor(
 
     private var pendingJumpProgress = savedState.get<Int>("search_progress")?.takeIf { it in 1..100 }
 
-    /**
-     * Scroll progress (1-100%) the reader was asked to open [chapterId] at, e.g. from a chapter search
-     * result. Returned once, so later restores fall back to the saved progress.
-     */
+    /** Returned once so later restores use the saved progress. */
     fun takeJumpProgress(chapterId: Long?): Int? {
         if (chapterId == null || chapterId != initialChapterId) return null
         return pendingJumpProgress.also { pendingJumpProgress = null }
