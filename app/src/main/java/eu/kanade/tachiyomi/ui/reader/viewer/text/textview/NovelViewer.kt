@@ -1409,6 +1409,16 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         }
     }
 
+    private fun resetScrollGestureState() {
+        val cancel = MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+        scrollView.onInterceptTouchEvent(cancel)
+        scrollView.onTouchEvent(cancel)
+        cancel.recycle()
+        scrollView.stopNestedScroll()
+        isRestoringScroll = false
+        pendingRestoreChapterId = null
+    }
+
     override fun setChapters(chapters: ViewerChapters) {
         renderGeneration++
         // A getPageList failure leaves the chapter in Error state with no pages - must be checked
@@ -1433,6 +1443,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         }
 
         if (!preferences.novelInfiniteScroll.get() || !isAlreadyLoaded) {
+            resetScrollGestureState()
             contentContainer.removeAllViews()
             chapterQueue.clear()
         }
