@@ -22,10 +22,15 @@ import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.ui.reader.ReaderActivity
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import logcat.LogPriority
 import mihon.core.viewmodel.StateViewModel
 import tachiyomi.core.common.util.lang.launchIO
@@ -40,6 +45,8 @@ import tachiyomi.source.local.isLocal
 import tachiyomi.source.local.isLocalNovel
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import java.util.concurrent.ConcurrentSkipListMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.regex.PatternSyntaxException
 import kotlin.coroutines.cancellation.CancellationException
@@ -70,8 +77,9 @@ class ChapterSearchScreen(
             onQueryChange = viewModel::updateQuery,
             onSearch = { viewModel.search() },
             onOptionsChange = viewModel::updateOptions,
-            onResultClick = { chapter ->
-                context.startActivity(ReaderActivity.newIntent(context, chapter.mangaId, chapter.id))
+            onRangeChange = viewModel::updateRange,
+            onResultClick = { chapter, progress ->
+                context.startActivity(ReaderActivity.newIntent(context, chapter.mangaId, chapter.id, progress))
             },
         )
     }
@@ -123,6 +131,10 @@ class ChapterSearchScreen(
             if (state.value.submittedQuery != null) search()
         }
 
+        fun updateRange(from: String, to: String) {
+            mutableState.update { it.copy(rangeFrom = from, rangeTo = to) }
+        }
+
         fun search() {
             searchJob?.cancel()
             val generation = searchGeneration.incrementAndGet()
@@ -141,12 +153,22 @@ class ChapterSearchScreen(
             }
 
             val manga = current.manga
-            val chapters = current.chapters
+            val allChapters = current.chapters
             val source = source
-            if (manga == null || chapters == null || source == null) {
+            if (manga == null || allChapters == null || source == null) {
                 // Entry still loading; run once it is ready
                 mutableState.update { it.copy(pendingSearch = true) }
                 return
+            }
+
+            val from = current.rangeFrom.trim().toDoubleOrNull()
+            val to = current.rangeTo.trim().toDoubleOrNull()
+            val chapters = if (from == null && to == null) {
+                allChapters
+            } else {
+                allChapters.filter { chapter ->
+                    (from == null || chapter.chapterNumber >= from) && (to == null || chapter.chapterNumber <= to)
+                }
             }
 
             mutableState.update {
@@ -154,46 +176,69 @@ class ChapterSearchScreen(
                     submittedQuery = query,
                     pendingSearch = false,
                     isSearching = true,
+                    searchTotal = chapters.size,
                     searchedCount = 0,
                     failedCount = 0,
                     results = emptyList(),
                 )
             }
 
+            val isLiteral = !current.options.isRegex && !current.options.wholeWord
+            val ignoreCase = !current.options.caseSensitive
             searchJob = viewModelScope.launchIO {
                 val context = currentCoroutineContext()
-                chapters.forEachIndexed { index, chapter ->
-                    context.ensureActive()
-                    val matches = try {
-                        readContent(manga, source, chapter)?.let { content ->
-                            ChapterTextSearch.findMatches(
-                                text = ChapterTextSearch.toPlainText(content),
-                                regex = regex,
-                                isActive = { context.isActive },
-                            )
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        logcat(LogPriority.ERROR, e) { "Chapter search failed to read ${chapter.name}" }
-                        null
-                    }
+                val found = ConcurrentSkipListMap<Int, ChapterSearchResult>()
+                val searched = AtomicInteger()
+                val failed = AtomicInteger()
+
+                fun publish(finished: Boolean) {
                     mutableState.update { state ->
                         if (searchGeneration.get() != generation) return@update state
                         state.copy(
-                            searchedCount = index + 1,
-                            failedCount = state.failedCount + if (matches == null) 1 else 0,
-                            results = if (matches != null && matches.count > 0) {
-                                state.results + ChapterSearchResult(chapter, matches.count, matches.snippets)
-                            } else {
-                                state.results
-                            },
+                            searchedCount = searched.get(),
+                            failedCount = failed.get(),
+                            results = found.values.toList(),
+                            isSearching = !finished,
                         )
                     }
                 }
-                mutableState.update {
-                    if (searchGeneration.get() != generation) it else it.copy(isSearching = false)
+
+                val permits = Semaphore(SEARCH_PARALLELISM)
+                coroutineScope {
+                    chapters.mapIndexed { index, chapter ->
+                        async {
+                            permits.withPermit {
+                                context.ensureActive()
+                                val matches = try {
+                                    readContent(manga, source, chapter)?.let { content ->
+                                        val text = ChapterTextSearch.toPlainText(content)
+                                        if (isLiteral) {
+                                            ChapterTextSearch.findLiteralMatches(text, query, ignoreCase)
+                                        } else {
+                                            ChapterTextSearch.findMatches(
+                                                text = text,
+                                                regex = regex,
+                                                isActive = { context.isActive },
+                                            )
+                                        }
+                                    }
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    logcat(LogPriority.ERROR, e) { "Chapter search failed to read ${chapter.name}" }
+                                    null
+                                }
+                                if (matches == null) failed.incrementAndGet()
+                                if (matches != null && matches.count > 0) {
+                                    found[index] = ChapterSearchResult(chapter, matches.count, matches.snippets)
+                                }
+                                val done = searched.incrementAndGet()
+                                if (matches == null || matches.count > 0 || done % PROGRESS_STEP == 0) publish(finished = false)
+                            }
+                        }
+                    }.awaitAll()
                 }
+                publish(finished = true)
             }
         }
 
@@ -206,6 +251,9 @@ class ChapterSearchScreen(
         }
 
         companion object {
+            private val SEARCH_PARALLELISM = Runtime.getRuntime().availableProcessors().coerceIn(2, 6)
+            private const val PROGRESS_STEP = 16
+
             val MANGA_ID_KEY = CreationExtras.Key<Long>()
 
             val Factory = viewModelFactory {
@@ -222,11 +270,14 @@ class ChapterSearchScreen(
         /** Chapters whose text can be searched, in reading order; null while loading. */
         val chapters: List<Chapter>? = null,
         val query: String = "",
+        val rangeFrom: String = "",
+        val rangeTo: String = "",
         val options: ChapterSearchOptions = ChapterSearchOptions(),
         val submittedQuery: String? = null,
         val pendingSearch: Boolean = false,
         val regexError: String? = null,
         val isSearching: Boolean = false,
+        val searchTotal: Int = 0,
         val searchedCount: Int = 0,
         val failedCount: Int = 0,
         val results: List<ChapterSearchResult> = emptyList(),

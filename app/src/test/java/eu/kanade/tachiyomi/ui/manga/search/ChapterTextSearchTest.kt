@@ -93,4 +93,24 @@ class ChapterTextSearchTest {
             )
         }
     }
+
+    @Test
+    fun `plain text decodes entities and collapses whitespace`() {
+        assertEquals("Tom & Jerry said <hi>…", ChapterTextSearch.toPlainText("<p>Tom &amp; Jerry\n\n said &lt;hi&gt;&hellip;</p>"))
+        assertEquals("one two", ChapterTextSearch.toPlainText("one<br/>two"))
+        assertEquals("wo rd", ChapterTextSearch.toPlainText("<p>wo</p><p>rd</p>"))
+        assertEquals("word", ChapterTextSearch.toPlainText("<p>wo<b>rd</b></p>"))
+    }
+
+    @Test
+    fun `literal search matches the regex search`() {
+        val text = "The Rogue met the rogue; ROGUES everywhere."
+        for (ignoreCase in listOf(true, false)) {
+            val options = ChapterSearchOptions(caseSensitive = !ignoreCase)
+            val viaRegex = ChapterTextSearch.findMatches(text, ChapterTextSearch.buildRegex("rogue", options))
+            val literal = ChapterTextSearch.findLiteralMatches(text, "rogue", ignoreCase)
+            assertEquals(viaRegex.count, literal.count)
+            assertEquals(viaRegex.snippets.map { it.matchStart }, literal.snippets.map { it.matchStart })
+        }
+    }
 }
