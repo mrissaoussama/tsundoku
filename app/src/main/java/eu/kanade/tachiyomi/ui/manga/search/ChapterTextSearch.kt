@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.ui.manga.search
 
 import androidx.compose.runtime.Immutable
+import org.jsoup.parser.Parser
 import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
 import kotlin.coroutines.cancellation.CancellationException
@@ -38,7 +39,7 @@ object ChapterTextSearch {
     const val SNIPPET_CONTEXT = 60
 
     const val COLLAPSED_SNIPPETS = 3
-    const val MAX_SNIPPETS_PER_CHAPTER = 50
+    const val MAX_SNIPPETS_PER_CHAPTER = 10
     private const val MAX_SNIPPET_MATCH_LENGTH = 200
     private const val WORD_CHAR = "[\\p{L}\\p{N}_]"
 
@@ -46,21 +47,8 @@ object ChapterTextSearch {
     private val INLINE_ELEMENTS = setOf(
         "a", "b", "i", "u", "em", "strong", "span", "small", "sup", "sub", "font", "mark", "s", "ruby", "rt", "rp",
     )
-    private val NAMED_ENTITIES = mapOf(
-        "amp" to '&',
-        "lt" to '<',
-        "gt" to '>',
-        "quot" to '"',
-        "apos" to '\'',
-        "nbsp" to ' ',
-        "hellip" to '…',
-        "mdash" to '—',
-        "ndash" to '–',
-        "lsquo" to '‘',
-        "rsquo" to '’',
-        "ldquo" to '“',
-        "rdquo" to '”',
-    )
+    private const val MAX_ENTITY_LENGTH = 32
+    private const val SOFT_HYPHEN = '­'
 
     /**
      * Builds the regex for [query]. Plain queries are matched literally.
@@ -84,6 +72,7 @@ object ChapterTextSearch {
         var i = 0
 
         fun appendChar(char: Char) {
+            if (char == SOFT_HYPHEN) return
             if (char.isWhitespace() || Character.isSpaceChar(char)) {
                 pendingSpace = out.isNotEmpty()
             } else {
@@ -102,8 +91,12 @@ object ChapterTextSearch {
                     pendingSpace = out.isNotEmpty()
                     continue
                 }
-                val end = content.indexOf('>', i)
-                if (end < 0) break
+                val end = tagEnd(content, i)
+                if (end < 0) {
+                    appendChar(char)
+                    i++
+                    continue
+                }
                 var nameStart = i + 1
                 val closing = content[nameStart] == '/'
                 if (closing) nameStart++
@@ -122,9 +115,14 @@ object ChapterTextSearch {
                 if (name !in INLINE_ELEMENTS) pendingSpace = out.isNotEmpty()
             } else if (char == '&') {
                 val semi = content.indexOf(';', i + 1)
-                val decoded = if (semi in (i + 2)..(i + 10)) decodeEntity(content.substring(i + 1, semi)) else null
+                val decoded = if (semi in (i + 2)..(i + MAX_ENTITY_LENGTH)) {
+                    val entity = content.substring(i, semi + 1)
+                    Parser.unescapeEntities(entity, false).takeIf { it != entity }
+                } else {
+                    null
+                }
                 if (decoded != null) {
-                    appendChar(decoded)
+                    decoded.forEach(::appendChar)
                     i = semi + 1
                 } else {
                     appendChar(char)
@@ -140,16 +138,19 @@ object ChapterTextSearch {
 
     private fun isTagStart(char: Char) = char.isLetter() || char == '/' || char == '!' || char == '?'
 
-    private fun decodeEntity(name: String): Char? {
-        if (name.startsWith("#")) {
-            val code = if (name.length > 1 && (name[1] == 'x' || name[1] == 'X')) {
-                name.substring(2).toIntOrNull(16)
-            } else {
-                name.substring(1).toIntOrNull()
+    // Quoted attribute values may contain '>'; an unclosed quote falls back to the first '>'.
+    private fun tagEnd(content: String, start: Int): Int {
+        var quote = 0.toChar()
+        for (i in start + 1 until content.length) {
+            val char = content[i]
+            when {
+                quote != 0.toChar() -> if (char == quote) quote = 0.toChar()
+                char == '"' || char == '\'' -> quote = char
+                char == '>' -> return i
+                char == '<' -> return -1
             }
-            return code?.takeIf { it in 1..0xFFFF }?.toChar()
         }
-        return NAMED_ENTITIES[name]
+        return content.indexOf('>', start)
     }
 
     /** Plain query equivalent of [findMatches] without the regex engine. */

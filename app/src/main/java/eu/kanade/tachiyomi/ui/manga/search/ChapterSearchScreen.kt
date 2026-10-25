@@ -26,9 +26,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import logcat.LogPriority
@@ -97,6 +99,7 @@ class ChapterSearchScreen(
     ) : StateViewModel<State>(State()) {
 
         private var searchJob: Job? = null
+        private var rangeJob: Job? = null
         private val searchGeneration = AtomicLong()
         private var source: Source? = null
 
@@ -133,9 +136,16 @@ class ChapterSearchScreen(
 
         fun updateRange(from: String, to: String) {
             mutableState.update { it.copy(rangeFrom = from, rangeTo = to) }
+            rangeJob?.cancel()
+            if (state.value.submittedQuery == null) return
+            rangeJob = viewModelScope.launch {
+                delay(RANGE_SEARCH_DELAY)
+                search()
+            }
         }
 
         fun search() {
+            rangeJob?.cancel()
             searchJob?.cancel()
             val generation = searchGeneration.incrementAndGet()
             val current = state.value
@@ -161,13 +171,17 @@ class ChapterSearchScreen(
                 return
             }
 
-            val from = current.rangeFrom.trim().toDoubleOrNull()
-            val to = current.rangeTo.trim().toDoubleOrNull()
-            val chapters = if (from == null && to == null) {
+            val from = parseRangeBound(current.rangeFrom)
+            val to = parseRangeBound(current.rangeTo)
+            if (from == null || to == null) {
+                mutableState.update { it.copy(isSearching = false, pendingSearch = false) }
+                return
+            }
+            val chapters = if (from.isNaN() && to.isNaN()) {
                 allChapters
             } else {
                 allChapters.filter { chapter ->
-                    (from == null || chapter.chapterNumber >= from) && (to == null || chapter.chapterNumber <= to)
+                    (from.isNaN() || chapter.chapterNumber >= from) && (to.isNaN() || chapter.chapterNumber <= to)
                 }
             }
 
@@ -190,8 +204,10 @@ class ChapterSearchScreen(
                 val found = ConcurrentSkipListMap<Int, ChapterSearchResult>()
                 val searched = AtomicInteger()
                 val failed = AtomicInteger()
+                val lastPublish = AtomicLong()
 
                 fun publish(finished: Boolean) {
+                    lastPublish.set(System.currentTimeMillis())
                     mutableState.update { state ->
                         if (searchGeneration.get() != generation) return@update state
                         state.copy(
@@ -233,7 +249,9 @@ class ChapterSearchScreen(
                                     found[index] = ChapterSearchResult(chapter, matches.count, matches.snippets)
                                 }
                                 val done = searched.incrementAndGet()
-                                if (matches == null || matches.count > 0 || done % PROGRESS_STEP == 0) publish(finished = false)
+                                val changed = matches == null || matches.count > 0
+                                val due = System.currentTimeMillis() - lastPublish.get() >= PUBLISH_INTERVAL_MS
+                                if ((changed && due) || done % PROGRESS_STEP == 0) publish(finished = false)
                             }
                         }
                     }.awaitAll()
@@ -253,6 +271,15 @@ class ChapterSearchScreen(
         companion object {
             private val SEARCH_PARALLELISM = Runtime.getRuntime().availableProcessors().coerceIn(2, 6)
             private const val PROGRESS_STEP = 16
+            private const val PUBLISH_INTERVAL_MS = 150L
+            private const val RANGE_SEARCH_DELAY = 600L
+
+            /** NaN for a blank bound, null for one that isn't a number. */
+            fun parseRangeBound(text: String): Double? {
+                val trimmed = text.trim()
+                if (trimmed.isEmpty()) return Double.NaN
+                return trimmed.replace(',', '.').toDoubleOrNull()
+            }
 
             val MANGA_ID_KEY = CreationExtras.Key<Long>()
 
