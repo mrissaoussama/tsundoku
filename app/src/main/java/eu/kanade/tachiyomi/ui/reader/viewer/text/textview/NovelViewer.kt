@@ -19,7 +19,6 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
 import androidx.core.view.doOnPreDraw
 import androidx.core.view.isVisible
@@ -1664,10 +1663,11 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             text = activity.stringResource(TDMR.strings.novel_chapter_next)
             isAllCaps = false
             textSize = 16f
-            setTextColor(android.graphics.Color.BLACK)
+            val buttonColor = getThemeColors(preferences.novelTheme.get()).second
+            setTextColor(buttonColor)
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor("#ADD8E6".toColorInt())
-                setStroke(2, android.graphics.Color.BLACK)
+                setColor(androidx.core.graphics.ColorUtils.setAlphaComponent(buttonColor, 0x26))
+                setStroke(2, buttonColor)
                 cornerRadius = 12f
             }
             setPadding(32, 24, 32, 24)
@@ -1816,6 +1816,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         val (_, themeTextColor) = getThemeColors(theme)
         val finalTextColor = if (fontColor != 0) fontColor else themeTextColor
         textView.setTextColor(finalTextColor)
+        textView.setLinkTextColor(ThemeUtils.getLinkColor(activity, getThemeColors(theme).first, finalTextColor))
 
         // textSize/typeface above can drift from the metrics baked into an existing
         // PrecomputedText, and the framework's own drag-thumbnail path (long-press to
