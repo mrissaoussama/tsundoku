@@ -1067,6 +1067,23 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         return true
     }
 
+    private fun maybeAddSeparator(chapter: LoadedChapter) {
+        if (preferences.novelHideChapterSeparator.get()) return
+        val separator = TextView(activity).apply {
+            text = "──────────"
+            textSize = 16f
+            setTextColor(0xFF888888.toInt())
+            gravity = Gravity.CENTER
+            setPadding(16, 48, 16, 48)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        contentContainer.addView(separator)
+        chapter.separatorView = separator
+    }
+
     private fun moveToLoadedNextChapterForTts(anchorChapterIndex: Int = currentChapterIndex): Boolean {
         logcat(LogPriority.DEBUG) {
             "TTS: moveToLoadedNextChapterForTts anchor=$anchorChapterIndex ts=${System.currentTimeMillis()} ttsCurrentChunkIndex=${ttsController.ttsCurrentChunkIndex} ttsResumeChunkIndex=${ttsController.ttsResumeChunkIndex} ttsPlaybackChapterIndex=${ttsController.ttsPlaybackChapterIndex} ttsPlaybackChapterId=${ttsController.ttsPlaybackChapterId}"
@@ -1079,19 +1096,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             handoffState = TtsHandoffState.Idle
 
             isRestoringScroll = true
-            val separator = TextView(activity).apply {
-                text = "──────────"
-                textSize = 16f
-                setTextColor(0xFF888888.toInt())
-                gravity = Gravity.CENTER
-                setPadding(16, 48, 16, 48)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                )
-            }
-            contentContainer.addView(separator)
-            cached.separatorView = separator
+            maybeAddSeparator(cached)
             contentContainer.addView(cached.headerView)
             contentContainer.addView(cached.block.container)
             chapterQueue.append(cached)
@@ -1545,21 +1550,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         // Reset is deferred to scrollView.post{} so it happens AFTER the layout pass.
         isRestoringScroll = true
 
-        if (isAppend && !preferences.novelHideChapterSeparator.get()) {
-            val separator = TextView(activity).apply {
-                text = "──────────"
-                textSize = 16f
-                setTextColor(0xFF888888.toInt())
-                gravity = Gravity.CENTER
-                setPadding(16, 48, 16, 48)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                )
-            }
-            contentContainer.addView(separator)
-            loadedChapter.separatorView = separator
-        }
+        if (isAppend) maybeAddSeparator(loadedChapter)
 
         contentContainer.addView(headerView)
         contentContainer.addView(block.container)

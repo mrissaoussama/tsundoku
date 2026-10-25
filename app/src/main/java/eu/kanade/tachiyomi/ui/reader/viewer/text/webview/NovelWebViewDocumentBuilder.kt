@@ -82,15 +82,7 @@ internal object NovelWebViewDocumentBuilder {
             extractBodyOrFallback(input.processed.text)
         }
 
-        val chapterDividerCss = if (input.infiniteScrollEnabled && input.hideChapterSeparator) {
-            """.tsundoku-chapter-divider {
-                        height: 0;
-                        margin: 0;
-                        padding: 0;
-                        border: none;
-                        visibility: hidden;
-                    }"""
-        } else if (input.infiniteScrollEnabled) {
+        val chapterDividerCss = if (input.infiniteScrollEnabled && !input.hideChapterSeparator) {
             """.tsundoku-chapter-divider {
                         height: 1px;
                         margin: 32px auto;

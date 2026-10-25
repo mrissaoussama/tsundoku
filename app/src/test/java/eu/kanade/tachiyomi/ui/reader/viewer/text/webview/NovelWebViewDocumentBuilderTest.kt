@@ -194,6 +194,9 @@ class NovelWebViewDocumentBuilderTest {
             minimalInput(infiniteScrollEnabled = true, hideChapterSeparator = true),
         )
         assertFalse(html.contains("border-top: 1px solid currentColor"))
-        assertTrue(html.contains("visibility: hidden"))
+        assertTrue(
+            NovelWebViewDocumentBuilder.assemble(minimalInput(infiniteScrollEnabled = true))
+                .contains("border-top: 1px solid currentColor"),
+        )
     }
 }

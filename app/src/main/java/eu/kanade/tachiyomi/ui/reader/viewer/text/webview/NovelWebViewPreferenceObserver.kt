@@ -74,6 +74,7 @@ internal class NovelWebViewPreferenceObserver(
             merge(
                 preferences.novelInfiniteScroll.changes().drop(1),
                 preferences.novelPagedMode.changes().drop(1),
+                preferences.novelHideChapterSeparator.changes().drop(1),
             ).collect { onChapterReloadRequested() }
         }
 

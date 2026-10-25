@@ -70,9 +70,10 @@ internal class NovelTextViewPreferenceObserver(
         scope.launch {
             // Infinite scroll is a structural change (single flow vs. multi-chapter appends), so
             // reload the whole view for a consistent state instead of patching it live.
-            preferences.novelInfiniteScroll.changes()
-                .drop(1)
-                .collectLatest { onContentReloadRequested() }
+            merge(
+                preferences.novelInfiniteScroll.changes().drop(1),
+                preferences.novelHideChapterSeparator.changes().drop(1),
+            ).collectLatest { onContentReloadRequested() }
         }
 
         scope.launch {
