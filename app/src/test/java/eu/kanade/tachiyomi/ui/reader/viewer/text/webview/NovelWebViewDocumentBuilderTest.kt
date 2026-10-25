@@ -15,6 +15,7 @@ class NovelWebViewDocumentBuilderTest {
         css: String = "body { color: black; }",
         infiniteScrollEnabled: Boolean = false,
         blockMedia: Boolean = false,
+        hideChapterSeparator: Boolean = false,
     ) = NovelWebViewDocumentBuilder.DocumentInput(
         processed = ProcessedContent(text = text, isPlainText = isPlainText, chapterUrl = null),
         chapter = null,
@@ -27,6 +28,7 @@ class NovelWebViewDocumentBuilderTest {
         tsundokuScript = "",
         infiniteScrollEnabled = infiniteScrollEnabled,
         blockMedia = blockMedia,
+        hideChapterSeparator = hideChapterSeparator,
     )
 
     // ── escapeForStyleTag ──────────────────────────────────────────────────
@@ -184,5 +186,14 @@ class NovelWebViewDocumentBuilderTest {
                 "html.tsundoku-paged .${NovelWebViewChapterMeta.CHAPTER_DIVIDER_CLASS}",
             ),
         )
+    }
+
+    @Test
+    fun `assemble collapses the chapter divider when the separator is hidden`() {
+        val html = NovelWebViewDocumentBuilder.assemble(
+            minimalInput(infiniteScrollEnabled = true, hideChapterSeparator = true),
+        )
+        assertFalse(html.contains("border-top: 1px solid currentColor"))
+        assertTrue(html.contains("visibility: hidden"))
     }
 }

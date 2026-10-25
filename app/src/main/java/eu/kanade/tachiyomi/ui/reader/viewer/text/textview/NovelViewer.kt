@@ -1545,7 +1545,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         // Reset is deferred to scrollView.post{} so it happens AFTER the layout pass.
         isRestoringScroll = true
 
-        if (isAppend) {
+        if (isAppend && !preferences.novelHideChapterSeparator.get()) {
             val separator = TextView(activity).apply {
                 text = "──────────"
                 textSize = 16f
