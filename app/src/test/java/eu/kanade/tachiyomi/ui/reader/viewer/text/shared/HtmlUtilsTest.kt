@@ -490,4 +490,56 @@ class HtmlUtilsTest {
         val out = webView("<img src=\"/a.jpg\" alt=\"press onclick=x to go\">", keepJs = false)
         assertTrue(out.contains("alt=\"press onclick=x to go\""))
     }
+
+    @Test
+    fun `sanitizeForRender lazy rewrite cannot break out of an attribute`() {
+        val out = webView("<img src=\"/a.jpg\" alt=\"loading=lazy onerror=Android.foo() x\">", keepJs = false)
+        val img = org.jsoup.Jsoup.parseBodyFragment(out).selectFirst("img")!!
+        assertEquals(setOf("src", "alt"), img.attributes().asList().map { it.key }.toSet())
+    }
+
+    @Test
+    fun `sanitizeForRender noscript content cannot become live markup`() {
+        val out = webView("<noscript><p title=\"</noscript><img src=x onerror=alert(1)>\"></p></noscript>", keepJs = false)
+        assertFalse(out.contains("onerror", ignoreCase = true))
+    }
+
+    @Test
+    fun `sanitizeForRender comments cannot join attribute fragments into a tag`() {
+        val out = webView("<p title=\"<!--\">a</p><p title=\"--><img src=x onmouseover=alert(1)>\">b</p>", keepJs = false)
+        val doc = org.jsoup.Jsoup.parseBodyFragment(out)
+        assertTrue(doc.select("[onmouseover]").isEmpty())
+        assertTrue(doc.select("img").isEmpty())
+    }
+
+    @Test
+    fun `sanitizeForRender strips srcdoc and data html urls when js is off`() {
+        val out = webView(
+            "<iframe srcdoc=\"<script>Android.x()</script>\"></iframe><iframe src=\"data:text/html,<script>x()</script>\"></iframe>" +
+                "<img src=\"data:image/png;base64,AAAA\">",
+            keepJs = false,
+        )
+        assertFalse(out.contains("srcdoc"))
+        assertFalse(out.contains("data:text/html"))
+        assertTrue(out.contains("data:image/png;base64,AAAA"))
+    }
+
+    @Test
+    fun `sanitizeForRender script variants are removed`() {
+        val out = webView("<script >a()</script ><scr<script></script>ipt>b()</script>", keepJs = false)
+        assertTrue(org.jsoup.Jsoup.parseBodyFragment(out).select("script").isEmpty())
+    }
+
+    @Test
+    fun `sanitizeForRender keeps javascript text in non url attributes and non handler on attributes`() {
+        val out = webView("<img src=\"/a.jpg\" alt=\"JavaScript: The Good Parts cover\" data-onboarding-step=\"1\">", keepJs = false)
+        assertTrue(out.contains("alt=\"JavaScript: The Good Parts cover\""))
+        assertTrue(out.contains("data-onboarding-step=\"1\""))
+    }
+
+    @Test
+    fun `sanitizeForRender returns clean chapters verbatim`() {
+        val html = "<p class=\"a\">Hello <b>world</b></p>"
+        assertEquals(html, webView(html, keepJs = false))
+    }
 }
