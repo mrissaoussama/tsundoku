@@ -31,7 +31,9 @@ data class WordDensity(
 
         private val SKIPPED_ELEMENTS = setOf("script", "style", "title", "head")
         private val INLINE_ELEMENTS = setOf(
-            "a", "b", "i", "u", "em", "strong", "span", "small", "sup", "sub", "font", "mark", "s", "ruby", "rt", "rp",
+            "a", "abbr", "b", "bdi", "bdo", "big", "cite", "code", "data", "del", "dfn", "em", "font", "i", "img",
+            "ins", "kbd", "label", "mark", "nobr", "q", "rb", "rp", "rt", "rtc", "ruby", "s", "samp", "small", "span",
+            "strike", "strong", "sub", "sup", "time", "tt", "u", "var", "wbr",
         )
         private val SPACE_ENTITIES = setOf("nbsp", "#160", "#xa0", "ensp", "emsp", "thinsp", "#8203", "#x200b")
 
@@ -70,8 +72,13 @@ data class WordDensity(
                             inWord = false
                             continue
                         }
-                        val end = content.indexOf('>', i)
-                        if (end < 0) break
+                        val end = tagEnd(content, i)
+                        if (end < 0) {
+                            if (!inWord) words++
+                            inWord = true
+                            i++
+                            continue
+                        }
                         var nameStart = i + 1
                         val closing = content[nameStart] == '/'
                         if (closing) nameStart++
@@ -79,13 +86,10 @@ data class WordDensity(
                         while (nameEnd < end && content[nameEnd].isLetterOrDigit()) nameEnd++
                         val name = content.substring(nameStart, nameEnd).lowercase()
                         i = end + 1
+                        // An unclosed skipped element (HTML5 lets </head> be omitted) only skips its tag.
                         if (!closing && name in SKIPPED_ELEMENTS && content[end - 1] != '/') {
                             val close = content.indexOf("</$name", i, ignoreCase = true)
-                            i = if (close < 0) {
-                                length
-                            } else {
-                                content.indexOf('>', close).let { if (it < 0) length else it + 1 }
-                            }
+                            if (close >= 0) i = content.indexOf('>', close).let { if (it < 0) length else it + 1 }
                         }
                         if (name !in INLINE_ELEMENTS) inWord = false
                     }
@@ -117,5 +121,21 @@ data class WordDensity(
         }
 
         private fun isTagStart(char: Char) = char.isLetter() || char == '/' || char == '!' || char == '?'
+
+        // Quoted attribute values may contain '>'. A '<' before the closing '>' means the first
+        // one was plain text; an unclosed quote falls back to the first '>'.
+        private fun tagEnd(content: String, start: Int): Int {
+            var quote = 0.toChar()
+            for (i in start + 1 until content.length) {
+                val char = content[i]
+                when {
+                    quote != 0.toChar() -> if (char == quote) quote = 0.toChar()
+                    char == '"' || char == '\'' -> quote = char
+                    char == '>' -> return i
+                    char == '<' -> return -1
+                }
+            }
+            return content.indexOf('>', start)
+        }
     }
 }
