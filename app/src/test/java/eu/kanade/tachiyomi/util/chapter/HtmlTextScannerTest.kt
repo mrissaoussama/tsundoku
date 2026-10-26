@@ -38,7 +38,23 @@ class HtmlTextScannerTest {
     }
 
     @Test
-    fun `unterminated tag ends the scan`() {
-        assertEquals("a|", scan("a<p"))
+    fun `unterminated tag start stays text`() {
+        assertEquals("a<p", scan("a<p"))
+        assertEquals("x<y |z", scan("x<y <p>z"))
+    }
+
+    @Test
+    fun `quoted greater-than does not end a tag`() {
+        assertEquals("text", scan("<a title=\"x > y\">text</a>"))
+    }
+
+    @Test
+    fun `unclosed skipped element only skips its tag`() {
+        assertEquals("||||one", scan("<html><head><title>t</title><body>one"))
+    }
+
+    @Test
+    fun `decodes every entity and drops soft hyphens`() {
+        assertEquals("caf\u00E9 \uD83D\uDE00 cafe", scan("caf&eacute; &#128512; ca&shy;f\u00ADe"))
     }
 }

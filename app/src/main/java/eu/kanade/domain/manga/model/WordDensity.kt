@@ -65,6 +65,6 @@ data class WordDensity(
             return words
         }
 
-        private const val ZERO_WIDTH_SPACE = '​'
+        private const val ZERO_WIDTH_SPACE = '\u200B'
     }
 }
