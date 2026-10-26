@@ -900,7 +900,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
             isRestoringScroll = false
             return
         }
-        val jumpProgress = activity.viewModel.takeJumpProgress(page.chapter.chapter.id)
+        val jumpProgress = activity.viewModel.takeJumpProgress(page.chapter)
         val savedProgress = jumpProgress ?: page.chapter.chapter.last_page_read
         val isRead = page.chapter.chapter.read
 

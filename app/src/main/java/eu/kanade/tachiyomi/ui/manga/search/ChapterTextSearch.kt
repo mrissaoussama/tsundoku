@@ -39,7 +39,7 @@ object ChapterTextSearch {
     const val SNIPPET_CONTEXT = 60
 
     const val COLLAPSED_SNIPPETS = 3
-    const val MAX_SNIPPETS_PER_CHAPTER = 50
+    const val MAX_SNIPPETS_PER_CHAPTER = 10
     private const val MAX_SNIPPET_MATCH_LENGTH = 200
     private const val WORD_CHAR = "[\\p{L}\\p{N}_]"
 

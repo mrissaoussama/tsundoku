@@ -173,6 +173,7 @@ private fun RangeRow(
             value = state.rangeFrom,
             onValueChange = { onRangeChange(it, state.rangeTo) },
             label = { Text(stringResource(TDMR.strings.chapter_search_range_from)) },
+            isError = ChapterSearchScreen.Model.parseRangeBound(state.rangeFrom) == null,
             singleLine = true,
             keyboardOptions = keyboardOptions,
             keyboardActions = keyboardActions,
@@ -182,6 +183,7 @@ private fun RangeRow(
             value = state.rangeTo,
             onValueChange = { onRangeChange(state.rangeFrom, it) },
             label = { Text(stringResource(TDMR.strings.chapter_search_range_to)) },
+            isError = ChapterSearchScreen.Model.parseRangeBound(state.rangeTo) == null,
             singleLine = true,
             keyboardOptions = keyboardOptions,
             keyboardActions = keyboardActions,
@@ -305,7 +307,8 @@ private fun SearchResultItem(
     }
 }
 
-private fun ChapterSearchSnippet.progressPercent(): Int = (position * 100).toInt().coerceIn(0, 100)
+// 0 means no jump, so a match at the very top opens at 1%.
+private fun ChapterSearchSnippet.progressPercent(): Int = (position * 100).toInt().coerceIn(1, 100)
 
 @Composable
 private fun SnippetText(snippet: ChapterSearchSnippet, onClick: () -> Unit) {
