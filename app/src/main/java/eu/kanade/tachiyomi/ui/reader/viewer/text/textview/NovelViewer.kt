@@ -93,6 +93,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
     private var currentPage: ReaderPage? = null
     private var currentChapters: ViewerChapters? = null
     private var renderGeneration = 0L
+    private var contentGeneration = 0L
 
     private data class LoadedChapter(
         val chapter: ReaderChapter,
@@ -1424,6 +1425,7 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         scrollView.stopNestedScroll(ViewCompat.TYPE_NON_TOUCH)
         isRestoringScroll = false
         pendingRestoreChapterId = null
+        contentGeneration++
     }
 
     private fun clearChapters() {
@@ -1755,9 +1757,9 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
             pendingRestoreProgress = progress
         } else {
             lastSavedProgress = 0f
-            val generation = renderGeneration
+            val generation = contentGeneration
             scrollView.post {
-                if (generation != renderGeneration) return@post
+                if (generation != contentGeneration) return@post
                 isRestoringScroll = true
                 scrollView.scrollTo(0, 0)
                 isRestoringScroll = false
@@ -1875,11 +1877,11 @@ class NovelViewer(val activity: ReaderActivity) : Viewer {
         if (loaded.chapter.chapter.id == pendingRestoreChapterId) {
             pendingRestoreChapterId = null
             val progress = pendingRestoreProgress
-            val generation = renderGeneration
+            val generation = contentGeneration
             // doOnPreDraw fires once, after measure and layout, so setScrollProgress uses the final
             // content height rather than the empty block height present when restoreProgress ran.
             scrollView.doOnPreDraw {
-                if (generation != renderGeneration) return@doOnPreDraw
+                if (generation != contentGeneration) return@doOnPreDraw
                 isRestoringScroll = true
                 setScrollProgress(progress)
                 logcat(LogPriority.DEBUG) { "NovelViewer: Scroll restored to ${(progress * 100).toInt()}%" }
