@@ -12,5 +12,4 @@ val migrations: List<Migration>
         NovelRateLimitPreferencesMigration(),
         VerticalNavigatorMigration(),
         TrackerIdRekeyMigration(),
-        TranslationSecretsPrivateMigration(),
     )

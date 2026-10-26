@@ -103,15 +103,12 @@ class TranslationPreferences(
     /**
      * OpenAI API key.
      */
-    fun openAiApiKey() = preferenceStore.getString(
-        Preference.privateKey("translation_openai_api_key"),
-        "",
-    )
+    fun openAiApiKey() = secret("translation_openai_api_key")
 
     /**
      * NVIDIA NIM base URL.
      */
-    fun nvidiaNimBaseUrl() = preferenceStore.getString(
+    fun nvidiaNimBaseUrl() = secret(
         "translation_nvidia_nim_base_url",
         "http://localhost:8000",
     )
@@ -119,10 +116,7 @@ class TranslationPreferences(
     /**
      * NVIDIA NIM API key (optional).
      */
-    fun nvidiaNimApiKey() = preferenceStore.getString(
-        Preference.privateKey("translation_nvidia_nim_api_key"),
-        "",
-    )
+    fun nvidiaNimApiKey() = secret("translation_nvidia_nim_api_key")
 
     /**
      * NVIDIA NIM model name.
@@ -153,10 +147,7 @@ class TranslationPreferences(
     /**
      * DeepSeek API key.
      */
-    fun deepSeekApiKey() = preferenceStore.getString(
-        Preference.privateKey("translation_deepseek_api_key"),
-        "",
-    )
+    fun deepSeekApiKey() = secret("translation_deepseek_api_key")
 
     /**
      * Custom system prompt for DeepSeek models. Blank means use [TranslationPromptDefaults.DEFAULT_SYSTEM_PROMPT].
@@ -179,7 +170,7 @@ class TranslationPreferences(
     /**
      * LibreTranslate server URL.
      */
-    fun libreTranslateUrl() = preferenceStore.getString(
+    fun libreTranslateUrl() = secret(
         "translation_libretranslate_url",
         "https://libretranslate.com/translate",
     )
@@ -187,39 +178,27 @@ class TranslationPreferences(
     /**
      * LibreTranslate API key (optional).
      */
-    fun libreTranslateApiKey() = preferenceStore.getString(
-        Preference.privateKey("translation_libretranslate_api_key"),
-        "",
-    )
+    fun libreTranslateApiKey() = secret("translation_libretranslate_api_key")
 
     /**
      * SYSTRAN API key.
      */
-    fun systranApiKey() = preferenceStore.getString(
-        Preference.privateKey("translation_systran_api_key"),
-        "",
-    )
+    fun systranApiKey() = secret("translation_systran_api_key")
 
     /**
      * DeepL API key.
      */
-    fun deepLApiKey() = preferenceStore.getString(
-        Preference.privateKey("translation_deepl_api_key"),
-        "",
-    )
+    fun deepLApiKey() = secret("translation_deepl_api_key")
 
     /**
      * Google Cloud Translation API key.
      */
-    fun googleApiKey() = preferenceStore.getString(
-        Preference.privateKey("translation_google_api_key"),
-        "",
-    )
+    fun googleApiKey() = secret("translation_google_api_key")
 
     /**
      * Ollama server URL for local AI translation.
      */
-    fun ollamaUrl() = preferenceStore.getString(
+    fun ollamaUrl() = secret(
         "translation_ollama_url",
         "http://localhost:11434",
     )
@@ -326,18 +305,12 @@ class TranslationPreferences(
      * Custom HTTP translation API URL.
      * Should accept POST requests with JSON body.
      */
-    fun customHttpUrl() = preferenceStore.getString(
-        Preference.privateKey("translation_custom_http_url"),
-        "",
-    )
+    fun customHttpUrl() = secret("translation_custom_http_url")
 
     /**
      * Custom HTTP API key (sent in Authorization header).
      */
-    fun customHttpApiKey() = preferenceStore.getString(
-        Preference.privateKey("translation_custom_http_api_key"),
-        "",
-    )
+    fun customHttpApiKey() = secret("translation_custom_http_api_key")
 
     /**
      * Custom HTTP request method: POST or GET.
@@ -354,17 +327,14 @@ class TranslationPreferences(
      * {apiKey} in a value is replaced with the configured API key.
      * Example: x-api-key: {apiKey}; Accept: application/json
      */
-    fun customHttpHeaders() = preferenceStore.getString(
-        Preference.privateKey("translation_custom_http_headers"),
-        "",
-    )
+    fun customHttpHeaders() = secret("translation_custom_http_headers")
 
     /**
      * Custom HTTP request template.
      * Use placeholders: {text}, {texts}, {source}, {target}
      * Example: {"q": "{text}", "source": "{source}", "target": "{target}"}
      */
-    fun customHttpRequestTemplate() = preferenceStore.getString(
+    fun customHttpRequestTemplate() = secret(
         "translation_custom_http_request_template",
         """{"q": {texts}, "source": "{source}", "target": "{target}"}""",
     )
@@ -407,10 +377,7 @@ class TranslationPreferences(
 
     // Gemini (Google AI)
 
-    fun geminiApiKey() = preferenceStore.getString(
-        Preference.privateKey("translation_gemini_api_key"),
-        "",
-    )
+    fun geminiApiKey() = secret("translation_gemini_api_key")
 
     fun geminiModel() = preferenceStore.getString(
         "translation_gemini_model",
@@ -426,19 +393,27 @@ class TranslationPreferences(
         "",
     )
 
+    private fun secret(key: String, defaultValue: String = "") =
+        preferenceStore.getString(Preference.privateKey(key), defaultValue)
+
     companion object {
         // Stored as private prefs so backups include them only with "Include sensitive settings".
+        // Server URLs and the request template are included because they can embed a key.
         val SECRET_KEYS = listOf(
             "translation_openai_api_key",
+            "translation_nvidia_nim_base_url",
             "translation_nvidia_nim_api_key",
             "translation_deepseek_api_key",
+            "translation_libretranslate_url",
             "translation_libretranslate_api_key",
             "translation_systran_api_key",
             "translation_deepl_api_key",
             "translation_google_api_key",
+            "translation_ollama_url",
             "translation_custom_http_url",
             "translation_custom_http_api_key",
             "translation_custom_http_headers",
+            "translation_custom_http_request_template",
             "translation_gemini_api_key",
         )
     }
