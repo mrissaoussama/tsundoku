@@ -70,6 +70,7 @@ import tachiyomi.core.common.i18n.stringResource
 import tachiyomi.core.common.preference.CheckboxState
 import tachiyomi.core.common.preference.TriState
 import tachiyomi.core.common.preference.mapAsCheckboxState
+import tachiyomi.core.common.preference.toCommonCheckboxState
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.launchNonCancellable
 import tachiyomi.core.common.util.lang.withIOContext
@@ -534,6 +535,32 @@ class MangaViewModel(
                     ),
                 )
             }
+        }
+    }
+
+    fun showChangeDuplicatesCategoryDialog(mangas: List<Manga>) {
+        viewModelScope.launchIO {
+            val contentTypes = mangas.mapTo(HashSet()) {
+                if (it.isNovel) Category.CONTENT_TYPE_NOVEL else Category.CONTENT_TYPE_MANGA
+            }
+            val categories = getCategories().filter {
+                it.contentType == Category.CONTENT_TYPE_ALL || contentTypes == setOf(it.contentType)
+            }
+            val perManga = mangas.map { getMangaCategoryIds(it).toSet() }
+            val initialSelection = categories.toCommonCheckboxState({ it.id }, perManga)
+            withUIContext {
+                updateSuccessState {
+                    it.copy(dialog = Dialog.ChangeDuplicatesCategory(mangas, initialSelection))
+                }
+            }
+        }
+    }
+
+    fun setDuplicatesCategories(mangas: List<Manga>, addCategories: List<Long>, removeCategories: List<Long>) {
+        viewModelScope.launchNonCancellable {
+            val mangaIds = mangas.map { it.id }
+            if (addCategories.isNotEmpty()) setMangaCategories.add(mangaIds, addCategories)
+            if (removeCategories.isNotEmpty()) setMangaCategories.remove(mangaIds, removeCategories)
         }
     }
 
@@ -1352,6 +1379,10 @@ class MangaViewModel(
     sealed interface Dialog {
         data class ChangeCategory(
             val manga: Manga,
+            val initialSelection: List<CheckboxState<Category>>,
+        ) : Dialog
+        data class ChangeDuplicatesCategory(
+            val mangas: List<Manga>,
             val initialSelection: List<CheckboxState<Category>>,
         ) : Dialog
         data class DeleteChapters(val chapters: List<Chapter>) : Dialog

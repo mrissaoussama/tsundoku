@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.PersonOutline
 import androidx.compose.material.icons.filled.Warning
@@ -27,18 +28,26 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AttachMoney
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Deselect
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.SelectAll
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -86,7 +95,9 @@ fun DuplicateMangaDialog(
     onMigrate: (manga: Manga) -> Unit,
     modifier: Modifier = Modifier,
     canAddAnyway: Boolean = true,
+    onChangeCategories: ((List<Manga>) -> Unit)? = null,
 ) {
+    var selectedIds by remember(duplicates) { mutableStateOf(emptySet<Long>()) }
     val sourceManager = remember { Injekt.get<SourceManager>() }
     val minHeight = LocalPreferenceMinHeight.current
     val horizontalPadding = PaddingValues(horizontal = TabbedDialogPaddings.Horizontal)
@@ -117,6 +128,41 @@ fun DuplicateMangaDialog(
                 modifier = Modifier.then(horizontalPaddingModifier),
             )
 
+            if (onChangeCategories != null) {
+                Row(
+                    modifier = horizontalPaddingModifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { selectedIds = duplicates.mapTo(HashSet()) { it.manga.id } }) {
+                        Icon(
+                            imageVector = Icons.Outlined.SelectAll,
+                            contentDescription = stringResource(MR.strings.action_select_all),
+                        )
+                    }
+                    IconButton(onClick = { selectedIds = emptySet() }) {
+                        Icon(
+                            imageVector = Icons.Outlined.Deselect,
+                            contentDescription = stringResource(MR.strings.action_select_none),
+                        )
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(
+                        onClick = {
+                            onChangeCategories(duplicates.map { it.manga }.filter { it.id in selectedIds })
+                        },
+                        enabled = selectedIds.isNotEmpty(),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.Label,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(MaterialTheme.padding.small))
+                        Text(text = "${stringResource(MR.strings.action_move_category)} (${selectedIds.size})")
+                    }
+                }
+            }
+
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(MaterialTheme.padding.small),
                 modifier = Modifier.height(getMaximumMangaCardHeight(duplicates)),
@@ -132,6 +178,14 @@ fun DuplicateMangaDialog(
                         onMigrate = { onMigrate(it.manga) },
                         onDismissRequest = onDismissRequest,
                         onOpenManga = { onOpenManga(it.manga) },
+                        selected = it.manga.id in selectedIds,
+                        onSelectedChange = if (onChangeCategories != null) {
+                            { checked ->
+                                selectedIds = if (checked) selectedIds + it.manga.id else selectedIds - it.manga.id
+                            }
+                        } else {
+                            null
+                        },
                     )
                 }
             }
@@ -178,6 +232,8 @@ private fun DuplicateMangaListItem(
     onDismissRequest: () -> Unit,
     onOpenManga: () -> Unit,
     onMigrate: () -> Unit,
+    selected: Boolean = false,
+    onSelectedChange: ((Boolean) -> Unit)? = null,
 ) {
     val source = getSource()
     val manga = duplicate.manga
@@ -216,6 +272,17 @@ private fun DuplicateMangaListItem(
                         duplicate.chapterCount.toInt(),
                         duplicate.chapterCount,
                     ),
+                )
+            }
+            if (onSelectedChange != null) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = onSelectedChange,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(24.dp)
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape),
                 )
             }
         }
