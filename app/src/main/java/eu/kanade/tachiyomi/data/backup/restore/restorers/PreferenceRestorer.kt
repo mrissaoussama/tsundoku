@@ -14,7 +14,6 @@ import eu.kanade.tachiyomi.data.backup.models.StringPreferenceValue
 import eu.kanade.tachiyomi.data.backup.models.StringSetPreferenceValue
 import eu.kanade.tachiyomi.data.library.LibraryUpdateJob
 import eu.kanade.tachiyomi.source.sourcePreferences
-import mihon.core.migration.migrations.moveTranslationSecrets
 import tachiyomi.core.common.preference.AndroidPreferenceStore
 import tachiyomi.core.common.preference.PreferenceStore
 import tachiyomi.core.common.preference.plusAssign
@@ -39,7 +38,6 @@ class PreferenceRestorer(
             preferenceStore,
             backupCategories,
         )
-        moveTranslationSecrets(preferenceStore, restoredWins = true)
 
         LibraryUpdateJob.setupTask(context)
         BackupCreateJob.setupTask(context)
