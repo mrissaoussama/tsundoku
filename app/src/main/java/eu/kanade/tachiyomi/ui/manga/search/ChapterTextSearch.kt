@@ -48,7 +48,7 @@ object ChapterTextSearch {
         "a", "b", "i", "u", "em", "strong", "span", "small", "sup", "sub", "font", "mark", "s", "ruby", "rt", "rp",
     )
     private const val MAX_ENTITY_LENGTH = 32
-    private const val SOFT_HYPHEN = '­'
+    private const val SOFT_HYPHEN = '\u00AD'
 
     /**
      * Builds the regex for [query]. Plain queries are matched literally.
