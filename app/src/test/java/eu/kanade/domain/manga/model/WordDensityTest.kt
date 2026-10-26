@@ -72,4 +72,23 @@ class WordDensityTest {
         assertEquals(4, WordDensity.countWords("a < b <!-- hidden words here --> c"))
         assertEquals(1, WordDensity.countWords("<p>shown</p><script>a b c</script>"))
     }
+
+    @Test
+    fun `countWords keeps an unclosed tag start as text`() {
+        assertEquals(5, WordDensity.countWords("if x<y then the rest"))
+        assertEquals(4, WordDensity.countWords("a<b c <i>d</i> e"))
+        assertEquals(1, WordDensity.countWords("<a title=\"x > y\">text</a>"))
+    }
+
+    @Test
+    fun `countWords keeps counting after an unclosed head or script`() {
+        assertEquals(2, WordDensity.countWords("<html><head><title>t</title><body><p>one two</p>"))
+        assertEquals(2, WordDensity.countWords("<p>one</p><style>two"))
+    }
+
+    @Test
+    fun `countWords keeps more inline tags inside a word`() {
+        assertEquals(1, WordDensity.countWords("foo<wbr>bar"))
+        assertEquals(1, WordDensity.countWords("a<code>b</code><del>c</del><abbr>d</abbr>"))
+    }
 }
