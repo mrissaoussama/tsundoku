@@ -1388,9 +1388,6 @@ class ReaderActivity : BaseActivity() {
         }
     }
 
-    /**
-     * Sets the visibility of the menu according to [visible].
-     */
     // Bars sit over the reader background while the menu is hidden, so match their icons to it.
     private fun updateSystemBarIcons(menuVisible: Boolean) {
         val viewer = viewModel.state.value.viewer
@@ -1405,6 +1402,9 @@ class ReaderActivity : BaseActivity() {
         windowInsetsController.isAppearanceLightNavigationBars = light
     }
 
+    /**
+     * Sets the visibility of the menu according to [visible].
+     */
     private fun setMenuVisibility(visible: Boolean) {
         viewModel.showMenus(visible)
         updateSystemBarIcons(visible)

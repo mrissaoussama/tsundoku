@@ -1748,11 +1748,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
     private fun showLoadingIndicator(message: String = "Loading...") {
         val theme = preferences.novelTheme.get()
-        val backgroundColor = preferences.novelBackgroundColor.get()
-        val fontColor = preferences.novelFontColor.get()
-        val (themeBgColor, themeTextColor) = getThemeColors(theme)
-        val finalBgColor = if (theme == "custom" && backgroundColor != 0) backgroundColor else themeBgColor
-        val finalTextColor = if (fontColor != 0) fontColor else themeTextColor
+        val (finalBgColor, finalTextColor) = getThemeColors(theme)
 
         val bgColorHex = ThemeUtils.colorToHex(finalBgColor)
         val textColorHex = ThemeUtils.colorToHex(finalTextColor)
@@ -1801,11 +1797,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         releasePagedChapterSwitchIfPending()
 
         val theme = preferences.novelTheme.get()
-        val backgroundColor = preferences.novelBackgroundColor.get()
-        val fontColor = preferences.novelFontColor.get()
-        val (themeBgColor, themeTextColor) = getThemeColors(theme)
-        val finalBgColor = if (theme == "custom" && backgroundColor != 0) backgroundColor else themeBgColor
-        val finalTextColor = if (fontColor != 0) fontColor else themeTextColor
+        val (finalBgColor, finalTextColor) = getThemeColors(theme)
         val errorColorHex = ThemeUtils.colorToHex(ThemeUtils.getErrorColor(finalBgColor))
         val bgColorHex = ThemeUtils.colorToHex(finalBgColor)
         val textColorHex = ThemeUtils.colorToHex(finalTextColor)
