@@ -542,4 +542,51 @@ class HtmlUtilsTest {
         val html = "<p class=\"a\">Hello <b>world</b></p>"
         assertEquals(html, webView(html, keepJs = false))
     }
+
+    @Test
+    fun `sanitizeForRender removes svg animations that can set javascript links when js is off`() {
+        val out = webView(
+            "<svg><a><animate attributeName=\"href\" values=\"javascript:alert(1)\"/><text>x</text></a>" +
+                "<set attributeName=\"xlink:href\" to=\"javascript:a()\"/>" +
+                "<animateMotion dur=\"1s\"/><animateTransform attributeName=\"transform\" from=\"0\"/></svg>",
+            keepJs = false,
+        )
+        val doc = org.jsoup.Jsoup.parseBodyFragment(out)
+        assertTrue(doc.select("animate, set, animatemotion, animatetransform").isEmpty())
+        assertFalse(out.contains("javascript:", ignoreCase = true))
+        assertTrue(out.contains("<text>x</text>"))
+    }
+
+    @Test
+    fun `sanitizeForRender keeps svg animations when js is on`() {
+        val out = webView("<svg><animate attributeName=\"opacity\" values=\"0;1\"/></svg>", keepJs = true)
+        assertTrue(out.contains("<animate"))
+    }
+
+    @Test
+    fun `sanitizeForRender removes embedded documents when js is off`() {
+        val out = webView(
+            "<iframe src=\"https://example.com/x.html\"></iframe><object data=\"https://example.com/x.swf\"></object>" +
+                "<embed src=\"https://example.com/x.html\"><frameset><frame src=\"https://example.com/f.html\"></frameset>" +
+                "<p>text</p>",
+            keepJs = false,
+        )
+        val doc = org.jsoup.Jsoup.parseBodyFragment(out)
+        assertTrue(doc.select("iframe, frame, frameset, object, embed").isEmpty())
+        assertFalse(out.contains("example.com"))
+        assertTrue(out.contains("<p>text</p>"))
+    }
+
+    @Test
+    fun `sanitizeForRender keeps iframes when js is on`() {
+        val out = webView("<iframe src=\"https://example.com/v\"></iframe>", keepJs = true)
+        assertTrue(out.contains("<iframe"))
+    }
+
+    @Test
+    fun `sanitizeForRender always removes base`() {
+        val html = "<base href=\"https://example.com/\"><img src=\"/a.jpg\">"
+        assertFalse(webView(html, keepJs = false).contains("<base"))
+        assertFalse(webView(html, keepJs = true).contains("<base"))
+    }
 }

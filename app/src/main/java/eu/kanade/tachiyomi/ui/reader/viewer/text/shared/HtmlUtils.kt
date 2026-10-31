@@ -231,8 +231,14 @@ object HtmlUtils {
             }
         }
 
-        removeAll("noscript")
-        if (stripJs) removeAll("script, meta[http-equiv]")
+        removeAll("noscript, base")
+        if (stripJs) {
+            // Embedded documents run their own script; SVG animations can set href to javascript: at runtime.
+            removeAll(
+                "script, meta[http-equiv], iframe, frame, frameset, object, embed, " +
+                    "animate, set, animatemotion, animatetransform",
+            )
+        }
         if (stripCss) removeAll("style, link[rel~=(?i)stylesheet]")
         if (blockMedia) removeAll("img, image, video, audio, source")
 
