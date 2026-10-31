@@ -589,4 +589,24 @@ class HtmlUtilsTest {
         assertFalse(webView(html, keepJs = false).contains("<base"))
         assertFalse(webView(html, keepJs = true).contains("<base"))
     }
+
+    @Test
+    fun `sanitizeForRender output stays clean when reparsed after foreign content mutation`() {
+        val payloads = listOf(
+            "<img src=\"/a.jpg\" loading=\"lazy\"><math><mtext><table><mglyph><style><img src=x onerror=alert(1)>",
+            "<!-- x --><form><math><mtext></form><form><mglyph><style></math><img src onerror=alert(1)>",
+        )
+        for (payload in payloads) {
+            val out = webView(payload, keepJs = false)
+            val reparsed = org.jsoup.Jsoup.parseBodyFragment(out).apply { outputSettings().prettyPrint(false) }
+            assertTrue(reparsed.select("[onerror]").isEmpty(), out)
+            assertEquals(out, reparsed.body().html())
+        }
+    }
+
+    @Test
+    fun `sanitizeForRender drops an unterminated tag when js is off`() {
+        val out = webView("<img src=x onerror=Android.x() ", keepJs = false)
+        assertFalse(out.contains("onerror"))
+    }
 }

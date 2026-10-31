@@ -18,6 +18,7 @@ object HtmlUtils {
 
     private val frontMatterRegex = Regex("^\\uFEFF?---\\s*\\r?\\n([\\s\\S]*?)\\r?\\n---\\s*(\\r?\\n|$)")
     private const val CHAPTER_TITLE_SEARCH_LIMIT = 3000
+    private const val MAX_SANITIZE_PASSES = 4
 
     private val htmlTagRegex = Regex(
         "<\\s*(html|head|body|div|p|span|br|h[1-6]|img|a|table|ul|ol|li|blockquote|article|section|!doctype)\\b",
@@ -205,8 +206,8 @@ object HtmlUtils {
     }
 
     /**
-     * Sanitizes in a single DOM pass and serializes once, so no text-level rewrite can turn
-     * attribute contents back into markup. Clean chapters are returned verbatim.
+     * Sanitizes on the DOM and serializes, so no text-level rewrite can turn attribute contents
+     * back into markup. Clean chapters are returned verbatim when embedded JS is kept.
      */
     fun sanitizeForRender(
         content: String,
@@ -218,6 +219,29 @@ object HtmlUtils {
         val stripJs = target == RenderTarget.TEXT_VIEW || !keepEmbeddedJs
         val stripCss = target == RenderTarget.TEXT_VIEW || !keepEmbeddedCss
 
+        val first = sanitizePass(content, target, stripJs, stripCss, blockMedia)
+        if (!stripJs) return if (first.changed) first.html else content
+
+        // Serialized markup can parse differently than the original (foreign content mXSS), and the
+        // WebView only ever parses our serialization, so repeat until it is stable and clean.
+        var html = first.html
+        repeat(MAX_SANITIZE_PASSES) {
+            val pass = sanitizePass(html, target, stripJs, stripCss, blockMedia)
+            if (!pass.changed && pass.html == html) return html
+            html = pass.html
+        }
+        return escapeHtml(Jsoup.parseBodyFragment(html).text())
+    }
+
+    private class SanitizeResult(val html: String, val changed: Boolean)
+
+    private fun sanitizePass(
+        content: String,
+        target: RenderTarget,
+        stripJs: Boolean,
+        stripCss: Boolean,
+        blockMedia: Boolean,
+    ): SanitizeResult {
         val doc = Jsoup.parseBodyFragment(content)
         doc.outputSettings().prettyPrint(false)
         val body = doc.body()
@@ -274,7 +298,7 @@ object HtmlUtils {
             }
         }
 
-        return if (changed) body.html() else content
+        return SanitizeResult(body.html(), changed)
     }
 
     private fun isUnsafeAttribute(tag: String, key: String, value: String): Boolean {
