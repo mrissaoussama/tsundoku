@@ -189,6 +189,9 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
     // Mode the currently-rendered DOM was built in (not a live pref read - can diverge from it).
     private var loadedDocumentIsPaged = false
 
+    // A document built without a chapter id has no chapter wrapper, so nothing in it can be saved.
+    private var loadedDocumentHasChapter = false
+
     private var isAutoScrolling = false
     private var autoScrollStartAttempt = 0
 
@@ -1574,6 +1577,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
 
         chapterQueue.clear()
         currentChapterIndex = 0
+        loadedDocumentHasChapter = chapterId != -1L
 
         // Inputs are gathered on Main (touch viewer state), but the heavy work - the image-URL
         // regex scan and the Jsoup parse + full-document string build - runs off the main thread.
@@ -1806,8 +1810,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
             // The error page replaces the edited document, so nothing is left to save.
             isEditingMode = false
             activity.viewModel.setHasUnsavedChanges(false)
-            val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.hideSoftInputFromWindow(webView.windowToken, 0)
+            hideKeyboard()
             editModeEnded.tryEmit(Unit)
         }
 
@@ -1930,9 +1933,21 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
         return false
     }
 
+    private fun hideKeyboard() {
+        val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(webView.windowToken, 0)
+    }
+
     fun toggleEditMode(isEditing: Boolean, save: Boolean = true): Boolean {
-        if (isEditing && docState != DocState.READY) {
-            activity.toast(activity.stringResource(TDMR.strings.error_cant_edit_error_page))
+        val blockedReason = when {
+            !isEditing -> null
+            docState == DocState.ERROR -> TDMR.strings.error_cant_edit_error_page
+            docState != DocState.READY -> TDMR.strings.error_cant_edit_while_loading
+            !loadedDocumentHasChapter -> TDMR.strings.error_cant_edit_no_chapter
+            else -> null
+        }
+        if (blockedReason != null) {
+            activity.toast(activity.stringResource(blockedReason))
             return false
         }
 
@@ -1943,8 +1958,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                 null,
             )
             webView.clearFocus()
-            val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.hideSoftInputFromWindow(webView.windowToken, 0)
+            hideKeyboard()
 
             // Reload chapter to discard edits
             chapterQueue.clear()
@@ -2000,8 +2014,7 @@ class NovelWebViewViewer(val activity: ReaderActivity) : Viewer {
                 null,
             )
             webView.clearFocus()
-            val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.hideSoftInputFromWindow(webView.windowToken, 0)
+            hideKeyboard()
         }
 
         val script = """
