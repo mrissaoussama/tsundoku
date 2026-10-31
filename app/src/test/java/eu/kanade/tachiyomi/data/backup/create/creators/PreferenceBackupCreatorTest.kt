@@ -38,11 +38,21 @@ class PreferenceBackupCreatorTest {
 
     @Test
     fun `every secret key belongs to a translation preference`() {
-        val keys = TranslationPreferences::class.java.methods
+        assertEquals(emptySet<String>(), TranslationPreferences.SECRET_KEYS - translationKeys())
+    }
+
+    @Test
+    fun `every credential looking translation key is a secret`() {
+        val sensitive = Regex("(^|_)(key|url|headers?|token|secret|password|auth|template)(_|$)")
+        val leaked = translationKeys().filter { sensitive.containsMatchIn(it) }.toSet() - TranslationPreferences.SECRET_KEYS
+
+        assertEquals(emptySet<String>(), leaked)
+    }
+
+    private fun translationKeys(): Set<String> {
+        return TranslationPreferences::class.java.methods
             .filter { it.parameterCount == 0 && Preference::class.java.isAssignableFrom(it.returnType) }
             .map { (it.invoke(translation) as Preference<*>).key() }
             .toSet()
-
-        assertEquals(emptySet<String>(), TranslationPreferences.SECRET_KEYS - keys)
     }
 }
